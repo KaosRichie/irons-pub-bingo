@@ -1,0 +1,853 @@
+<title>Bingo Forge</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #211c16;
+  --panel: #2b251c;
+  --panel-2: #352e23;
+  --inset: #1a1611;
+  --line: #4a4132;
+  --line-soft: #3a3327;
+  --ink: #e9e2d0;
+  --muted: #a99f88;
+  --gold: #f5b83d;
+  --gold-deep: #c98f1e;
+  --green: #7ac86c;
+  --red: #e06c55;
+  --display: 'Cinzel', 'Georgia', serif;
+  --body: 'Alegreya Sans', 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', 'Consolas', monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.45;
+}
+button, input, select, textarea {
+  font-family: var(--body);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 9px;
+}
+textarea { font-family: var(--mono); font-size: 13px; }
+button { cursor: pointer; background: var(--panel-2); }
+button:hover { border-color: var(--gold-deep); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+button.primary {
+  background: linear-gradient(180deg, var(--gold), var(--gold-deep));
+  color: #241b06;
+  font-weight: 700;
+  border-color: var(--gold-deep);
+}
+button.ghost { background: transparent; }
+label { color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 3px; }
+
+.topbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding: 14px 20px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--line);
+}
+.wordmark { display: flex; flex-direction: column; margin-right: 8px; }
+.wordmark h1 {
+  font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0;
+  color: var(--gold); letter-spacing: .06em;
+}
+.wordmark span { font-size: 12.5px; color: var(--muted); }
+.topbar .field { display: flex; flex-direction: column; }
+.topbar input[type=text] { min-width: 220px; }
+.topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: flex-end; }
+
+.wrap {
+  display: grid; grid-template-columns: minmax(340px, 1fr) minmax(360px, 480px);
+  gap: 18px; padding: 18px 20px; max-width: 1280px; margin: 0 auto;
+}
+@media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+
+.pane {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 14px;
+}
+.pane h2 {
+  font-family: var(--display); font-size: 15px; letter-spacing: .08em;
+  color: var(--muted); margin: 0 0 10px; font-weight: 600; text-transform: uppercase;
+}
+#grid { display: grid; gap: 5px; }
+.cell {
+  aspect-ratio: 1; width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft); border-radius: 3px;
+  padding: 4px; font-size: 12px; line-height: 1.2;
+  color: var(--ink); text-align: center;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; word-break: break-word;
+  position: relative;
+}
+.cell:hover { border-color: var(--gold-deep); }
+.cell.selected { border: 2px solid var(--gold); }
+.cell.empty { color: var(--muted); font-style: italic; }
+.cell.invalid::after {
+  content: "!"; position: absolute; top: 2px; right: 5px;
+  color: var(--red); font-weight: 700; font-size: 13px;
+}
+.cell .n { position: absolute; top: 2px; left: 5px; font-size: 10px; color: var(--muted); }
+.hint { color: var(--muted); font-size: 13.5px; }
+
+.tilehead { display: flex; align-items: baseline; gap: 10px; }
+.tilehead h2 { flex: 1; }
+.editor-block { display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 10px; }
+.row > div { flex: 1; }
+.goal {
+  background: var(--panel-2); border: 1px solid var(--line-soft);
+  border-radius: 4px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.goal .goalhead { display: flex; gap: 8px; align-items: center; }
+.goal .goalhead select { flex: 1; }
+.checkline { display: flex; align-items: center; gap: 6px; }
+.checkline label { margin: 0; text-transform: none; font-size: 14px; color: var(--ink); letter-spacing: 0; }
+.errors { color: var(--red); font-size: 13.5px; margin: 0; padding-left: 18px; }
+.fieldhint { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+
+details.cheatsheet { margin: 14px 20px 24px; max-width: 1280px; margin-left: auto; margin-right: auto; padding: 0 20px; }
+details.cheatsheet > summary {
+  cursor: pointer; color: var(--muted); font-family: var(--display);
+  font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+}
+details.cheatsheet .sheet {
+  margin-top: 10px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 5px; padding: 12px 16px; font-size: 14px;
+}
+.sheet code { font-family: var(--mono); font-size: 12.5px; color: var(--gold); }
+.sheet td, .sheet th { padding: 4px 12px 4px 0; text-align: left; vertical-align: top; }
+.sheet th { color: var(--muted); font-weight: 500; }
+.sheet .tablewrap { overflow-x: auto; }
+
+dialog {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  width: min(680px, 92vw); padding: 18px;
+}
+dialog::backdrop { background: rgba(10, 8, 5, .7); }
+dialog h2 { font-family: var(--display); color: var(--gold); font-size: 17px; margin: 0 0 10px; }
+dialog textarea { width: 100%; height: 300px; resize: vertical; }
+dialog .dactions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; align-items: center; }
+dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  .cell { transition: border-color .12s ease; }
+}
+</style>
+
+<header class="topbar">
+  <div class="wordmark">
+    <h1>Bingo Forge</h1>
+    <span>OSRS clan bingo board builder</span>
+  </div>
+  <div class="field">
+    <label for="boardName">Board name</label>
+    <input type="text" id="boardName" placeholder="Summer Bingo 2026">
+  </div>
+  <div class="field">
+    <label for="boardId" title="Keep this the same when editing a live board - players keep their progress">Board ID</label>
+    <input type="text" id="boardId" placeholder="summer-bingo" style="width:130px">
+  </div>
+  <div class="field">
+    <label for="boardVersion">Ver</label>
+    <input type="number" id="boardVersion" min="1" style="width:60px">
+  </div>
+  <div class="field">
+    <label for="startTime">Starts (your time)</label>
+    <input type="datetime-local" id="startTime">
+  </div>
+  <div class="field">
+    <label for="endTime">Ends (your time)</label>
+    <input type="datetime-local" id="endTime">
+  </div>
+  <div class="field">
+    <label for="linePoints" title="Bonus points per completed row, column or diagonal">Line pts</label>
+    <input type="number" id="linePoints" min="0" style="width:64px">
+  </div>
+  <div class="field">
+    <label for="blackoutPoints" title="Bonus points for completing the whole board">Blackout pts</label>
+    <input type="number" id="blackoutPoints" min="0" style="width:64px">
+  </div>
+  <div class="field">
+    <label for="boardSize">Size</label>
+    <select id="boardSize"></select>
+  </div>
+  <div class="actions">
+    <button id="btnNew" class="ghost">New</button>
+    <button id="btnImport">Import</button>
+    <button id="btnExport" class="primary">Export board code</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="pane">
+    <h2 id="boardHeader">Board</h2>
+    <div id="grid"></div>
+    <p class="hint" id="boardHint">Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
+    <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID: tile positions carry the players' progress, so only swap tiles around <b>before</b> the event goes live.</p>
+  </section>
+  <aside class="pane" id="editorPane">
+    <div class="tilehead">
+      <h2 id="editorTitle">Tile</h2>
+    </div>
+    <div class="editor-block" id="editor">
+      <p class="hint">Select a tile on the board.</p>
+    </div>
+  </aside>
+</main>
+
+<details class="cheatsheet">
+  <summary>Goal type cheat sheet</summary>
+  <div class="sheet">
+    <p>Item, source, NPC and pet names are case-insensitive and <code>*</code> matches anything — <code>Ancient page*</code> matches all four pages. Every goal has a <b>count</b> (how many times it must happen).</p>
+    <div class="tablewrap"><table>
+      <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list".</td></tr>
+      <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples").</td></tr>
+      <tr><th>Boss kill count</th><td>Kill count gained since the player imported the board, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Kills the player had before importing don't count.</td></tr>
+      <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage — ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones); the rare monsters with empty drop tables can't be counted.</td></tr>
+      <tr><th>Pet</th><td>Any pet, or specific pets (players need the collection log chat notification enabled for specific pets).</td></tr>
+      <tr><th>XP</th><td>XP gained in a skill, counted from the moment the player imports the board.</td></tr>
+      <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source — but note they're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so either run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
+      <tr><th>Loot value</th><td>A single loot pile worth at least X gp at GE prices ("a 4m+ drop").</td></tr>
+      <tr><th>Chat message</th><td>A game message matching a regex — speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording.</td></tr>
+      <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players tick the tile off by hand.</td></tr>
+    </table></div>
+    <p>A tile with several goals completes when <b>all</b> of them are done, or switch it to <b>any</b> for "X or Y" tiles.</p>
+    <p><b>Board ID &amp; version:</b> the ID ties progress to the board — keep it the same when fixing a live board and players keep everything (edit tiles in place; don't insert, remove or reorder them). Bump the version so players can see they have the latest. Changing the ID (or having none) makes edits reset progress.</p>
+    <p><b>Event window:</b> set start/end times (entered in your timezone, stored as UTC) and the plugin only counts progress inside them — players can import the board early without pre-event drops, XP or kills leaking in.</p>
+    <p><b>Points:</b> give tiles point values and the plugin shows the team's running total. <b>Line pts</b> pay per completed row/column/diagonal and <b>blackout pts</b> for finishing the whole board — both count toward the team total. For per-player contribution details, the team store's board view and portal list who contributed what to every goal.</p>
+    <p><b>Teams:</b> players who connect with the same team code combine progress — counts add up across members ("2 uniques" can be one each from two people), "distinct" item lists count each different item once per team, and XP/kill counts sum. Give each team its own code and (optionally) its own Discord webhook for completion screenshots.</p>
+  </div>
+</details>
+
+<dialog id="ioDialog">
+  <h2 id="dialogTitle">Board code</h2>
+  <p id="dialogNotes" class="hint" style="display:none; margin:0 0 8px"></p>
+  <textarea id="dialogText" spellcheck="false"></textarea>
+  <div class="dactions">
+    <span class="copied" id="copyNote"></span>
+    <button id="btnDialogCopy">Copy</button>
+    <button id="btnDialogApply" class="primary">Load into editor</button>
+    <button id="btnDialogClose" class="ghost">Close</button>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+
+const COURSES = ["GNOME","SHAYZIEN_BASIC","DRAYNOR","AL_KHARID","PYRAMID","VARROCK","PENGUIN","BARBARIAN","CANIFIS","APE_ATOLL","SHAYZIEN_ADVANCED","FALADOR","WILDERNESS","WEREWOLF","SEERS","POLLNIVNEACH","RELLEKKA","PRIFDDINAS","ARDOUGNE"];
+const SKILLS = ["ATTACK","STRENGTH","DEFENCE","RANGED","PRAYER","MAGIC","RUNECRAFT","CONSTRUCTION","HITPOINTS","AGILITY","HERBLORE","THIEVING","CRAFTING","FLETCHING","SLAYER","HUNTER","MINING","SMITHING","FISHING","COOKING","FIREMAKING","WOODCUTTING","FARMING"];
+const GOAL_TYPES = [
+  ["DROP", "Drop"],
+  ["RAID_PURPLE", "Raid purple"],
+  ["KC", "Boss kill count"],
+  ["KILL", "NPC kills"],
+  ["PET", "Pet"],
+  ["XP", "XP"],
+  ["LAP", "Course laps"],
+  ["VALUE", "Loot value"],
+  ["CHAT", "Chat message"],
+  ["MANUAL", "Manual"],
+];
+
+function randomId() {
+  const bytes = new Uint8Array(4);
+  try { crypto.getRandomValues(bytes); }
+  catch (e) { for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); }
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function freshBoard() { return { name: "", id: randomId(), version: 1, start: "", end: "", linePoints: 0, blackoutPoints: 0, size: 5, tiles: [] }; }
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function fromLocalInput(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d) ? "" : d.toISOString();
+}
+
+let board = freshBoard();
+let selected = -1;
+let tileClipboard = null;
+
+function emptyTile() { return { label: "", description: "", mode: "ALL", icon: "", points: 0, goals: [] }; }
+function defaultGoal(type) {
+  const g = { type: type || "DROP", count: 1 };
+  if (g.type === "DROP") { g.items = []; g.sources = []; g.distinct = false; }
+  if (g.type === "RAID_PURPLE") { g.raids = ["COX", "TOB", "TOA"]; }
+  if (g.type === "KC") { g.npcs = []; }
+  if (g.type === "KILL") { g.npcs = []; }
+  if (g.type === "PET") { g.pets = []; }
+  if (g.type === "XP") { g.skill = "SLAYER"; g.amount = 1000000; }
+  if (g.type === "LAP") { g.course = "CANIFIS"; }
+  if (g.type === "VALUE") { g.amount = 1000000; g.sources = []; }
+  if (g.type === "CHAT") { g.pattern = ""; }
+  return g;
+}
+function resizeTiles() {
+  const want = board.size * board.size;
+  while (board.tiles.length < want) board.tiles.push(emptyTile());
+  board.tiles.length = want;
+  if (selected >= want) selected = -1;
+}
+
+// ---------- validation (mirrors the plugin's rules) ----------
+function validateGoal(g) {
+  const errs = [];
+  const list = v => (v || []).filter(s => s && s.trim());
+  switch (g.type) {
+    case "DROP": if (!list(g.items).length) errs.push("Drop goal needs at least one item name."); break;
+    case "KC": if (!list(g.npcs).length) errs.push("Boss kill count goal needs at least one NPC name."); break;
+    case "KILL": if (!list(g.npcs).length) errs.push("NPC kills goal needs at least one NPC name."); break;
+    case "RAID_PURPLE": if (!(g.raids || []).length) errs.push("Pick at least one raid."); break;
+    case "XP":
+      if (!g.skill) errs.push("XP goal needs a skill.");
+      if (!(g.amount > 0)) errs.push("XP goal needs a positive amount.");
+      break;
+    case "VALUE": if (!(g.amount > 0)) errs.push("Loot value goal needs a positive gp amount."); break;
+    case "LAP": if (!g.course) errs.push("Course laps goal needs a course."); break;
+    case "CHAT":
+      if (!g.pattern || !g.pattern.trim()) { errs.push("Chat goal needs a pattern."); break; }
+      try { new RegExp(g.pattern); } catch (e) { errs.push("Pattern is not a valid regex."); }
+      break;
+  }
+  if (g.count != null && !(g.count > 0)) errs.push("Count must be at least 1.");
+  return errs;
+}
+function validateTile(t) {
+  const errs = [];
+  if (!t.label || !t.label.trim()) errs.push("Tile needs a label.");
+  (t.goals || []).forEach((g, i) => validateGoal(g).forEach(e => errs.push("Goal " + (i + 1) + ": " + e)));
+  return errs;
+}
+
+// ---------- export / import ----------
+function cleanList(v) { return (v || []).map(s => s.trim()).filter(Boolean); }
+function exportBoard() {
+  const out = { name: (board.name || "Irons Pub Bingo").trim() };
+  const id = (board.id || "").trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
+  if (id) out.id = id;
+  if (board.version > 0) out.version = Math.round(board.version);
+  if (board.start) out.start = board.start;
+  if (board.end) out.end = board.end;
+  if (board.linePoints > 0) out.linePoints = Math.round(board.linePoints);
+  if (board.blackoutPoints > 0) out.blackoutPoints = Math.round(board.blackoutPoints);
+  out.size = board.size;
+  const tiles = board.tiles.map(t => {
+    const out = { label: (t.label || "").trim() };
+    if (t.description && t.description.trim()) out.description = t.description.trim();
+    const ic = (t.icon || "").trim();
+    if (ic) out.icon = /^\d+$/.test(ic) ? parseInt(ic, 10) : ic;
+    if (t.points > 0) out.points = Math.round(t.points);
+    if (t.mode === "ANY" && (t.goals || []).length > 1) out.mode = "ANY";
+    const goals = (t.goals || []).map(g => {
+      const o = { type: g.type };
+      if (g.name && g.name.trim()) o.name = g.name.trim();
+      if (g.type === "DROP") {
+        o.items = cleanList(g.items);
+        const src = cleanList(g.sources); if (src.length) o.sources = src;
+        if (g.distinct) o.distinct = true;
+      }
+      if (g.type === "RAID_PURPLE" && g.raids.length < 3) o.raids = g.raids.slice();
+      if (g.type === "KC" || g.type === "KILL") o.npcs = cleanList(g.npcs);
+      if (g.type === "PET") { const p = cleanList(g.pets); if (p.length) o.pets = p; }
+      if (g.type === "XP") { o.skill = g.skill; o.amount = Math.round(g.amount); }
+      if (g.type === "VALUE") { o.amount = Math.round(g.amount); const src = cleanList(g.sources); if (src.length) o.sources = src; }
+      if (g.type === "CHAT") o.pattern = g.pattern;
+      if (g.type === "LAP") o.course = g.course;
+      if (g.type !== "MANUAL" && g.type !== "XP" && g.count && g.count !== 1) o.count = Math.round(g.count);
+      return o;
+    });
+    if (goals.length) out.goals = goals;
+    return out;
+  });
+  out.tiles = tiles;
+  // One line on purpose: multi-line JSON pasted into Google Sheets gets its quotes
+  // stripped by the CSV interpreter, corrupting the board code. A single line pastes
+  // intact everywhere (Sheets' Board code tab, Discord, the plugin's import box).
+  return JSON.stringify(out);
+}
+function importBoard(json) {
+  const b = JSON.parse(json);
+  if (!b || !b.size || !Array.isArray(b.tiles)) throw new Error("Missing size or tiles.");
+  const size = Math.max(1, Math.min(10, b.size | 0));
+  board = { name: b.name || "",
+    id: b.id == null ? "" : String(b.id),
+    version: b.version > 0 ? Math.round(b.version) : 1,
+    start: b.start ? fromLocalInput(toLocalInput(b.start)) || String(b.start) : "",
+    end: b.end ? fromLocalInput(toLocalInput(b.end)) || String(b.end) : "",
+    linePoints: b.linePoints > 0 ? Math.round(b.linePoints) : 0,
+    blackoutPoints: b.blackoutPoints > 0 ? Math.round(b.blackoutPoints) : 0,
+    size, tiles: b.tiles.map(t => {
+    const tile = emptyTile();
+    tile.label = t.label || "";
+    tile.description = t.description || "";
+    tile.icon = t.icon == null ? "" : String(t.icon);
+    tile.points = t.points > 0 ? Math.round(t.points) : 0;
+    tile.mode = (t.mode || "ALL").toUpperCase() === "ANY" ? "ANY" : "ALL";
+    tile.goals = (t.goals || []).map(g => {
+      const type = String(g.type || "DROP").toUpperCase();
+      const goal = defaultGoal(GOAL_TYPES.some(x => x[0] === type) ? type : "DROP");
+      if (g.name) goal.name = String(g.name);
+      ["items", "sources", "npcs", "pets", "raids"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].slice(); });
+      if (g.count) goal.count = g.count;
+      if (g.distinct) goal.distinct = true;
+      if (g.skill) goal.skill = String(g.skill).toUpperCase();
+      if (g.course) goal.course = String(g.course).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+      if (g.amount) goal.amount = g.amount;
+      if (g.pattern) goal.pattern = g.pattern;
+      return goal;
+    });
+    return tile;
+  })};
+  resizeTiles();
+  selected = -1;
+}
+
+// ---------- draft persistence (best effort) ----------
+function saveDraft() { try { localStorage.setItem("bingo-forge-draft", JSON.stringify(board)); } catch (e) {} }
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem("bingo-forge-draft");
+    if (raw) { importBoard(raw); return true; }
+  } catch (e) {}
+  return false;
+}
+
+// ---------- rendering ----------
+const $ = id => document.getElementById(id);
+
+function renderTopbar() {
+  $("boardName").value = board.name;
+  $("boardId").value = board.id || "";
+  $("boardVersion").value = board.version || 1;
+  $("startTime").value = toLocalInput(board.start);
+  $("endTime").value = toLocalInput(board.end);
+  $("linePoints").value = board.linePoints || 0;
+  $("blackoutPoints").value = board.blackoutPoints || 0;
+  const sel = $("boardSize");
+  sel.innerHTML = "";
+  for (let s = 1; s <= 10; s++) {
+    const o = document.createElement("option");
+    o.value = s; o.textContent = s + " x " + s;
+    if (s === board.size) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+function renderGrid() {
+  const tilePoints = board.tiles.reduce((sum, t) => sum + (t.points > 0 ? Math.round(t.points) : 0), 0);
+  const maxLines = 2 * board.size + 2;
+  const totalPoints = tilePoints + (board.linePoints > 0 ? board.linePoints * maxLines : 0)
+    + (board.blackoutPoints > 0 ? Math.round(board.blackoutPoints) : 0);
+  $("boardHeader").textContent = totalPoints > 0 ? "Board — " + totalPoints + " pts total" : "Board";
+  $("reorderHint").style.display = (board.id || "").trim() ? "" : "none";
+  const grid = $("grid");
+  grid.style.gridTemplateColumns = "repeat(" + board.size + ", 1fr)";
+  grid.innerHTML = "";
+  board.tiles.forEach((t, i) => {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "cell" + (i === selected ? " selected" : "") + (t.label ? "" : " empty")
+      + (validateTile(t).length && (t.label || t.goals.length) ? " invalid" : "");
+    const n = document.createElement("span");
+    n.className = "n"; n.textContent = i + 1;
+    cell.appendChild(n);
+    cell.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+    cell.addEventListener("click", () => { selected = i; renderGrid(); renderEditor(); });
+    cell.draggable = true;
+    cell.title = "Drag onto another tile to swap positions";
+    cell.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", String(i)));
+    cell.addEventListener("dragover", e => e.preventDefault());
+    cell.addEventListener("drop", e => {
+      e.preventDefault();
+      const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
+      if (isNaN(from) || from === i) return;
+      const tmp = board.tiles[from];
+      board.tiles[from] = board.tiles[i];
+      board.tiles[i] = tmp;
+      selected = i;
+      saveDraft(); renderGrid(); renderEditor();
+    });
+    grid.appendChild(cell);
+  });
+}
+function shorten(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+function field(labelText, node, hint) {
+  const wrap = document.createElement("div");
+  const l = document.createElement("label");
+  l.textContent = labelText;
+  wrap.appendChild(l);
+  wrap.appendChild(node);
+  if (hint) {
+    const h = document.createElement("div");
+    h.className = "fieldhint"; h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+function textInput(value, onInput, placeholder) {
+  const i = document.createElement("input");
+  i.type = "text"; i.value = value || ""; i.placeholder = placeholder || "";
+  i.addEventListener("input", () => { onInput(i.value); saveDraft(); renderGrid(); });
+  return i;
+}
+function numberInput(value, onInput, min) {
+  const i = document.createElement("input");
+  i.type = "number"; i.value = value; i.min = min == null ? 1 : min;
+  i.style.width = "110px";
+  i.addEventListener("input", () => { onInput(parseInt(i.value, 10) || 0); saveDraft(); renderGrid(); });
+  return i;
+}
+function listInput(arr, setArr, placeholder) {
+  return textInput((arr || []).join(", "), v => setArr(v.split(",").map(s => s.trim()).filter(Boolean)), placeholder);
+}
+
+function renderEditor() {
+  const editor = $("editor");
+  editor.innerHTML = "";
+  if (selected < 0 || selected >= board.tiles.length) {
+    $("editorTitle").textContent = "Tile";
+    const p = document.createElement("p");
+    p.className = "hint"; p.textContent = "Select a tile on the board.";
+    editor.appendChild(p);
+    return;
+  }
+  const tile = board.tiles[selected];
+  $("editorTitle").textContent = "Tile " + (selected + 1);
+
+  // Copy/paste between tiles
+  const toolRow = document.createElement("div");
+  toolRow.className = "row";
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "Copy tile";
+  copyBtn.title = "Copy this tile, then paste it onto another tile";
+  copyBtn.addEventListener("click", () => {
+    tileClipboard = JSON.parse(JSON.stringify(tile));
+    renderEditor();
+  });
+  const pasteBtn = document.createElement("button");
+  pasteBtn.textContent = tileClipboard ? "Paste: " + shorten(tileClipboard.label || "empty tile", 18) : "Paste tile";
+  pasteBtn.disabled = !tileClipboard;
+  pasteBtn.title = tileClipboard ? "Replace this tile with the copied one" : "Copy a tile first";
+  pasteBtn.addEventListener("click", () => {
+    if (!tileClipboard) return;
+    board.tiles[selected] = JSON.parse(JSON.stringify(tileClipboard));
+    saveDraft(); renderEditor(); renderGrid();
+  });
+  toolRow.appendChild(copyBtn);
+  toolRow.appendChild(pasteBtn);
+  editor.appendChild(toolRow);
+
+  editor.appendChild(field("Label (shown on the board)",
+    textInput(tile.label, v => tile.label = v, "5x Ancient Pages from Mith Drags")));
+  editor.appendChild(field("Rules text (optional)",
+    textInput(tile.description, v => tile.description = v, "Screenshot with team code required")));
+  const iconRow = document.createElement("div");
+  iconRow.className = "row";
+  const iconField = field("Icon (optional)",
+    textInput(tile.icon, v => tile.icon = v, "Twisted bow  |  20997"),
+    "Exact item name, or numeric item ID (needed for untradeables). Find IDs by adding ?action=raw to a wiki page URL and reading id = ... in the Infobox Item block.");
+  iconField.style.flex = "2";
+  const pointsField = field("Points", numberInput(tile.points, v => tile.points = v, 0),
+    "0 = no points");
+  iconRow.appendChild(iconField);
+  iconRow.appendChild(pointsField);
+  editor.appendChild(iconRow);
+
+  if (tile.goals.length > 1) {
+    const sel = document.createElement("select");
+    [["ALL", "Complete ALL goals"], ["ANY", "Complete ANY goal (X or Y)"]].forEach(([v, t]) => {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = t; if (tile.mode === v) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => { tile.mode = sel.value; saveDraft(); });
+    editor.appendChild(field("Mode", sel));
+  }
+
+  tile.goals.forEach((goal, gi) => editor.appendChild(renderGoal(tile, goal, gi)));
+
+  const addRow = document.createElement("div");
+  addRow.className = "row";
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+ Add goal";
+  addBtn.addEventListener("click", () => { tile.goals.push(defaultGoal("DROP")); saveDraft(); renderEditor(); renderGrid(); });
+  addRow.appendChild(addBtn);
+  editor.appendChild(addRow);
+
+  if (!tile.goals.length) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "No goals: this is a manual tile — players tick it off by hand.";
+    editor.appendChild(p);
+  }
+
+  const errs = validateTile(tile);
+  if (errs.length && (tile.label || tile.goals.length)) {
+    const ul = document.createElement("ul");
+    ul.className = "errors";
+    errs.forEach(e => { const li = document.createElement("li"); li.textContent = e; ul.appendChild(li); });
+    editor.appendChild(ul);
+  }
+}
+
+function renderGoal(tile, goal, gi) {
+  const box = document.createElement("div");
+  box.className = "goal";
+
+  const head = document.createElement("div");
+  head.className = "goalhead";
+  const typeSel = document.createElement("select");
+  GOAL_TYPES.forEach(([v, t]) => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = t; if (goal.type === v) o.selected = true;
+    typeSel.appendChild(o);
+  });
+  typeSel.addEventListener("change", () => {
+    tile.goals[gi] = defaultGoal(typeSel.value);
+    saveDraft(); renderEditor(); renderGrid();
+  });
+  const del = document.createElement("button");
+  del.textContent = "Remove"; del.className = "ghost";
+  del.addEventListener("click", () => { tile.goals.splice(gi, 1); saveDraft(); renderEditor(); renderGrid(); });
+  head.appendChild(typeSel);
+  head.appendChild(del);
+  box.appendChild(head);
+
+  box.appendChild(field("Progress bar label (optional)",
+    textInput(goal.name, v => goal.name = v, goal.type === "CHAT" ? "Sub-7 Corrupted Gauntlet" : "auto"),
+    "Shown on this goal's progress bar in-game. Leave empty to generate one from the settings below."));
+
+  const commaHint = "Comma-separated. * matches anything.";
+  if (goal.type === "DROP") {
+    box.appendChild(field("Items", listInput(goal.items, v => goal.items = v, "Zenyte shard, Venator shard"), commaHint));
+    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Mithril dragon"), "Leave empty for any monster/chest."));
+    const check = document.createElement("div");
+    check.className = "checkline";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.id = "distinct" + gi; cb.checked = !!goal.distinct;
+    cb.addEventListener("change", () => { goal.distinct = cb.checked; saveDraft(); });
+    const cl = document.createElement("label");
+    cl.htmlFor = cb.id; cl.textContent = "Distinct — each different item counts once";
+    check.appendChild(cb); check.appendChild(cl);
+    box.appendChild(check);
+  }
+  if (goal.type === "RAID_PURPLE") {
+    const raids = document.createElement("div");
+    raids.className = "row";
+    [["COX", "CoX"], ["TOB", "ToB"], ["TOA", "ToA"]].forEach(([v, t]) => {
+      const wrap = document.createElement("div");
+      wrap.className = "checkline";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.id = "raid" + gi + v; cb.checked = goal.raids.includes(v);
+      cb.addEventListener("change", () => {
+        goal.raids = goal.raids.filter(r => r !== v);
+        if (cb.checked) goal.raids.push(v);
+        saveDraft(); renderGrid();
+      });
+      const cl = document.createElement("label");
+      cl.htmlFor = cb.id; cl.textContent = t;
+      wrap.appendChild(cb); wrap.appendChild(cl);
+      raids.appendChild(wrap);
+    });
+    box.appendChild(field("Raids", raids));
+  }
+  if (goal.type === "KC") {
+    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), commaHint + " Matched against kill count chat messages - bosses, raids, Wintertodt etc. For regular monsters use NPC kills instead."));
+  }
+  if (goal.type === "KILL") {
+    box.appendChild(field("NPCs", listInput(goal.npcs, v => goal.npcs = v, "Man, Woman"), commaHint + " A kill counts for whoever the game awards the loot to (most damage, like ironman rules), so shared kills never count twice. NPCs that drop nothing at all can't be counted."));
+  }
+  if (goal.type === "PET") {
+    box.appendChild(field("Specific pets (optional)", listInput(goal.pets, v => goal.pets = v, "Pet snakeling"), "Leave empty for any pet. Specific pets need the collection log chat notification."));
+  }
+  if (goal.type === "XP") {
+    const sel = document.createElement("select");
+    SKILLS.forEach(s => {
+      const o = document.createElement("option");
+      o.value = s; o.textContent = s.charAt(0) + s.slice(1).toLowerCase();
+      if (goal.skill === s) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => { goal.skill = sel.value; saveDraft(); });
+    const row = document.createElement("div");
+    row.className = "row";
+    row.appendChild(field("Skill", sel));
+    row.appendChild(field("XP to gain", numberInput(goal.amount, v => goal.amount = v)));
+    box.appendChild(row);
+  }
+  if (goal.type === "VALUE") {
+    box.appendChild(field("Minimum value of a single loot pile (gp)", numberInput(goal.amount, v => goal.amount = v)));
+    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Revenant*"), "Leave empty for any source."));
+  }
+  if (goal.type === "LAP") {
+    const sel = document.createElement("select");
+    COURSES.forEach(c => {
+      const o = document.createElement("option");
+      o.value = c;
+      o.textContent = c.toLowerCase().split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      if (goal.course === c) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => { goal.course = sel.value; saveDraft(); renderGrid(); });
+    box.appendChild(field("Agility course", sel, "A lap counts when it completes at the course's end, like RuneLite's lap counter."));
+  }
+  if (goal.type === "CHAT") {
+    box.appendChild(field("Game message pattern (regex)",
+      textInput(goal.pattern, v => goal.pattern = v, "Corrupted challenge duration: [0-6]:[0-5][0-9]"),
+      "Counts once per matching game message."));
+  }
+  if (goal.type === "MANUAL") {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.style.margin = "0";
+    p.textContent = "Not auto-tracked. Players tick the tile off by hand.";
+    box.appendChild(p);
+  }
+  if (goal.type !== "MANUAL" && goal.type !== "XP") {
+    box.appendChild(field("Count (how many times)", numberInput(goal.count, v => goal.count = v)));
+  }
+  return box;
+}
+
+// ---------- dialogs ----------
+let dialogMode = "export";
+function setDialogNotes(text, color) {
+  const notes = $("dialogNotes");
+  notes.style.display = text ? "" : "none";
+  notes.style.color = color || "var(--muted)";
+  notes.textContent = text || "";
+}
+
+function openDialog(mode) {
+  dialogMode = mode;
+  $("copyNote").textContent = "";
+  setDialogNotes("");
+  if (mode === "export") {
+    const problems = [];
+    if (board.start && board.end && board.end <= board.start) {
+      problems.push("The event end must be after the start.");
+    }
+    board.tiles.forEach((t, i) => validateTile(t).forEach(e => problems.push("Tile " + (i + 1) + ": " + e)));
+    if (problems.length) {
+      $("dialogTitle").textContent = "Fix these before exporting";
+      setDialogNotes("The plugin would refuse this board code:", "var(--red)");
+      $("dialogText").value = "- " + problems.join("\n- ");
+      $("btnDialogApply").style.display = "none";
+      $("btnDialogCopy").style.display = "none";
+      $("ioDialog").showModal();
+      return;
+    }
+    // Non-blocking sanity notes - common authoring slips worth a second look.
+    const warnings = [];
+    const seenLabels = {};
+    board.tiles.forEach((t, i) => {
+      const key = (t.label || "").trim().toLowerCase();
+      if (key) {
+        if (seenLabels[key] != null) warnings.push("tiles " + (seenLabels[key] + 1) + " and " + (i + 1) + " share the label \"" + t.label.trim() + "\"");
+        else seenLabels[key] = i;
+      }
+    });
+    const noIcon = board.tiles.filter(t => !(t.icon || "").trim()).length;
+    if (noIcon > 0) warnings.push(noIcon + (noIcon === 1 ? " tile has" : " tiles have") + " no icon");
+    const manualCount = board.tiles.filter(t => !t.goals.length).length;
+    if (manualCount > 0) warnings.push(manualCount + (manualCount === 1 ? " tile is" : " tiles are") + " manual");
+    const tilePts = board.tiles.map(t => t.points > 0 ? Math.round(t.points) : 0);
+    if (tilePts.some(p => p > 0) && tilePts.some(p => p === 0)) {
+      warnings.push(tilePts.filter(p => p === 0).length + " tile(s) award 0 points while the rest have point values");
+    }
+    if (warnings.length) {
+      setDialogNotes("Worth a second look: " + warnings.join(" · "), "var(--gold)");
+    }
+    $("dialogTitle").textContent = "Board code — share this with participants";
+    $("dialogText").value = exportBoard();
+    $("btnDialogApply").style.display = "none";
+    $("btnDialogCopy").style.display = "";
+  } else {
+    $("dialogTitle").textContent = "Paste a board code to edit it";
+    $("dialogText").value = "";
+    $("btnDialogApply").style.display = "";
+    $("btnDialogCopy").style.display = "";
+  }
+  $("ioDialog").showModal();
+}
+
+// ---------- wiring ----------
+$("boardName").addEventListener("input", e => { board.name = e.target.value; saveDraft(); });
+$("boardId").addEventListener("input", e => { board.id = e.target.value; saveDraft(); });
+$("boardVersion").addEventListener("input", e => { board.version = parseInt(e.target.value, 10) || 1; saveDraft(); });
+$("startTime").addEventListener("input", e => { board.start = fromLocalInput(e.target.value); saveDraft(); });
+$("endTime").addEventListener("input", e => { board.end = fromLocalInput(e.target.value); saveDraft(); });
+$("linePoints").addEventListener("input", e => { board.linePoints = parseInt(e.target.value, 10) || 0; saveDraft(); renderGrid(); });
+$("blackoutPoints").addEventListener("input", e => { board.blackoutPoints = parseInt(e.target.value, 10) || 0; saveDraft(); renderGrid(); });
+$("boardSize").addEventListener("change", e => {
+  board.size = parseInt(e.target.value, 10);
+  resizeTiles(); saveDraft(); renderGrid(); renderEditor();
+});
+// Two-step confirmation on the button itself: native confirm() is silently blocked when
+// this page runs sandboxed (e.g. as a hosted artifact), so no native modals anywhere.
+let newArmedTimer = null;
+$("btnNew").addEventListener("click", () => {
+  const btn = $("btnNew");
+  if (newArmedTimer) {
+    clearTimeout(newArmedTimer);
+    newArmedTimer = null;
+    btn.textContent = "New";
+    board = freshBoard();
+    resizeTiles(); selected = -1; tileClipboard = null;
+    saveDraft(); renderTopbar(); renderGrid(); renderEditor();
+    return;
+  }
+  btn.textContent = "Replace draft?";
+  newArmedTimer = setTimeout(() => { btn.textContent = "New"; newArmedTimer = null; }, 3000);
+});
+$("btnImport").addEventListener("click", () => openDialog("import"));
+$("btnExport").addEventListener("click", () => openDialog("export"));
+$("btnDialogClose").addEventListener("click", () => $("ioDialog").close());
+$("btnDialogCopy").addEventListener("click", () => {
+  const ta = $("dialogText");
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  if (!ok && navigator.clipboard) {
+    navigator.clipboard.writeText(ta.value).then(
+      () => { $("copyNote").textContent = "Copied."; },
+      () => { $("copyNote").textContent = "Select the text and copy manually."; });
+    return;
+  }
+  $("copyNote").textContent = ok ? "Copied." : "Select the text and copy manually.";
+});
+$("btnDialogApply").addEventListener("click", () => {
+  try {
+    importBoard($("dialogText").value);
+    saveDraft();
+    $("ioDialog").close();
+    renderTopbar(); renderGrid(); renderEditor();
+  } catch (e) {
+    setDialogNotes("Could not read that board code: " + e.message, "var(--red)");
+  }
+});
+
+if (!loadDraft()) resizeTiles();
+renderTopbar(); renderGrid(); renderEditor();
+</script>

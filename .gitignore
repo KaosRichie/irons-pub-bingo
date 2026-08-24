@@ -1,0 +1,29 @@
+.gradle
+build
+alt-home/
+.idea/
+.project
+.settings/
+.classpath
+nbactions.xml
+nb-configuration.xml
+nbproject/
+# Local-only, never in the public mirror:
+# machine-specific Gradle JDK path (breaks any other machine, incl. hub CI)
+gradle.properties
+# Perforce working config
+.p4config
+.p4ignore
+# agent workflow notes
+CLAUDE.md
+AGENTS.md
+# dev tooling and local helpers - not needed to build or run the plugin
+src/test/
+store-tests/
+test-store.cmd
+run.cmd
+run-alt.cmd
+# docs kept to the essentials: board builder + store script + one example board
+docs/clan-logo-bingo-full.png
+docs/progression-board-8x8.json
+docs/test-board.json
