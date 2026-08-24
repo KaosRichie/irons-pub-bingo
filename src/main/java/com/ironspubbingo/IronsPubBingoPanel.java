@@ -370,8 +370,14 @@ class IronsPubBingoPanel extends PluginPanel
 	{
 		JTextArea text = new JTextArea(
 			"GETTING STARTED\n"
-				+ "- Setup -> Import board, then paste the board code from your host -\n"
-				+ "  or hit Import from store if your event uses a team store.\n"
+				+ "- No team store? Setup -> Import board, paste the code from your\n"
+				+ "  host, and put the team code in the settings.\n"
+				+ "- Team store event, in order:\n"
+				+ "  1. Settings: turn on Use team store, paste the store URL.\n"
+				+ "  2. Setup -> Choose team, and pick your team from the list.\n"
+				+ "  3. Setup -> Import board -> Import from store.\n"
+				+ "- The Store line in the Team section tells you which step is still\n"
+				+ "  missing while you set up.\n"
 				+ "- Tiles turn amber on progress and green when complete.\n"
 				+ "- Click a tile for its goals, who contributed, and its actions\n"
 				+ "  (manual tick, credit request, reset).\n"
@@ -791,12 +797,18 @@ class IronsPubBingoPanel extends PluginPanel
 		{
 			return "Store: syncing...";
 		}
+		// A next step to take beats a bare "waiting" or "error".
+		String hint = plugin.storeSetupHint();
+		if (hint != null)
+		{
+			return "Store: " + hint;
+		}
 		if (plugin.storeHasError())
 		{
-			return "Store: error";
+			return "Store: " + plugin.storeErrorShort();
 		}
 		String syncedAt = plugin.storeSyncedAtText();
-		return syncedAt == null ? "Store: waiting" : "Store: synced " + syncedAt;
+		return syncedAt == null ? "Store: waiting for first sync" : "Store: synced " + syncedAt;
 	}
 
 	/** Fetches the host-defined team list from the store and lets the player pick one. */

@@ -23,7 +23,6 @@ store-tests/
 test-store.cmd
 run.cmd
 run-alt.cmd
-# docs kept to the essentials: board builder + store script + one example board
+# docs kept to the essentials: builder, store script, example + test boards
 docs/clan-logo-bingo-full.png
 docs/progression-board-8x8.json
-docs/test-board.json

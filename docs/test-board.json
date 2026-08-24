@@ -1,0 +1,66 @@
+{
+  "name": "F2P Test Board",
+  "id": "f2p-test",
+  "version": 1,
+  "size": 3,
+  "tiles": [
+    {
+      "label": "Chicken kill: 2 different drops",
+      "description": "Kill a chicken and pick nothing up - bones, feather and raw chicken arrive as one drop",
+      "icon": "Feather",
+      "goals": [{"type": "DROP", "distinct": true, "count": 2, "items": ["Bones", "Feather", "Raw chicken"], "sources": ["Chicken"]}]
+    },
+    {
+      "label": "5x Bones",
+      "description": "Any monster that drops normal bones",
+      "icon": "Bones",
+      "goals": [{"type": "DROP", "items": ["Bones"], "count": 5}]
+    },
+    {
+      "label": "25 Coins from drops",
+      "description": "Goblins and men drop coin stacks - tests quantity counting",
+      "icon": 995,
+      "goals": [{"type": "DROP", "items": ["Coins"], "count": 25}]
+    },
+    {
+      "label": "Drop worth 50+ gp",
+      "description": "A cowhide drop covers it",
+      "icon": "Cowhide",
+      "goals": [{"type": "VALUE", "amount": 50, "count": 1}]
+    },
+    {
+      "label": "Gain 100 Woodcutting XP",
+      "description": "Four normal logs",
+      "icon": "Logs",
+      "goals": [{"type": "XP", "skill": "WOODCUTTING", "amount": 100}]
+    },
+    {
+      "label": "Bury 3 bones",
+      "description": "Tests chat message goals",
+      "icon": "Big bones",
+      "goals": [{"type": "CHAT", "pattern": "You bury the bones", "count": 3}]
+    },
+    {
+      "label": "Cowhide or 2x Raw chicken",
+      "description": "Tests ANY-mode tiles - cows and chickens share the Lumbridge farm",
+      "icon": "Cowhide",
+      "mode": "ANY",
+      "goals": [
+        {"type": "DROP", "items": ["Cowhide"], "count": 1},
+        {"type": "DROP", "items": ["Raw chicken"], "count": 2}
+      ]
+    },
+    {
+      "label": "Kill Brutus",
+      "description": "One Brutus kill - counted from the kill count chat message",
+      "icon": "Rune scimitar",
+      "goals": [{"type": "KC", "npcs": ["Brutus*"], "count": 1}]
+    },
+    {
+      "label": "Manual tick test",
+      "description": "Tick this off by hand - also tests the Discord screenshot post",
+      "icon": "Spade",
+      "goals": [{"type": "MANUAL"}]
+    }
+  ]
+}

@@ -1551,6 +1551,50 @@ public class IronsPubBingoPlugin extends Plugin
 		refreshPanel();
 	}
 
+	/**
+	 * What the player still has to do before the store can sync, as a short imperative
+	 * ("import a board"), or null when nothing is missing. The store panel shows this
+	 * instead of a bare "waiting" or "error", which say nothing about the next step.
+	 */
+	String storeSetupHint()
+	{
+		if (!teamStore.isConfigured() || storePaused)
+		{
+			return null;
+		}
+		if (board == null)
+		{
+			return "import a board";
+		}
+		String code = normalizedTeamCode();
+		// The host's team list arrives with every reply, including a rejection, so an
+		// unlisted or missing code is known as soon as one sync has been attempted.
+		if (!storeTeamNames.isEmpty() && (code == null || !storeTeamNames.containsKey(code)))
+		{
+			return "choose a team";
+		}
+		return null;
+	}
+
+	/**
+	 * The store error trimmed to something that fits on the button. Server rejections are
+	 * whole sentences; the first clause carries the meaning.
+	 */
+	String storeErrorShort()
+	{
+		if (storeError == null)
+		{
+			return "";
+		}
+		String text = storeError;
+		int cut = text.indexOf(" - ");
+		if (cut > 0)
+		{
+			text = text.substring(0, cut);
+		}
+		return text.length() > 34 ? text.substring(0, 31) + "..." : text;
+	}
+
 	String storeStatusText()
 	{
 		if (!teamStore.isConfigured())
@@ -1564,6 +1608,11 @@ public class IronsPubBingoPlugin extends Plugin
 		if (storeRequestsInFlight > 0)
 		{
 			return "Store: syncing...";
+		}
+		String hint = storeSetupHint();
+		if (hint != null)
+		{
+			return "Store: " + hint;
 		}
 		if (storeError == null)
 		{

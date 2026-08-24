@@ -102,7 +102,9 @@ Marks of grace are a `DROP` goal with the course as the source. They're read fro
 inventory, so they're cheatable — run those tiles on trust, or ask for before/after
 screenshots.
 
-A full example: [docs/example-board.json](docs/example-board.json).
+A full example: [docs/example-board.json](docs/example-board.json). To try the plugin
+without running an event, import [docs/test-board.json](docs/test-board.json) - a 3x3
+F2P board whose tiles you can finish around Lumbridge in a few minutes.
 
 ### Fairness
 
