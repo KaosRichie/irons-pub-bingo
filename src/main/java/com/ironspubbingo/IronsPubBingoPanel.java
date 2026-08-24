@@ -402,7 +402,7 @@ class IronsPubBingoPanel extends PluginPanel
 				+ "- Credit requests count only after an admin approves them.\n"
 				+ "\n"
 				+ "HOSTS\n"
-				+ "- Bingo Forge, the board builder, runs in your browser:\n"
+				+ "- Iron's Pub Bingo Forge, the board builder, runs in your browser:\n"
 				+ "  https://r1chiexd.github.io/irons-pub-bingo/board-builder.html\n"
 				+ "- The full README - board format, every goal type and the team store\n"
 				+ "  sheet - is at github.com/R1chieXD/irons-pub-bingo");
