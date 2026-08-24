@@ -193,21 +193,6 @@ class BingoTileDetail extends JPanel
 			bar.setCenterLabel(ticked && tracked < target
 				? "Ticked  (" + formatCount(tracked) + " / " + formatCount(target) + ")"
 				: formatCount(value) + " / " + formatCount(target));
-			// Mark where each member's contribution ends, so the team bar reads as segments.
-			if (teamView)
-			{
-				List<Integer> positions = new ArrayList<>();
-				long running = 0;
-				for (Map.Entry<String, TileProgress> entry : members.entrySet())
-				{
-					running += goal.progressOf(entry.getValue().goal(g, tile.goals.size()));
-					if (running > 0 && running < target)
-					{
-						positions.add((int) running);
-					}
-				}
-				bar.setPositions(positions);
-			}
 			if (goal.hasExtraDetail())
 			{
 				bar.setToolTipText(goal.describe());
