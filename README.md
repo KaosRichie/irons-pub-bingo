@@ -27,7 +27,8 @@ Notes:
 
 ## Hosts
 
-1. **Build the board** with [docs/board-builder.html](docs/board-builder.html). Set an
+1. **Build the board** with [Bingo Forge](https://r1chiexd.github.io/irons-pub-bingo/board-builder.html)
+   (source: [docs/board-builder.html](docs/board-builder.html)). Set an
    `id`, `version`, the event `start`/`end` and points, then export the code.
 2. **Set up the team store** (~10 minutes, once per event — recommended so progress syncs
    even when players are never online together): blank Google Sheet → Extensions → Apps
