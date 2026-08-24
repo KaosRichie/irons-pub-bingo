@@ -1603,11 +1603,11 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if (storePaused)
 		{
-			return "Store: paused";
+			return "Store: Paused";
 		}
 		if (storeRequestsInFlight > 0)
 		{
-			return "Store: syncing...";
+			return "Store: Syncing...";
 		}
 		String hint = storeSetupHint();
 		if (hint != null)
@@ -1616,7 +1616,7 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if (storeError == null)
 		{
-			return storeSyncedAt == null ? "Store: waiting for first sync" : "Store: synced " + storeSyncedAt;
+			return storeSyncedAt == null ? "Store: Waiting for first sync" : "Store: Synced " + storeSyncedAt;
 		}
 		// A failed attempt doesn't lose anything - the next sync sends everything again -
 		// so keep the last success visible instead of only showing the error.

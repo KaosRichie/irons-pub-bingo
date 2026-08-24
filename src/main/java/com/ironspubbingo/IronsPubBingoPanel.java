@@ -84,7 +84,7 @@ class IronsPubBingoPanel extends PluginPanel
 	private int selectedTile = -1;
 	/** A Choose-team fetch is running; refresh() must not fight its button state. */
 	private boolean fetchingTeams;
-	/** Animates the "Store: syncing..." dots. */
+	/** Animates the "Store: Syncing..." dots. */
 	private int syncPulse;
 	private int syncCooldown;
 	private final Timer cooldownTimer;
@@ -246,7 +246,7 @@ class IronsPubBingoPanel extends PluginPanel
 				{
 					dots.append('.');
 				}
-				storePauseButton.setText("<html>" + DOT_ORANGE + "Store: syncing" + dots + "</html>");
+				storePauseButton.setText("<html>" + DOT_ORANGE + "Store: Syncing" + dots + "</html>");
 			}
 		});
 		countdownTimer.start();
@@ -370,13 +370,13 @@ class IronsPubBingoPanel extends PluginPanel
 	{
 		JTextArea text = new JTextArea(
 			"GETTING STARTED\n"
-				+ "- No team store? Setup -> Import board, paste the code from your\n"
-				+ "  host, and put the team code in the settings.\n"
-				+ "- Team store event, in order:\n"
+				+ "- Without a team store: Setup -> Import board, paste the code from\n"
+				+ "  your host, and put the team code in the settings.\n"
+				+ "- With a team store, in order:\n"
 				+ "  1. Settings: turn on Use team store, paste the store URL.\n"
-				+ "  2. Setup -> Choose team, and pick your team from the list.\n"
-				+ "  3. Setup -> Import board -> Import from store.\n"
-				+ "- The Store line in the Team section tells you which step is still\n"
+				+ "  2. Setup -> Import board -> Import from store.\n"
+				+ "  3. Setup -> Choose team, and pick your team from the list.\n"
+				+ "- The Store line in the Team section names whichever step is still\n"
 				+ "  missing while you set up.\n"
 				+ "- Tiles turn amber on progress and green when complete.\n"
 				+ "- Click a tile for its goals, who contributed, and its actions\n"
@@ -754,9 +754,12 @@ class IronsPubBingoPanel extends PluginPanel
 
 		// Amber, not red, for a failed attempt that has succeeded before: nothing is
 		// lost, the next sync resends everything.
+		// Green means "syncing fine". A missing board or team is not an error, but it is
+		// not fine either - amber, matching the text the button shows.
 		String storeDot = !plugin.storeConfigured() ? DOT_GRAY
 			: plugin.storePaused() ? DOT_GRAY
 			: plugin.storeBusy() ? DOT_ORANGE
+			: plugin.storeSetupHint() != null ? DOT_ORANGE
 			: !plugin.storeHasError() ? (plugin.storeEverSynced() ? DOT_GREEN : DOT_ORANGE)
 			: plugin.storeEverSynced() ? DOT_ORANGE : DOT_RED;
 		storePauseButton.setText("<html>" + storeDot
@@ -787,15 +790,15 @@ class IronsPubBingoPanel extends PluginPanel
 	{
 		if (!plugin.storeConfigured())
 		{
-			return "Store: off";
+			return "Store: Off";
 		}
 		if (plugin.storePaused())
 		{
-			return "Store: paused";
+			return "Store: Paused";
 		}
 		if (plugin.storeBusy())
 		{
-			return "Store: syncing...";
+			return "Store: Syncing...";
 		}
 		// A next step to take beats a bare "waiting" or "error".
 		String hint = plugin.storeSetupHint();
@@ -808,7 +811,7 @@ class IronsPubBingoPanel extends PluginPanel
 			return "Store: " + plugin.storeErrorShort();
 		}
 		String syncedAt = plugin.storeSyncedAtText();
-		return syncedAt == null ? "Store: waiting for first sync" : "Store: synced " + syncedAt;
+		return syncedAt == null ? "Store: Waiting for first sync" : "Store: Synced " + syncedAt;
 	}
 
 	/** Fetches the host-defined team list from the store and lets the player pick one. */

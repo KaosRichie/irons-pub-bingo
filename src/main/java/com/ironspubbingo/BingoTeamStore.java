@@ -168,7 +168,7 @@ class BingoTeamStore
 		{
 			if (error != null || payload == null)
 			{
-				callback.accept(null, error != null ? error : "unexpected reply");
+				callback.accept(null, error != null ? error : "Unexpected reply");
 			}
 			else if (payload.error != null)
 			{
@@ -176,12 +176,12 @@ class BingoTeamStore
 			}
 			else if (payload.members == null)
 			{
-				callback.accept(null, "empty reply");
+				callback.accept(null, "Empty reply");
 			}
 			else if (!board.equals(payload.board))
 			{
 				log.debug("Store replied for board {} but we asked for {}", payload.board, board);
-				callback.accept(null, "wrong board in reply");
+				callback.accept(null, "Mismatched reply");
 			}
 			else
 			{
@@ -234,9 +234,9 @@ class BingoTeamStore
 		payload.fetchBoard = true;
 		post(payload, (reply, error) ->
 		{
-			String problem = error != null ? error : reply == null ? "unexpected reply"
+			String problem = error != null ? error : reply == null ? "Unexpected reply"
 				: reply.error != null ? reply.error
-				: reply.boardJson == null || reply.boardJson.isEmpty() ? "unexpected reply" : null;
+				: reply.boardJson == null || reply.boardJson.isEmpty() ? "Unexpected reply" : null;
 			callback.accept(problem == null ? reply.boardJson : null, problem);
 		});
 	}
@@ -250,7 +250,7 @@ class BingoTeamStore
 		{
 			if (error != null || reply == null)
 			{
-				callback.accept(null, error != null ? error : "unexpected reply");
+				callback.accept(null, error != null ? error : "Unexpected reply");
 			}
 			else
 			{
@@ -271,7 +271,7 @@ class BingoTeamStore
 		{
 			// Always answer: callers track in-flight state and would otherwise wait forever
 			// (e.g. the store was toggled off between their check and this call).
-			callback.accept(null, "store not configured");
+			callback.accept(null, "Store not configured");
 			return;
 		}
 		Request request = new Request.Builder()
@@ -284,7 +284,7 @@ class BingoTeamStore
 			public void onFailure(Call call, IOException e)
 			{
 				log.debug("Team store request failed", e);
-				callback.accept(null, "unreachable");
+				callback.accept(null, "Unreachable");
 			}
 
 			@Override
@@ -307,12 +307,12 @@ class BingoTeamStore
 					// Google answers with an HTML error page when the script throws
 					// (a lock timeout, a bad deployment), which never parses as JSON.
 					log.debug("Team store reply was not JSON: {}", body, e);
-					callback.accept(null, "error page - see the log");
+					callback.accept(null, "Error page - see the log");
 				}
 				catch (IOException e)
 				{
 					log.debug("Could not read team store reply", e);
-					callback.accept(null, "reply cut off");
+					callback.accept(null, "Reply cut off");
 				}
 			}
 		});
