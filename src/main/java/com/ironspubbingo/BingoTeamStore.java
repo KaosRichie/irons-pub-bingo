@@ -174,9 +174,14 @@ class BingoTeamStore
 			{
 				callback.accept(payload, payload.error);
 			}
-			else if (payload.members == null || !board.equals(payload.board))
+			else if (payload.members == null)
 			{
-				callback.accept(null, "unexpected reply");
+				callback.accept(null, "reply had no team data");
+			}
+			else if (!board.equals(payload.board))
+			{
+				log.debug("Store replied for board {} but we asked for {}", payload.board, board);
+				callback.accept(null, "reply for another board");
 			}
 			else
 			{
@@ -285,6 +290,7 @@ class BingoTeamStore
 			@Override
 			public void onResponse(Call call, Response response)
 			{
+				String body = null;
 				try (ResponseBody responseBody = response.body())
 				{
 					if (!response.isSuccessful() || responseBody == null)
@@ -293,12 +299,20 @@ class BingoTeamStore
 						callback.accept(null, "HTTP " + response.code());
 						return;
 					}
-					callback.accept(gson.fromJson(responseBody.string(), StorePayload.class), null);
+					body = responseBody.string();
+					callback.accept(gson.fromJson(body, StorePayload.class), null);
 				}
-				catch (IOException | JsonSyntaxException e)
+				catch (JsonSyntaxException e)
+				{
+					// Google answers with an HTML error page when the script throws
+					// (a lock timeout, a bad deployment), which never parses as JSON.
+					log.debug("Team store reply was not JSON: {}", body, e);
+					callback.accept(null, "store returned an error page");
+				}
+				catch (IOException e)
 				{
 					log.debug("Could not read team store reply", e);
-					callback.accept(null, "unexpected reply");
+					callback.accept(null, "reply could not be read");
 				}
 			}
 		});

@@ -106,7 +106,12 @@ var REFRESH_THROTTLE_MS = 60000;
 function doPost(e)
 {
 	var lock = LockService.getScriptLock();
-	lock.waitLock(20000);
+	if (!lock.tryLock(25000))
+	{
+		// Another client is mid-write. Answering in JSON keeps the plugin's status
+		// readable; the next sync (or poll) picks the data up anyway.
+		return jsonError('store busy - it will retry on the next sync');
+	}
 	try
 	{
 		var body = JSON.parse(e.postData.contents);
@@ -250,10 +255,23 @@ function doPost(e)
 		maybeRefreshViews(board, false);
 		return response;
 	}
+	catch (err)
+	{
+		// A thrown error would otherwise become an HTML error page, which clients
+		// cannot parse - answer in JSON so the reason reaches the player.
+		console.error('doPost failed: ' + err);
+		return jsonError('store error: ' + err);
+	}
 	finally
 	{
 		lock.releaseLock();
 	}
+}
+
+function jsonError(message)
+{
+	return ContentService.createTextOutput(JSON.stringify({ error: message }))
+		.setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet(e)
