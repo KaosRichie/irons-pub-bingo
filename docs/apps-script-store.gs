@@ -110,7 +110,7 @@ function doPost(e)
 	{
 		// Another client is mid-write. Answering in JSON keeps the plugin's status
 		// readable; the next sync (or poll) picks the data up anyway.
-		return jsonError('store busy - it will retry on the next sync');
+		return jsonError('Busy - another client is writing; it retries on the next sync');
 	}
 	try
 	{
@@ -145,8 +145,8 @@ function doPost(e)
 		if (teams.length && !hasTeam(teams, teamOf(board)))
 		{
 			var reason = teamOf(board) === 'solo'
-				? 'This store requires a team code - use Choose team or ask your host'
-				: 'Unknown team code - use Choose team or ask your host for the right one';
+				? 'No team code - use Choose team or ask your host'
+				: 'Unknown team code - use Choose team or ask your host';
 			return ContentService.createTextOutput(JSON.stringify(
 				{ board: board, error: reason, teams: teams }))
 				.setMimeType(ContentService.MimeType.JSON);
@@ -161,8 +161,8 @@ function doPost(e)
 		if (canonicalHash && body.boardHash && String(body.boardHash) !== canonicalHash)
 		{
 			return ContentService.createTextOutput(JSON.stringify({ board: board,
-				error: 'Your board differs from the host\'s official board - use '
-					+ 'Import board -> Import from store to get it.' }))
+				error: 'Board differs from the host - use Import board, then '
+					+ 'Import from store' }))
 				.setMimeType(ContentService.MimeType.JSON);
 		}
 		var boardVerified = !canonicalHash || String(body.boardHash || '') === canonicalHash;
@@ -260,7 +260,7 @@ function doPost(e)
 		// A thrown error would otherwise become an HTML error page, which clients
 		// cannot parse - answer in JSON so the reason reaches the player.
 		console.error('doPost failed: ' + err);
-		return jsonError('store error: ' + err);
+		return jsonError('Script error - see the executions log on the sheet');
 	}
 	finally
 	{
