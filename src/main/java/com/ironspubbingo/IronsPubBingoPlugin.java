@@ -1552,9 +1552,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * What the player still has to do before the store can sync, as a short imperative
-	 * ("import a board"), or null when nothing is missing. The store panel shows this
-	 * instead of a bare "waiting" or "error", which say nothing about the next step.
+	 * What is still missing before the store can sync ("No board imported"), or null when
+	 * nothing is. The store panel shows this instead of a bare "waiting" or "error",
+	 * which say nothing about why the store is idle.
 	 */
 	String storeSetupHint()
 	{
@@ -1564,14 +1564,14 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if (board == null)
 		{
-			return "import a board";
+			return "No board imported";
 		}
 		String code = normalizedTeamCode();
 		// The host's team list arrives with every reply, including a rejection, so an
 		// unlisted or missing code is known as soon as one sync has been attempted.
 		if (!storeTeamNames.isEmpty() && (code == null || !storeTeamNames.containsKey(code)))
 		{
-			return "choose a team";
+			return "No team";
 		}
 		return null;
 	}
