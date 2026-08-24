@@ -41,12 +41,12 @@
       "goals": [{"type": "CHAT", "pattern": "You bury the bones", "count": 3}]
     },
     {
-      "label": "Cowhide or 2x Raw chicken",
+      "label": "Raw beef or 2x Raw chicken",
       "description": "Tests ANY-mode tiles - cows and chickens share the Lumbridge farm",
-      "icon": "Cowhide",
+      "icon": "Raw beef",
       "mode": "ANY",
       "goals": [
-        {"type": "DROP", "items": ["Cowhide"], "count": 1},
+        {"type": "DROP", "items": ["Raw beef"], "count": 1},
         {"type": "DROP", "items": ["Raw chicken"], "count": 2}
       ]
     },
