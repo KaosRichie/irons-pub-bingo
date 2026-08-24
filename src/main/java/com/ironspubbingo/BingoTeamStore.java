@@ -176,12 +176,12 @@ class BingoTeamStore
 			}
 			else if (payload.members == null)
 			{
-				callback.accept(null, "reply had no team data");
+				callback.accept(null, "empty reply");
 			}
 			else if (!board.equals(payload.board))
 			{
 				log.debug("Store replied for board {} but we asked for {}", payload.board, board);
-				callback.accept(null, "reply for another board");
+				callback.accept(null, "wrong board in reply");
 			}
 			else
 			{
@@ -307,12 +307,12 @@ class BingoTeamStore
 					// Google answers with an HTML error page when the script throws
 					// (a lock timeout, a bad deployment), which never parses as JSON.
 					log.debug("Team store reply was not JSON: {}", body, e);
-					callback.accept(null, "store returned an error page");
+					callback.accept(null, "error page - see the log");
 				}
 				catch (IOException e)
 				{
 					log.debug("Could not read team store reply", e);
-					callback.accept(null, "reply could not be read");
+					callback.accept(null, "reply cut off");
 				}
 			}
 		});

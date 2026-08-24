@@ -161,8 +161,7 @@ function doPost(e)
 		if (canonicalHash && body.boardHash && String(body.boardHash) !== canonicalHash)
 		{
 			return ContentService.createTextOutput(JSON.stringify({ board: board,
-				error: 'Board differs from the host - use Import board, then '
-					+ 'Import from store' }))
+				error: 'Wrong board - use Import board, then Import from store' }))
 				.setMimeType(ContentService.MimeType.JSON);
 		}
 		var boardVerified = !canonicalHash || String(body.boardHash || '') === canonicalHash;
