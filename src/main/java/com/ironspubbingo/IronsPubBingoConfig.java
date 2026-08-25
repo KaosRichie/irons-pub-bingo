@@ -68,7 +68,7 @@ public interface IronsPubBingoConfig extends Config
 
 	@ConfigSection(
 		name = "Progress Messages",
-		description = "Which goal types show progress chat messages (when they are enabled at all)",
+		description = "Which goal types show progress chat messages, while Progress chat messages is on",
 		position = 19,
 		closedByDefault = true
 	)
@@ -163,7 +163,7 @@ public interface IronsPubBingoConfig extends Config
 
 	@ConfigSection(
 		name = "Custom Team",
-		description = "Type your own team code for playing without a team store - with a store, pick your team using the panel's Choose team button",
+		description = "Your own team code, for events with no team store - with a store, pick your team with the panel's Choose team button",
 		position = 30
 	)
 	String customTeamSection = "customTeam";

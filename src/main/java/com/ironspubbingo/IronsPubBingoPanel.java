@@ -376,8 +376,8 @@ class IronsPubBingoPanel extends PluginPanel
 				+ "  1. Settings: turn on Use team store, paste the store URL.\n"
 				+ "  2. Setup -> Import board -> Import from store.\n"
 				+ "  3. Setup -> Choose team, and pick your team from the list.\n"
-				+ "- The Store line in the Team section names whichever step is still\n"
-				+ "  missing while you set up.\n"
+				+ "- While you set up, the Store line in the Team section shows which\n"
+				+ "  step is still missing.\n"
 				+ "- Tiles turn amber on progress and green when complete.\n"
 				+ "- Click a tile for its goals, who contributed, and its actions\n"
 				+ "  (manual tick, credit request, reset).\n"
@@ -705,7 +705,7 @@ class IronsPubBingoPanel extends PluginPanel
 		teamNameLabel.setToolTipText(teamMode == null ? null
 			: "store team".equals(teamMode)
 				? "Store team - this team is on the host's team list; progress syncs live and via the team store"
-				: "Custom team - this code isn't on the host's team list; progress syncs live (party) only, never to the store. Use Choose team (Team Store Setup) to pick a store team.");
+				: "Custom team - this code isn't on the host's team list; progress syncs live (party) only, never to the store. Use Choose team (Setup) to pick a store team.");
 		if (board == null)
 		{
 			boardNameLabel.setText("No board loaded");

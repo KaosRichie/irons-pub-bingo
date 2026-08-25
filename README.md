@@ -50,7 +50,7 @@ the board code and a team code instead — everything else still works over live
 
 | Tab | What it's for |
 |---|---|
-| **Board code** | The official board. Players pull it here, and clients running a different board are rejected. |
+| **Board code** | The official board. Players import it from here, and clients running a different board are rejected. |
 | **Teams** | Code + display name per team. Fill this first: only listed codes may sync, and it fills the Choose team picker. |
 | **Adjustments** | Credit progress by hand. Rows add up; a negative row corrects a mistake. |
 | **Requests** | Player credit requests. Set Status to `Done` (writes the ledger row for you) or `Rejected`. |
@@ -60,9 +60,9 @@ the board code and a team code instead — everything else still works over live
 
 Each client talks to the store every 2 minutes — one call both uploads and downloads —
 plus once per tile completion and once when you log out. Change that with
-`Poll interval (seconds)` on the **Settings** tab: `60` for a small, snappy event, or a
-few hundred to keep a big one light. It is clamped to 60–900 seconds, and completions
-always sync immediately whatever it is set to.
+`Poll interval (seconds)` on the **Settings** tab: `60` keeps a short event close to live,
+a few hundred keeps the traffic down on a long one. It is clamped to 60–900 seconds, and
+completions always sync immediately whatever it is set to.
 
 Menu: **Irons Pub Bingo → Open player portal · Refresh board view · Approve/Deny selected
 request(s) · Reset store data**.
@@ -85,7 +85,7 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 - `id` — keep it stable. Same id means you can fix a board mid-event without resetting
   anyone: reword labels, swap icons, adjust points, edit tiles in place, and never insert,
   remove or reorder them. Bump `version` so players see they need the new code. Change what
-  a tile *tracks* and it counts as a different board — progress starts fresh, by design.
+  a tile *tracks* and it counts as a different board — progress starts fresh.
 - `start`/`end` — outside the window automatic tracking doesn't count; manual ticks do.
 - `icon` — an item name, or a numeric item id for untradeables.
 

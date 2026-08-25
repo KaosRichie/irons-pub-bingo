@@ -14,9 +14,6 @@ gradle.properties
 # Perforce working config
 .p4config
 .p4ignore
-# agent workflow notes
-CLAUDE.md
-AGENTS.md
 # dev tooling and local helpers - not needed to build or run the plugin
 src/test/
 store-tests/

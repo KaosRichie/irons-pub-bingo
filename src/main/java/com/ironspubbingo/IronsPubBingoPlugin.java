@@ -1002,7 +1002,7 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				int answer = JOptionPane.showConfirmDialog(panel,
 					"Each team keeps its own progress, so this board switches to what you\n"
-						+ "have on the new team - nothing you earned here counts for them.\n\n"
+						+ "have on the new team - nothing you earned here counts for it.\n\n"
 						+ "Coming back to this team restores this progress.\n\n"
 						+ "Switch team?",
 					"Irons Pub Bingo", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
