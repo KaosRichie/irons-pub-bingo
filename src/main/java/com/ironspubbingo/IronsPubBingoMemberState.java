@@ -14,6 +14,8 @@ class IronsPubBingoMemberState extends PartyMemberMessage
 {
 	/** Board key, so members on a different or outdated board ignore the update. */
 	String board;
+	/** The board's id, which survives revisions - it is what the version notice compares. */
+	String boardId;
 	/** The sender's board revision, so members on an outdated revision can be told. */
 	Integer boardVersion;
 	/** Account hash of the member this progress belongs to. */
@@ -22,9 +24,10 @@ class IronsPubBingoMemberState extends PartyMemberMessage
 	String name;
 	Map<Integer, TileProgress> tiles;
 
-	IronsPubBingoMemberState(String board, Integer boardVersion, String member, String name, Map<Integer, TileProgress> tiles)
+	IronsPubBingoMemberState(String board, String boardId, Integer boardVersion, String member, String name, Map<Integer, TileProgress> tiles)
 	{
 		this.board = board;
+		this.boardId = boardId;
 		this.boardVersion = boardVersion;
 		this.member = member;
 		this.name = name;

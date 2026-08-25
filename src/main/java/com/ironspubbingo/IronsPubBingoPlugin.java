@@ -92,6 +92,9 @@ public class IronsPubBingoPlugin extends Plugin
 	private static final long BROADCAST_THROTTLE_MS = 10_000;
 	private static final long STORE_POST_THROTTLE_MS = 15_000;
 	private static final long STORE_POLL_SECONDS = 120;
+	/** Hosts can tune polling; anything outside these bounds is clamped into range. */
+	private static final long STORE_POLL_MIN_SECONDS = 60;
+	private static final long STORE_POLL_MAX_SECONDS = 900;
 	/** A session is live when it spoke within this window (heartbeats come every poll). */
 	private static final int MAX_PROGRESS_MESSAGES_PER_EVENT = 3;
 	private static final int TILES_PER_MESSAGE = 25;
@@ -178,8 +181,6 @@ public class IronsPubBingoPlugin extends Plugin
 	private int lastMarkCount = -1;
 	/** Marks dropped while on a course; re-picking them up must not count again. */
 	private int markDropDebt;
-	/** Set on explicit board import while logged out; baselines reseed at next login. */
-	private boolean reseedXpPending;
 	/** A team-code change awaits the player's confirmation; store pushes pause meanwhile. */
 	private boolean teamSwitchPending;
 	/** SHA-256 of the exact board code this client imported; null without a board. */
@@ -198,7 +199,8 @@ public class IronsPubBingoPlugin extends Plugin
 	 * Settings tab (for big events on one deployment), but never below the plugin's own
 	 * default and never above a sane cap. Completions bypass it either way.
 	 */
-	private long storePushThrottleMs = STORE_POST_THROTTLE_MS;
+	/** Seconds between store polls; the host can raise this from the Settings tab. */
+	private long storePollSeconds = STORE_POLL_SECONDS;
 
 	@Provides
 	IronsPubBingoConfig provideConfig(ConfigManager configManager)
@@ -237,6 +239,18 @@ public class IronsPubBingoPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 
+		schedulePoll();
+
+		SwingUtilities.invokeLater(() -> panel.rebuild());
+	}
+
+	/** (Re)starts the store poll at the current interval. */
+	private void schedulePoll()
+	{
+		if (storePollTask != null)
+		{
+			storePollTask.cancel(false);
+		}
 		storePollTask = executor.scheduleWithFixedDelay(
 			() -> clientThread.invokeLater(() ->
 			{
@@ -244,10 +258,7 @@ public class IronsPubBingoPlugin extends Plugin
 				sendPresencePing();
 				refreshPanel(); // liveness decays with time, not only with events
 			}),
-			STORE_POLL_SECONDS, STORE_POLL_SECONDS, TimeUnit.SECONDS);
-
-		clientThread.invokeLater(this::initXpBaselinesIfLoggedIn);
-		SwingUtilities.invokeLater(() -> panel.rebuild());
+			storePollSeconds, storePollSeconds, TimeUnit.SECONDS);
 	}
 
 	@Override
@@ -338,8 +349,6 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if ("teamSyncUrl".equals(event.getKey()))
 		{
-			// A different deployment sets its own throttle; drop the old one meanwhile.
-			storePushThrottleMs = STORE_POST_THROTTLE_MS;
 			refreshPanel();
 			return;
 		}
@@ -399,33 +408,38 @@ public class IronsPubBingoPlugin extends Plugin
 		// An explicit import means "start counting from now": restored progress may carry
 		// baselines from an old session, and the login stat burst would otherwise credit
 		// everything trained since then as instant gain.
-		reseedXpPending = true;
 		clientThread.invokeLater(() ->
 		{
-			reseedXpBaselinesIfLoggedIn();
+			reseedXpBaselines();
 			announceToTeam();
 			syncStore(true);
 		});
 		return null;
 	}
 
-	/** Overwrites every XP baseline (and the lap counter) with the current XP. */
-	private void reseedXpBaselinesIfLoggedIn()
+	/**
+	 * Restarts XP counting from here. A skill reads 0 XP until the login packet lands, so
+	 * 0 is treated as "not known yet" rather than as a baseline - a 0 baseline would turn
+	 * the login stat burst into "you just gained your entire woodcutting total". Unknown
+	 * baselines are seeded by that skill's next stat update instead.
+	 */
+	private void reseedXpBaselines()
 	{
-		if (board == null || client.getGameState() != GameState.LOGGED_IN)
+		if (board == null)
 		{
-			return; // stays pending; the next login reseeds
+			return;
 		}
 		visitGoals((tile, goal, p) ->
 		{
 			if (goal.goalType == GoalType.XP)
 			{
-				p.baseline = (long) client.getSkillExperience(goal.skillEnum);
+				int xp = client.getSkillExperience(goal.skillEnum);
+				p.baseline = xp > 0 ? (long) xp : null;
 			}
 			return false;
 		});
-		lastAgilityXp = client.getSkillExperience(Skill.AGILITY);
-		reseedXpPending = false;
+		int agility = client.getSkillExperience(Skill.AGILITY);
+		lastAgilityXp = agility > 0 ? agility : -1;
 		saveProgress(false);
 	}
 
@@ -472,6 +486,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		newerBoardVersion = null;
 		metaSentForBoard = null;
+		storeError = null; // whatever the store objected to, it was about the old board
 		board = parsed;
 		// Stable id when the host set one (board hotfixes keep progress), otherwise a
 		// canonical content hash, so whitespace differences in the pasted JSON don't
@@ -652,9 +667,6 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			teamProgress.putAll(team);
 		}
-		// Pre-team-scoping cache: its entries can't be attributed to a team, so drop it -
-		// the fresh cache repopulates from party gossip and the store within a sync cycle.
-		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, "team2_" + boardKey);
 		loadRemovedMembers();
 		enforceTeamOwnership();
 	}
@@ -707,13 +719,14 @@ public class IronsPubBingoPlugin extends Plugin
 	TileProgress mergedProgressFor(int tileIndex)
 	{
 		TileProgress own = progressFor(tileIndex);
-		if (teamProgress.isEmpty())
+		Map<String, TeamMemberState> team = activeTeamProgress();
+		if (team.isEmpty())
 		{
 			return own;
 		}
 		List<TileProgress> all = new ArrayList<>();
 		all.add(own);
-		for (TeamMemberState member : teamProgress.values())
+		for (TeamMemberState member : team.values())
 		{
 			TileProgress tp = member.tilesMap().get(tileIndex);
 			if (tp != null)
@@ -730,7 +743,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	boolean hasTeamData()
 	{
-		return !teamProgress.isEmpty();
+		return !activeTeamProgress().isEmpty();
 	}
 
 	/**
@@ -742,7 +755,7 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<String, TileProgress> result = new java.util.LinkedHashMap<>();
 		String ownName = localPlayerName();
 		result.put(ownName != null ? ownName : "You", progressFor(tileIndex));
-		for (TeamMemberState member : teamProgress.values())
+		for (TeamMemberState member : activeTeamProgress().values())
 		{
 			TileProgress tp = member.tilesMap().get(tileIndex);
 			if (tp == null)
@@ -908,6 +921,7 @@ public class IronsPubBingoPlugin extends Plugin
 	/**
 	 * Cached teammate states are scoped per team, not just per board: switching team codes
 	 * on the same board must never carry the old team's members into the new team's store.
+	 * A switch deletes both sides of the key anyway (see {@link #dropCachedTeammates}).
 	 */
 	private String teamCacheKey(String teamCode)
 	{
@@ -987,9 +1001,10 @@ public class IronsPubBingoPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				int answer = JOptionPane.showConfirmDialog(panel,
-					"Changing the team code resets your tracked progress on this board,\n"
-						+ "so progress earned on one team can't count for another.\n\n"
-						+ "Switch team and reset your progress?",
+					"Each team keeps its own progress, so this board switches to what you\n"
+						+ "have on the new team - nothing you earned here counts for them.\n\n"
+						+ "Coming back to this team restores this progress.\n\n"
+						+ "Switch team?",
 					"Irons Pub Bingo", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 				clientThread.invokeLater(() ->
 				{
@@ -1000,7 +1015,8 @@ public class IronsPubBingoPlugin extends Plugin
 						// this account from the old team's scope (tombstoned, so cached
 						// copies can't resurrect it) and the fresh state starts at zero.
 						enqueueEviction(scopeFor(oldCode));
-						resetOwnProgress();
+						switchOwnProgress(oldCode, config.teamStoreEnabled(),
+							normalizedTeamCode(), config.teamStoreEnabled());
 						applyTeamSwitch(oldCode);
 						stampTeamOwnership();
 						saveProgress(true);
@@ -1017,8 +1033,37 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		teamSwitchPending = false; // must lift before applyTeamSwitch's own sync
+		storeError = null; // the old team's rejection says nothing about the new one
+		switchOwnProgress(oldCode, config.teamStoreEnabled(), newCode, config.teamStoreEnabled());
 		applyTeamSwitch(oldCode);
 		stampTeamOwnership();
+	}
+
+	/**
+	 * The store's generation, which the host's "Reset store data" bumps. A new generation
+	 * means the event was wiped there, so everything we cached ABOUT TEAMMATES has to go
+	 * as well - relaying it on the next push would rebuild the old event row by row. Our
+	 * own tracked progress is ours and stays.
+	 */
+	private void applyStoreEpoch(Integer epoch)
+	{
+		if (epoch == null || boardKey == null || configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		String code = normalizedTeamCode();
+		String key = "epoch_" + scopeFor(code);
+		String seen = configManager.getRSProfileConfiguration(IronsPubBingoConfig.GROUP, key);
+		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP, key, String.valueOf(epoch));
+		if (seen == null || seen.equals(String.valueOf(epoch)))
+		{
+			return;
+		}
+		log.debug("Store generation {} -> {}, dropping cached team data", seen, epoch);
+		teamProgress.clear();
+		removedMembers.clear();
+		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, removedCacheKey(code));
+		saveProgress(true);
 	}
 
 	private String scopeFor(String teamCode)
@@ -1104,7 +1149,28 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			removedMembers.addAll(cached);
 		}
-		teamProgress.keySet().removeAll(removedMembers);
+	}
+
+	/**
+	 * The teammates who count right now: everyone cached for this team, minus whoever has
+	 * left it. A departure is a filter, not a delete - their progress stays cached, so if
+	 * they come back (the store clears the "left" mark) it comes back with them.
+	 */
+	private Map<String, TeamMemberState> activeTeamProgress()
+	{
+		if (removedMembers.isEmpty())
+		{
+			return teamProgress;
+		}
+		Map<String, TeamMemberState> active = new LinkedHashMap<>();
+		for (Map.Entry<String, TeamMemberState> entry : teamProgress.entrySet())
+		{
+			if (!removedMembers.contains(entry.getKey()))
+			{
+				active.put(entry.getKey(), entry.getValue());
+			}
+		}
+		return active;
 	}
 
 	/**
@@ -1112,6 +1178,44 @@ public class IronsPubBingoPlugin extends Plugin
 	 * beat any stale copy of the old progress a teammate's cache might later relay, so a
 	 * reset can never be undone by gossip (same trick as the per-tile reset button).
 	 */
+	/** Where this profile's own progress for a team (in one sync mode) waits for a return. */
+	private String parkedProgressKey(String teamCode, boolean storeMode)
+	{
+		return "parked_" + scopeFor(teamCode) + (storeMode ? "_store" : "_party");
+	}
+
+	/**
+	 * Files the current progress under the team it was earned on, and loads back whatever
+	 * this profile last had on the team it is joining. Progress still never moves between
+	 * teams - each team keeps its own copy - but leaving one no longer destroys it, so
+	 * coming back restores what you had there. XP baselines are reseeded either way: XP
+	 * earned while away counted for the other team and must not be credited twice.
+	 */
+	private void switchOwnProgress(String fromTeam, boolean fromStore, String toTeam, boolean toStore)
+	{
+		boolean canPark = boardKey != null && configManager.getRSProfileKey() != null;
+		if (canPark)
+		{
+			configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+				parkedProgressKey(fromTeam, fromStore), gson.toJson(progress));
+		}
+		Map<Integer, TileProgress> parked = canPark
+			? readJsonConfig(parkedProgressKey(toTeam, toStore),
+				new TypeToken<Map<Integer, TileProgress>>()
+				{
+				}.getType())
+			: null;
+		if (parked == null)
+		{
+			resetOwnProgress(); // never been on this team: a fresh, freshly stamped board
+			return;
+		}
+		progress.clear();
+		pendingBroadcast.clear();
+		progress.putAll(parked);
+		reseedXpBaselines();
+	}
+
 	private void resetOwnProgress()
 	{
 		progress.clear();
@@ -1124,8 +1228,7 @@ public class IronsPubBingoPlugin extends Plugin
 				progressFor(i).ts = now;
 			}
 		}
-		reseedXpPending = true;
-		reseedXpBaselinesIfLoggedIn();
+		reseedXpBaselines();
 	}
 
 	/** Records which team this profile's progress for the current board belongs to. */
@@ -1163,9 +1266,9 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if (!owner.equals(current))
 		{
-			log.debug("Progress for {} belonged to team {} - resetting for {}", boardKey, owner, current);
+			log.debug("Progress for {} belonged to team {} - parking it and loading {}", boardKey, owner, current);
 			enqueueEviction(boardKey + "_" + owner);
-			resetOwnProgress();
+			switchOwnProgress(owner, config.teamStoreEnabled(), code, config.teamStoreEnabled());
 			stampTeamOwnership();
 			saveProgress(true);
 		}
@@ -1190,6 +1293,7 @@ public class IronsPubBingoPlugin extends Plugin
 		if (board == null || !hasOwnProgress())
 		{
 			teamSwitchPending = false; // must lift before the toggle's own sync
+			switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), nowOn);
 			applyStoreToggle(wasOn);
 			return;
 		}
@@ -1198,20 +1302,20 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			int answer = JOptionPane.showConfirmDialog(panel,
 				nowOn
-					? "Turning the team store ON joins the store team for your code.\n"
-						+ "Your tracked progress on this board resets, so progress\n"
-						+ "can't move between teams.\n\nJoin the store team and reset?"
-					: "Turning the team store OFF leaves the store team - you become a\n"
-						+ "custom, party-only team. Your tracked progress on this board\n"
-						+ "resets and you are removed from the store team's board.\n\n"
-						+ "Leave the store team and reset?",
+						? "Turning the team store ON joins the store team for your code.\n"
+							+ "That is a different team, so the board switches to your progress\n"
+							+ "there.\n\nJoin the store team?"
+						: "Turning the team store OFF leaves the store team - you become a\n"
+							+ "custom, party-only team, the board switches to your progress\n"
+							+ "there, and you are removed from the store team's board.\n\n"
+							+ "Leave the store team?",
 				"Irons Pub Bingo", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 			clientThread.invokeLater(() ->
 			{
 				teamSwitchPending = false;
 				if (answer == JOptionPane.OK_OPTION)
 				{
-					resetOwnProgress();
+					switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), !wasOn);
 					applyStoreToggle(wasOn);
 					saveProgress(true);
 				}
@@ -1228,7 +1332,6 @@ public class IronsPubBingoPlugin extends Plugin
 	private void applyStoreToggle(boolean wasOn)
 	{
 		storeRequestsInFlight = 0; // toggling modes invalidates any in-flight accounting
-		storePushThrottleMs = STORE_POST_THROTTLE_MS; // host throttle belongs to a deployment
 		storeStandings.clear();
 		if (wasOn)
 		{
@@ -1275,13 +1378,14 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Swaps party membership and the per-team member cache over to the new team code. */
 	private void applyTeamSwitch(String oldCode)
 	{
+		teamProgress.clear();
 		if (boardKey != null && configManager.getRSProfileKey() != null)
 		{
-			// Park the old team's cached members under their own key (so switching back
-			// restores them) and start from whatever is cached for the new team.
+			// Park the old team's cached members under their own key, so coming back
+			// restores them, and start from whatever is cached for the new team. What
+			// each team shows is then filtered by that team's departures.
 			configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
 				teamCacheKey(oldCode), gson.toJson(teamProgress));
-			teamProgress.clear();
 			Map<String, TeamMemberState> cached = readJsonConfig(teamCacheKey(normalizedTeamCode()),
 				new TypeToken<Map<String, TeamMemberState>>()
 				{
@@ -1577,8 +1681,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * The store error trimmed to something that fits on the button. Server rejections are
-	 * whole sentences; the first clause carries the meaning.
+	 * The store error trimmed to something that fits on the button, which is only as wide
+	 * as "No board imported". Server rejections are whole sentences; the first clause
+	 * carries the meaning, and the log keeps the rest.
 	 */
 	String storeErrorShort()
 	{
@@ -1592,36 +1697,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			text = text.substring(0, cut);
 		}
-		return text.length() > 34 ? text.substring(0, 31) + "..." : text;
-	}
-
-	String storeStatusText()
-	{
-		if (!teamStore.isConfigured())
-		{
-			return "";
-		}
-		if (storePaused)
-		{
-			return "Store: Paused";
-		}
-		if (storeRequestsInFlight > 0)
-		{
-			return "Store: Syncing...";
-		}
-		String hint = storeSetupHint();
-		if (hint != null)
-		{
-			return "Store: " + hint;
-		}
-		if (storeError == null)
-		{
-			return storeSyncedAt == null ? "Store: Waiting for first sync" : "Store: Synced " + storeSyncedAt;
-		}
-		// A failed attempt doesn't lose anything - the next sync sends everything again -
-		// so keep the last success visible instead of only showing the error.
-		return "Store: " + storeError
-			+ (storeSyncedAt == null ? "" : " (last synced " + storeSyncedAt + ")");
+		return text.length() > 17 ? text.substring(0, 14) + "..." : text;
 	}
 
 	/** Whether the last team store attempt failed, for the status dot. */
@@ -1650,7 +1726,7 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		// Relay cached teammate state too, so members who never overlap with each other
 		// still converge through anyone they do overlap with (gossip).
-		for (Map.Entry<String, TeamMemberState> entry : teamProgress.entrySet())
+		for (Map.Entry<String, TeamMemberState> entry : activeTeamProgress().entrySet())
 		{
 			// Admin credit is only ever distributed by the team store, which owns it and
 			// can withdraw it; relaying it would leave copies nobody can take back.
@@ -1688,13 +1764,13 @@ public class IronsPubBingoPlugin extends Plugin
 			chunk.put(entry.getKey(), entry.getValue());
 			if (chunk.size() >= TILES_PER_MESSAGE)
 			{
-				partyService.send(new IronsPubBingoMemberState(boardKey, board.version, member, name, chunk));
+				partyService.send(new IronsPubBingoMemberState(boardKey, board.identityKey(), board.version, member, name, chunk));
 				chunk = new HashMap<>();
 			}
 		}
 		if (!chunk.isEmpty())
 		{
-			partyService.send(new IronsPubBingoMemberState(boardKey, board.version, member, name, chunk));
+			partyService.send(new IronsPubBingoMemberState(boardKey, board.identityKey(), board.version, member, name, chunk));
 		}
 	}
 
@@ -1733,15 +1809,24 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				return; // our own message echoed back
 			}
-			if (board == null || !boardKey.equals(update.board) || !inTeamParty() || update.tiles == null)
+			if (board == null || !inTeamParty() || update.tiles == null)
 			{
 				return;
 			}
-			if (update.boardVersion != null && board.version != null && update.boardVersion > board.version
-				&& (newerBoardVersion == null || update.boardVersion > newerBoardVersion))
+			if (!boardKey.equals(update.board))
 			{
-				newerBoardVersion = update.boardVersion;
-				refreshPanel();
+				// A different board - never merge it, however similar it looks. When it is
+				// a newer revision of OUR board, that is worth a notice and nothing else.
+				String identity = board.identityKey();
+				if (identity != null && identity.equals(update.boardId)
+					&& update.boardVersion != null && board.version != null
+					&& update.boardVersion > board.version
+					&& (newerBoardVersion == null || update.boardVersion > newerBoardVersion))
+				{
+					newerBoardVersion = update.boardVersion;
+					refreshPanel();
+				}
+				return;
 			}
 			applyMemberStates(Map.of(update.member, memberState(update.name, update.tiles)));
 		});
@@ -1763,7 +1848,7 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				sendMemberState(self, localPlayerName(), shareOwnTiles(progress.keySet()));
 			}
-			for (Map.Entry<String, TeamMemberState> entry : teamProgress.entrySet())
+			for (Map.Entry<String, TeamMemberState> entry : activeTeamProgress().entrySet())
 			{
 				sendMemberState(entry.getKey(), entry.getValue().name, entry.getValue().tilesMap());
 			}
@@ -1914,7 +1999,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		long now = System.currentTimeMillis();
-		if (!force && now - lastStorePostMs < storePushThrottleMs)
+		if (!force && now - lastStorePostMs < STORE_POST_THROTTLE_MS)
 		{
 			return;
 		}
@@ -1928,11 +2013,19 @@ public class IronsPubBingoPlugin extends Plugin
 		String teamCode = normalizedTeamCode();
 		if (!storeTeamNames.isEmpty() && (teamCode == null || !storeTeamNames.containsKey(teamCode)))
 		{
-			storeError = teamCode == null
-				? "the store requires a team - use Choose team"
-				: "team \"" + teamCode + "\" is not on the store's team list - party-only sync";
-			teamStore.fetchTeams((teams, error) ->
-				clientThread.invokeLater(() -> cacheStoreTeams(teams)));
+			// Keep this short: it is shown on the store button next to "No board imported".
+			storeError = teamCode == null ? "No team" : "Party-only team";
+			teamStore.fetchTeams((teams, error) -> clientThread.invokeLater(() ->
+			{
+				cacheStoreTeams(teams);
+				String code = normalizedTeamCode();
+				if (code != null && storeTeamNames.containsKey(code))
+				{
+					// The host just listed us: pick straight up, don't wait for the poll.
+					storeError = null;
+					syncStore(true);
+				}
+			}));
 			refreshPanel();
 			return;
 		}
@@ -1970,9 +2063,15 @@ public class IronsPubBingoPlugin extends Plugin
 			if (payload != null)
 			{
 				cacheStoreTeams(payload.teams);
-				storePushThrottleMs = payload.throttle == null || payload.throttle <= 0
-					? STORE_POST_THROTTLE_MS
-					: Math.min(300_000L, Math.max(STORE_POST_THROTTLE_MS, payload.throttle * 1000L));
+				// The host's poll interval, clamped to something the store can carry.
+				long wanted = payload.pollSeconds == null || payload.pollSeconds <= 0
+					? STORE_POLL_SECONDS
+					: Math.min(STORE_POLL_MAX_SECONDS, Math.max(STORE_POLL_MIN_SECONDS, payload.pollSeconds));
+				if (wanted != storePollSeconds)
+				{
+					storePollSeconds = wanted;
+					schedulePoll();
+				}
 				if (payload.standings != null)
 				{
 					storeStandings.clear();
@@ -1992,16 +2091,18 @@ public class IronsPubBingoPlugin extends Plugin
 				storeError = null;
 				storeSyncedAt = new SimpleDateFormat("HH:mm").format(new Date());
 				metaSentForBoard = forBoard;
+				applyStoreEpoch(payload.epoch);
 				// The store owns admin credit and evictions outright, so a credit or member
 				// removed there must disappear here too - merging alone would keep the
 				// stale copy forever (and relay it back).
 				Set<Integer> before = completedTiles();
 				boolean dropped = teamProgress.keySet()
 					.removeIf(id -> isAdminMember(id) && !payload.members.containsKey(id));
-				if (payload.removed != null)
+				if (payload.removed != null && !removedMembers.equals(new HashSet<>(payload.removed)))
 				{
-					// Mirror the store's tombstones exactly: adds enforce fresh evictions
-					// against party gossip, removals let a healed rejoiner reappear.
+					// Mirror the store's departures exactly: an added one hides that member
+					// (and stops us relaying them), a cleared one brings them back from the
+					// cache the moment they rejoin the team.
 					removedMembers.clear();
 					removedMembers.addAll(payload.removed);
 					if (configManager.getRSProfileKey() != null)
@@ -2009,7 +2110,7 @@ public class IronsPubBingoPlugin extends Plugin
 						configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
 							removedCacheKey(normalizedTeamCode()), gson.toJson(removedMembers));
 					}
-					dropped |= teamProgress.keySet().removeAll(removedMembers);
+					dropped = true;
 				}
 				applyMemberStates(payload.members);
 				if (dropped)
@@ -2514,11 +2615,6 @@ public class IronsPubBingoPlugin extends Plugin
 				{
 					return false; // not ready yet, retry next frame
 				}
-				initXpBaselinesIfLoggedIn();
-				if (reseedXpPending)
-				{
-					reseedXpBaselinesIfLoggedIn();
-				}
 				flushPendingEvictions();
 				if (config.autoJoinTeam() && !partyService.isInParty() && expectedPassphrase() != null)
 				{
@@ -2538,6 +2634,9 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				saveProgress(true);
 			}
+			// Land the session's progress before the client goes idle, so a player who
+			// logs out between polls is not missing from the sheet until they return.
+			syncStore(true);
 			refreshPanel(); // the panel hides its content while logged out
 		}
 	}
@@ -2549,7 +2648,6 @@ public class IronsPubBingoPlugin extends Plugin
 		lastMarkCount = -1;
 		markDropDebt = 0;
 		loadProgress();
-		clientThread.invokeLater(this::initXpBaselinesIfLoggedIn);
 		refreshPanel();
 	}
 
@@ -2885,9 +2983,12 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			flushBroadcast();
 		}
-		if (nonXpChange || !newlyCompleted.isEmpty())
+		// Only completions are worth their own store call. Ordinary progress rides the
+		// 2 minute poll, which pushes as well as pulls - pushing per change cost up to
+		// four calls a minute per player for freshness nobody was watching.
+		if (!newlyCompleted.isEmpty())
 		{
-			syncStore(!newlyCompleted.isEmpty());
+			syncStore(true);
 		}
 
 		saveProgress(nonXpChange || !newlyCompleted.isEmpty());
@@ -2920,23 +3021,6 @@ public class IronsPubBingoPlugin extends Plugin
 				window.refresh();
 			}
 		});
-	}
-
-	private void initXpBaselinesIfLoggedIn()
-	{
-		if (board == null || client.getGameState() != GameState.LOGGED_IN)
-		{
-			return;
-		}
-		visitGoals((tile, goal, p) ->
-		{
-			if (goal.goalType == GoalType.XP && p.baseline == null)
-			{
-				p.baseline = (long) client.getSkillExperience(goal.skillEnum);
-			}
-			return false;
-		});
-		lastAgilityXp = client.getSkillExperience(Skill.AGILITY);
 	}
 
 }

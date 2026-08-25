@@ -163,7 +163,7 @@ public interface IronsPubBingoConfig extends Config
 
 	@ConfigSection(
 		name = "Custom Team",
-		description = "Type your own team code - or leave this alone and pick a store team with the panel's Choose team button",
+		description = "Type your own team code for playing without a team store - with a store, pick your team using the panel's Choose team button",
 		position = 30
 	)
 	String customTeamSection = "customTeam";

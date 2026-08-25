@@ -46,19 +46,22 @@
  *                  screenshot links, e.g. Discord/Imgur). Select row(s) and use
  *                  Irons Pub Bingo -> Approve/Deny; approving writes the Adjustments row
  *                  for you and stamps the request's Status column.
- *  - Teams       : optional allow-list of team codes (Code + display Name). While it has
- *                  rows, syncs with any other code are rejected, and the plugin's
- *                  "Choose team" button offers exactly this list. Empty = any code works.
- *  - Board code  : paste the board code (JSON) here and players can load the board via
- *                  the plugin's Setup -> "Get board from store" - no code sharing needed.
- *                  Manual Import board keeps working for everyone regardless.
- *  - Settings    : host knobs. "Push throttle (seconds)" slows how often each client
- *                  pushes to this store (for big events on one deployment); the plugin
- *                  enforces its own minimum and cap, and blank means default.
- *  - Removed     : evicted members per board scope. Rows with reason "left" are written
- *                  automatically when a player switches teams and clear themselves if
- *                  that player rejoins. Add a row by hand (reason blank) to evict someone
- *                  permanently - delete it to let them back.
+ *  - Teams       : the allow-list of team codes (Code + display Name). Only listed
+ *                  codes may sync, and the plugin's "Choose team" button offers exactly
+ *                  this list. Fill it before players sync - while it is empty the store
+ *                  accepts nothing, so a leftover client cannot rebuild a reset event.
+ *  - Board code  : paste the board code (JSON) here and players load the board with
+ *                  Import board -> Import from store, and clients running any other
+ *                  board are rejected. Manual Import board still works too.
+ *  - Settings    : host knobs. "Poll interval (seconds)" sets how often each client
+ *                  talks to this store - 60 to 900, blank means the default 120.
+ *                  Values outside that range are clamped by the plugin.
+ *  - Removed     : who no longer counts, per board scope. A row here stops that member
+ *                  counting but keeps their Store row parked, so if they come back their
+ *                  progress on that team comes back too. Reason "left" is written
+ *                  automatically when a player switches teams and clears itself if they
+ *                  rejoin; add a row by hand (reason blank) to evict someone permanently
+ *                  - delete it to let them back.
  *  - Board <team>: generated read-only view of the board and its progress, one tab
  *                  per team (plain "Board" for players without a team code).
  *  - Store       : raw per-player data from the plugin. Leave alone.
@@ -76,9 +79,12 @@ var ADJ_SHEET = 'Adjustments';
 var BOARD_SHEET = 'Board';
 var META_SHEET = 'Meta';
 var TEAMS_SHEET = 'Teams';
+// Bumped by Reset store data. Clients that see a new generation drop the cached
+// teammates they would otherwise push straight back into the fresh event.
+var EPOCH_PROP = 'storeEpoch';
 var REMOVED_SHEET = 'Removed';
 var SETTINGS_SHEET = 'Settings';
-var SETTINGS_HEADERS = ['Setting', 'Value'];
+var SETTINGS_HEADERS = ['Setting', 'Value', 'Notes'];
 var BOARD_CODE_SHEET = 'Board code';
 var SCORES_SHEET = 'Scores';
 var SCORES_HEADERS = ['board', 'points', 'updated'];
@@ -139,14 +145,25 @@ function doPost(e)
 			removeMembers(board, body.remove);
 		}
 
-		// When the host lists teams on the Teams tab, only those codes are accepted -
-		// a typo'd or made-up code must not spawn new board tabs and store rows.
+		// The Teams tab is the allow-list: only codes the host listed may write. An empty
+		// tab means the event is not set up (or was just reset), and a client still
+		// holding an old board must not spawn board tabs and store rows behind the host.
 		var teams = readTeamRows();
-		if (teams.length && !hasTeam(teams, teamOf(board)))
+		if (!teams.length || !hasTeam(teams, teamOf(board)))
 		{
-			var reason = teamOf(board) === 'solo'
-				? 'No team code - use Choose team or ask your host'
-				: 'Unknown team code - use Choose team or ask your host';
+			var reason;
+			if (!teams.length)
+			{
+				reason = 'No teams yet - the host has not set up the Teams tab';
+			}
+			else if (teamOf(board) === 'solo')
+			{
+				reason = 'No team code - use Choose team or ask your host';
+			}
+			else
+			{
+				reason = 'Unknown team code - use Choose team or ask your host';
+			}
 			return ContentService.createTextOutput(JSON.stringify(
 				{ board: board, error: reason, teams: teams }))
 				.setMimeType(ContentService.MimeType.JSON);
@@ -158,14 +175,12 @@ function doPost(e)
 		// numbers, but this closes the no-code cheat of editing the board JSON.
 		var canonicalCode = readBoardCode();
 		var canonicalHash = canonicalCode ? sha256Hex(canonicalCode) : null;
-		if (canonicalHash && body.boardHash && String(body.boardHash) !== canonicalHash)
+		if (canonicalHash && String(body.boardHash || '') !== canonicalHash)
 		{
 			return ContentService.createTextOutput(JSON.stringify({ board: board,
 				error: 'Wrong board - use Import board, then Import from store' }))
 				.setMimeType(ContentService.MimeType.JSON);
 		}
-		var boardVerified = !canonicalHash || String(body.boardHash || '') === canonicalHash;
-
 		if (body.rejoin && /^[0-9a-f]{16}$/.test(String(body.rejoin)))
 		{
 			// A member syncing here by choice clears any "left" tombstone they carry in
@@ -189,10 +204,8 @@ function doPost(e)
 			upsertScore(board, Math.floor(body.teamPoints));
 		}
 
-		if (body.meta && boardVerified)
+		if (body.meta)
 		{
-			// Clients that can't prove they run the official board (pre-fingerprint
-			// versions) may sync, but must not write the labels admins read.
 			saveMeta(board, body.meta);
 		}
 
@@ -207,9 +220,13 @@ function doPost(e)
 		var ownedElsewhere = {};
 		if (prefix)
 		{
+			// Rows left behind in a team the member has since left don't count as owning
+			// them - those are parked, waiting for a return, not an active membership.
+			var marks = allDepartures();
 			for (var rk in rows)
 			{
-				if (rows[rk].board !== board && rows[rk].board.indexOf(prefix) === 0)
+				if (rows[rk].board !== board && rows[rk].board.indexOf(prefix) === 0
+					&& !marks[rows[rk].board + '|' + rows[rk].member])
 				{
 					ownedElsewhere[rows[rk].member] = true;
 				}
@@ -336,9 +353,7 @@ function portalPage()
 			if (String(requestValues[r][1]) === team && String(requestValues[r][2] || '').trim())
 			{
 				var status = String(requestValues[r][9] || '').trim();
-				// Legacy statuses from before the dropdown existed.
-				status = status === 'approved' ? 'Done' : status === 'denied' ? 'Rejected'
-					: isPending(status) ? 'Pending' : status;
+				status = isPending(status) ? 'Pending' : status;
 				requests.push({
 					when: String(requestValues[r][0]).slice(0, 10),
 					player: String(requestValues[r][2]),
@@ -489,7 +504,8 @@ function respond(board, rows)
 	return ContentService
 		.createTextOutput(JSON.stringify({ board: board, members: members,
 			teams: readTeamRows(), removed: Object.keys(removedFor(board)),
-			throttle: readPushThrottle(), standings: standingsFor(board) }))
+			pollSeconds: readPollInterval(), epoch: storeEpoch(),
+			standings: standingsFor(board) }))
 		.setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -567,7 +583,24 @@ function hasTeam(teams, code)
 	return false;
 }
 
-/** Member ids evicted from this board scope; their data is never accepted again. */
+/** Every departure mark in the sheet, keyed "board|member" - one read for all scopes. */
+function allDepartures()
+{
+	var values = getSheet(REMOVED_SHEET, REMOVED_HEADERS).getDataRange().getValues();
+	var marks = {};
+	for (var i = 1; i < values.length; i++)
+	{
+		var scope = String(values[i][0] || '');
+		var member = String(values[i][1] || '');
+		if (scope && member)
+		{
+			marks[scope + '|' + member] = true;
+		}
+	}
+	return marks;
+}
+
+/** Member ids that left this board scope; their data is kept but stops counting. */
 function removedFor(board)
 {
 	var values = getSheet(REMOVED_SHEET, REMOVED_HEADERS).getDataRange().getValues();
@@ -807,46 +840,34 @@ function clearLeftTombstones(board, memberId)
 }
 
 /** Deletes members' store rows for a board and tombstones the ids on the Removed tab. */
+/**
+ * Marks members as gone from this team scope. Their store row is deliberately KEPT: it
+ * stops counting the moment the mark exists (every reader filters on it), and if the same
+ * person comes back their progress on this team comes back with them - the rejoin clears
+ * the mark. Nothing they do meanwhile is accepted into this scope.
+ */
 function removeMembers(board, ids)
 {
 	var removedSheet = getSheet(REMOVED_SHEET, REMOVED_HEADERS);
 	var existing = removedFor(board);
-	var storeSheet = getSheet(STORE_SHEET, STORE_HEADERS);
-	var rows = readRows(storeSheet);
-	var toDelete = [];
+	var marked = 0;
 	for (var i = 0; i < ids.length; i++)
 	{
 		var id = String(ids[i]);
-		if (!/^[0-9a-f]{16}$/.test(id))
+		if (!/^[0-9a-f]{16}$/.test(id) || existing[id])
 		{
 			continue;
 		}
-		if (!existing[id])
-		{
-			// Explicit text format: an all-digit id would otherwise be float-mangled.
-			// Reason "left" marks a self-eviction (player switched teams) - the only
-			// kind a later rejoin may clear. Hand-added rows have no reason and stick.
-			var range = removedSheet.getRange(removedSheet.getLastRow() + 1, 1, 1, 4);
-			range.setNumberFormat('@');
-			range.setValues([[board, id, new Date().toISOString(), 'left']]);
-			existing[id] = true;
-		}
-		var row = rows[board + '|' + id];
-		if (row)
-		{
-			toDelete.push(row.rowIndex);
-		}
+		// Explicit text format: an all-digit id would otherwise be float-mangled.
+		// Reason "left" marks a self-eviction (player switched teams) - the only
+		// kind a later rejoin may clear. Hand-added rows have no reason and stick.
+		var range = removedSheet.getRange(removedSheet.getLastRow() + 1, 1, 1, 4);
+		range.setNumberFormat('@');
+		range.setValues([[board, id, new Date().toISOString(), 'left']]);
+		existing[id] = true;
+		marked++;
 	}
-	// Bottom-up so earlier deletions don't shift the remaining indexes.
-	toDelete.sort(function (a, b)
-	{
-		return b - a;
-	});
-	for (var d = 0; d < toDelete.length; d++)
-	{
-		storeSheet.deleteRow(toDelete[d]);
-	}
-	if (toDelete.length)
+	if (marked)
 	{
 		maybeRefreshViews(board, true);
 	}
@@ -1338,6 +1359,19 @@ function readMeta(board)
 	return null;
 }
 
+/** This store's generation, starting at 1 and bumped by every Reset store data. */
+function storeEpoch()
+{
+	var props = PropertiesService.getScriptProperties();
+	var epoch = Number(props.getProperty(EPOCH_PROP) || 0);
+	if (!epoch)
+	{
+		epoch = 1;
+		props.setProperty(EPOCH_PROP, String(epoch));
+	}
+	return epoch;
+}
+
 // ---------------------------------------------------------------- sheet plumbing
 
 function maybeRefreshViews(board, force)
@@ -1388,11 +1422,14 @@ function getSheet(name, headers)
 		}
 		if (name === SETTINGS_SHEET)
 		{
-			// Discoverable knobs, one per row. Blank = the plugin's default.
-			sheet.appendRow(['Push throttle (seconds)', '']);
+			// Discoverable knobs, one per row, prefilled with the plugin's defaults.
+			sheet.appendRow(['Poll interval (seconds)', 120, 'How often each client syncs, in seconds. 60 to 900 - values outside that are clamped, blank uses 120.']);
 			// Apps Script cannot reliably learn its own /exec URL (getService().getUrl()
 			// 404s for container-bound scripts), so the host pastes it here once.
-			sheet.appendRow(['Portal URL (web app /exec)', '']);
+			sheet.appendRow(['Portal URL (web app /exec)', '', 'Paste the /exec URL of this deployment so the Irons Pub Bingo menu can open the portal.']);
+			sheet.setColumnWidth(1, 200);
+			sheet.setColumnWidth(3, 460);
+			sheet.getRange(2, 3, 2, 1).setFontColor('#888888');
 		}
 		if (HIDDEN_SHEETS.indexOf(name) >= 0)
 		{
@@ -1403,9 +1440,8 @@ function getSheet(name, headers)
 }
 
 /**
- * Host-tuned minimum seconds between a client's store pushes (Settings tab), for large
- * events on one deployment. 0 = not set; the plugin never goes below its own default
- * and ignores values it considers unsafe.
+ * Host-tuned seconds between a client's store polls (Settings tab). 0 = not set, which
+ * leaves the plugin on its 120 second default; other values are clamped to 60-900.
  */
 /**
  * The board code the host pasted onto the Board code tab, so players with the store URL
@@ -1504,12 +1540,12 @@ function readPortalUrl()
 	return null;
 }
 
-function readPushThrottle()
+function readPollInterval()
 {
 	var values = getSheet(SETTINGS_SHEET, SETTINGS_HEADERS).getDataRange().getValues();
 	for (var i = 1; i < values.length; i++)
 	{
-		if (String(values[i][0] || '').toLowerCase().indexOf('throttle') >= 0)
+		if (String(values[i][0] || '').toLowerCase().indexOf('poll') >= 0)
 		{
 			var seconds = Number(values[i][1]);
 			return isNaN(seconds) || seconds <= 0 ? 0 : Math.floor(seconds);
@@ -1602,9 +1638,9 @@ function resetStoreData()
 	var answer = ui.alert('Reset store data',
 		'This clears ALL event data: Store, Meta, Teams, Board code, Adjustments, Requests, '
 			+ 'Removed and the generated Board tabs. Only Settings is kept.\n\n'
-			+ 'Note: players\' plugins keep their local progress and will push it back on '
-			+ 'their next sync - have them import the next board (new id) or switch teams '
-			+ 'if this is between events.\n\nContinue?',
+			+ 'Players keep their own tracked progress, but drop everything they cached '
+			+ 'about teammates on their next sync, so the old event cannot push itself '
+			+ 'back in.\n\nContinue?',
 		ui.ButtonSet.YES_NO);
 	if (answer !== ui.Button.YES)
 	{
@@ -1633,7 +1669,11 @@ function resetStoreData()
 		getSheet(REQUESTS_SHEET, REQUESTS_HEADERS);
 		getSheet(REMOVED_SHEET, REMOVED_HEADERS);
 		ensureBoardCodeSheet();
-		PropertiesService.getScriptProperties().deleteAllProperties();
+		// New generation, so every client drops its cached copy of the old event.
+		var props = PropertiesService.getScriptProperties();
+		var next = Number(props.getProperty(EPOCH_PROP) || 0) + 1;
+		props.deleteAllProperties();
+		props.setProperty(EPOCH_PROP, String(next));
 	}
 	finally
 	{

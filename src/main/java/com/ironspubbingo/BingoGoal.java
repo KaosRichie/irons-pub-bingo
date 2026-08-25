@@ -54,6 +54,18 @@ public class BingoGoal
 	transient BingoCourse courseEnum;
 
 	/**
+	 * Appends what this goal TRACKS (type and matching rules) to a board signature. The
+	 * display name is left out: renaming a goal must not count as a different board.
+	 */
+	void appendSignature(StringBuilder sb)
+	{
+		sb.append(goalType).append(',').append(items).append(',').append(sources).append(',')
+			.append(count).append(',').append(distinct).append(',').append(raids).append(',')
+			.append(npcs).append(',').append(pets).append(',').append(skill).append(',')
+			.append(course).append(',').append(amount).append(',').append(pattern).append('/');
+	}
+
+	/**
 	 * Resolves string fields into their typed forms.
 	 *
 	 * @return an error message, or null if the goal is valid

@@ -395,8 +395,9 @@ class IronsPubBingoPanel extends PluginPanel
 				+ "- For tiles chasing a specific pet, enable the game setting\n"
 				+ "  Collection log - New addition notification.\n"
 				+ "- XP and kill-count goals start counting when you import the board.\n"
-				+ "- Changing your team code (or the store toggle) resets your board\n"
-				+ "  progress - progress never moves between teams.\n"
+				+ "- Each team keeps its own progress. Changing your team code (or the\n"
+				+ "  store toggle) switches the board to that team - nothing counts for\n"
+				+ "  two teams, and coming back restores what you had.\n"
 				+ "- Optional: set a Discord webhook to post your completions with a\n"
 				+ "  screenshot.\n"
 				+ "\n"
@@ -811,7 +812,7 @@ class IronsPubBingoPanel extends PluginPanel
 			return "Store: " + plugin.storeErrorShort();
 		}
 		String syncedAt = plugin.storeSyncedAtText();
-		return syncedAt == null ? "Store: Waiting for first sync" : "Store: Synced " + syncedAt;
+		return syncedAt == null ? "Store: Not synced yet" : "Store: Synced " + syncedAt;
 	}
 
 	/** Fetches the host-defined team list from the store and lets the player pick one. */
@@ -839,8 +840,8 @@ class IronsPubBingoPanel extends PluginPanel
 			if (teams.isEmpty())
 			{
 				JOptionPane.showMessageDialog(this,
-					"The host hasn't defined teams on the sheet (Teams tab),\n"
-						+ "so type your team code directly into the settings.",
+					"The host hasn't listed any teams on the sheet (Teams tab) yet.\n"
+						+ "The store accepts no progress until they do - ask your host.",
 					"Irons Pub Bingo", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}

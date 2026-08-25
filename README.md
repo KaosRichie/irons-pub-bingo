@@ -21,8 +21,9 @@ Notes:
 - Keep the built-in **Loot Tracker** enabled — chest and raid loot comes from its events.
 - For tiles chasing a *specific* pet, enable **Collection log - New addition notification**.
 - XP and kill-count goals start counting when you import the board.
-- Changing your team code (or the store toggle) resets your board progress — progress
-  never moves between teams.
+- Each team keeps its own progress. Changing your team code (or the store toggle) switches
+  the board to that team's progress — nothing counts for two teams, and coming back to a
+  team restores what you had there.
 - Optional: set a **Discord webhook** to post your completions with a screenshot.
 
 ## Hosts
@@ -35,7 +36,8 @@ Notes:
    Script → paste [docs/apps-script-store.gs](docs/apps-script-store.gs) → Deploy → Web
    app, *Execute as: Me*, *Who has access: Anyone*. Copy the `/exec` URL.
 3. **Fill the sheet**: `/exec` URL into **Settings → Portal URL**, the board code into
-   **Board code**, one row per team into **Teams**.
+   **Board code**, one row per team into **Teams**. The store rejects every sync until
+   **Teams** has rows, so fill it before sharing the URL.
 4. **Share the `/exec` URL** with the clan. Players turn on *Use team store*, paste the
    URL, then **Import from store** and **Choose team**.
 5. Run the event from the sheet. Share the sheet with your **admins only** — players never
@@ -49,12 +51,18 @@ the board code and a team code instead — everything else still works over live
 | Tab | What it's for |
 |---|---|
 | **Board code** | The official board. Players pull it here, and clients running a different board are rejected. |
-| **Teams** | Code + display name per team. Locks the store to real teams and fills the Choose team picker. |
+| **Teams** | Code + display name per team. Fill this first: only listed codes may sync, and it fills the Choose team picker. |
 | **Adjustments** | Credit progress by hand. Rows add up; a negative row corrects a mistake. |
 | **Requests** | Player credit requests. Set Status to `Done` (writes the ledger row for you) or `Rejected`. |
 | **Board \<team\>** | Read-only view per team: the grid, per-goal progress, who contributed what. |
-| **Removed** | Evicted members. Auto-filled when someone switches teams; add a row to evict by hand. |
-| **Settings** | Portal URL, and `Push throttle (seconds)` to slow syncs down on big events. |
+| **Removed** | Who stopped counting. Auto-filled when someone leaves a team — their progress there is parked and returns if they rejoin. Add a row to evict by hand. |
+| **Settings** | Portal URL, and `Poll interval (seconds)` to tune how often clients sync. |
+
+Each client talks to the store every 2 minutes — one call both uploads and downloads —
+plus once per tile completion and once when you log out. Change that with
+`Poll interval (seconds)` on the **Settings** tab: `60` for a small, snappy event, or a
+few hundred to keep a big one light. It is clamped to 60–900 seconds, and completions
+always sync immediately whatever it is set to.
 
 Menu: **Irons Pub Bingo → Open player portal · Refresh board view · Approve/Deny selected
 request(s) · Reset store data**.
@@ -75,8 +83,9 @@ plugin.
 A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goals": []}`
 
 - `id` — keep it stable. Same id means you can fix a board mid-event without resetting
-  anyone: edit tiles in place, never insert, remove or reorder them. Bump `version` so
-  players see they need the new code.
+  anyone: reword labels, swap icons, adjust points, edit tiles in place, and never insert,
+  remove or reorder them. Bump `version` so players see they need the new code. Change what
+  a tile *tracks* and it counts as a different board — progress starts fresh, by design.
 - `start`/`end` — outside the window automatic tracking doesn't count; manual ticks do.
 - `icon` — an item name, or a numeric item id for untradeables.
 

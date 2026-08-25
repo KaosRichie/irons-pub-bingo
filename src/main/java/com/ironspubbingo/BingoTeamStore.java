@@ -105,8 +105,10 @@ class BingoTeamStore
 		String rejoin;
 		/** Request: a credit request for the admins' Requests tab. */
 		CreditRequest request;
-		/** Response: host-set minimum seconds between pushes (Settings tab); 0/null = none. */
-		Integer throttle;
+		/** Response: host-set seconds between store polls (Settings tab); 0/null = default. */
+		Integer pollSeconds;
+		/** Response: the store's generation, bumped whenever the host resets it. */
+		Integer epoch;
 		/** Request: this team's current total points, for the cross-team standings. */
 		Integer teamPoints;
 		/** Request: fingerprint of the sender's board code; must match the host's, if set. */
