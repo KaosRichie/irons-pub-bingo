@@ -410,9 +410,9 @@ class IronsPubBingoPanel extends PluginPanel
 				+ "\n"
 				+ "HOSTS\n"
 				+ "- Bingo Forge, the board builder, runs in your browser:\n"
-				+ "  https://r1chiexd.github.io/irons-pub-bingo/board-builder.html\n"
+				+ "  https://kaosrichie.github.io/irons-pub-bingo/board-builder.html\n"
 				+ "- The full README - board format, every goal type and the team store\n"
-				+ "  sheet - is at github.com/R1chieXD/irons-pub-bingo");
+				+ "  sheet - is at github.com/KaosRichie/irons-pub-bingo");
 		text.setEditable(false);
 		text.setFont(FontManager.getRunescapeSmallFont());
 		text.setBackground(ColorScheme.DARKER_GRAY_COLOR);
