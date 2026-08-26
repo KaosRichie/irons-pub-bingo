@@ -200,6 +200,7 @@ class IronsPubBingoPanel extends PluginPanel
 		// ---- team card ----
 
 		connectButton.addActionListener(e -> toggleTeam());
+		connectButton.setToolTipText("Uses the party service to update board state live with teammates who are online");
 		storePauseButton.addActionListener(e -> plugin.setStorePaused(!plugin.storePaused()));
 		portalButton.addActionListener(e ->
 		{

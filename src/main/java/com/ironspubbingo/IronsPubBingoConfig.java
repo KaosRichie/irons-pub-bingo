@@ -143,25 +143,6 @@ public interface IronsPubBingoConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Party Service",
-		description = "Live sync with teammates over RuneLite's party service",
-		position = 20
-	)
-	String partySection = "party";
-
-	@ConfigItem(
-		keyName = "autoJoinTeam",
-		name = "Auto-join team party on login",
-		description = "Connect to the team party automatically when you log in (unless you're already in another party)",
-		section = partySection,
-		position = 21
-	)
-	default boolean autoJoinTeam()
-	{
-		return false;
-	}
-
-	@ConfigSection(
 		name = "Custom Team",
 		description = "Your own team code, for events with no team store - with a store, pick your team with the panel's Choose team button",
 		position = 30

@@ -2616,11 +2616,6 @@ public class IronsPubBingoPlugin extends Plugin
 					return false; // not ready yet, retry next frame
 				}
 				flushPendingEvictions();
-				if (config.autoJoinTeam() && !partyService.isInParty() && expectedPassphrase() != null)
-				{
-					// PartyChanged fires once joined and announces from there.
-					partyService.changeParty(expectedPassphrase());
-				}
 				announceToTeam();
 				syncStore(false);
 				refreshPanel();
