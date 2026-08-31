@@ -1655,6 +1655,18 @@ public class IronsPubBingoPlugin extends Plugin
 			board == null ? null : board.version, callback);
 	}
 
+	/** Whether the player set a Discord webhook, for the request dialog's proof toggle. */
+	boolean webhookConfigured()
+	{
+		return discordNotifier.webhookConfigured();
+	}
+
+	/** Posts a proof screenshot for a credit request; callback gets (link, error). */
+	void postProofScreenshot(String tileLabel, java.util.function.BiConsumer<String, String> callback)
+	{
+		discordNotifier.postProofScreenshot(localPlayerName(), tileLabel, callback);
+	}
+
 	String teamStatusText()
 	{
 		if (expectedPassphrase() == null)

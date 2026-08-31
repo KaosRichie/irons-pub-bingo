@@ -1,6 +1,7 @@
 package com.ironspubbingo;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -49,6 +50,129 @@ class BingoDiscordNotifier
 
 	@Inject
 	private IronsPubBingoConfig config;
+
+	/** Whether a webhook URL is set, so callers can offer webhook-backed features. */
+	boolean webhookConfigured()
+	{
+		return HttpUrl.parse(config.webhookUrl().trim()) != null;
+	}
+
+	/**
+	 * Posts one game screenshot to the webhook as proof for a credit request and hands
+	 * back a link for the request's proof field. wait=true makes Discord return the
+	 * created message, and the webhook's own metadata (a GET on its URL) gives the guild
+	 * and channel, which turn the message id into a jump link. The jump link never
+	 * expires; attachment CDN URLs do, so they are only the fallback.
+	 * The callback gets (link, error) on an arbitrary thread.
+	 */
+	void postProofScreenshot(String player, String tileLabel, java.util.function.BiConsumer<String, String> callback)
+	{
+		HttpUrl url = HttpUrl.parse(config.webhookUrl().trim());
+		if (url == null)
+		{
+			callback.accept(null, "No Discord webhook set");
+			return;
+		}
+		String content = ":camera_with_flash: **" + (player == null ? "Someone" : player)
+			+ "** - proof for " + tileLabel + " (credit request)";
+		drawManager.requestNextFrameListener(frame -> executor.execute(() ->
+		{
+			Map<String, Object> payload = new HashMap<>();
+			payload.put("content", content);
+			MultipartBody.Builder body = new MultipartBody.Builder()
+				.setType(MultipartBody.FORM)
+				.addFormDataPart("payload_json", gson.toJson(payload));
+			byte[] png = toPng(frame);
+			if (png == null)
+			{
+				callback.accept(null, "Could not capture the screenshot");
+				return;
+			}
+			body.addFormDataPart("files[0]", "proof.png", RequestBody.create(PNG, png));
+			Request post = new Request.Builder()
+				.url(url.newBuilder().setQueryParameter("wait", "true").build())
+				.post(body.build())
+				.build();
+			okHttpClient.newCall(post).enqueue(new Callback()
+			{
+				@Override
+				public void onFailure(Call call, IOException e)
+				{
+					callback.accept(null, "Discord unreachable: " + e.getMessage());
+				}
+
+				@Override
+				public void onResponse(Call call, Response response) throws IOException
+				{
+					try (Response r = response)
+					{
+						if (!r.isSuccessful() || r.body() == null)
+						{
+							callback.accept(null, "Discord webhook returned " + r.code());
+							return;
+						}
+						resolveMessageLink(url, gson.fromJson(r.body().string(), JsonObject.class), callback);
+					}
+				}
+			});
+		}));
+	}
+
+	/** Turns the webhook's reply into a permanent jump link, or the attachment URL. */
+	private void resolveMessageLink(HttpUrl webhook, JsonObject message,
+		java.util.function.BiConsumer<String, String> callback)
+	{
+		String messageId = message.has("id") ? message.get("id").getAsString() : null;
+		String channelId = message.has("channel_id") ? message.get("channel_id").getAsString() : null;
+		String attachmentUrl = null;
+		if (message.has("attachments") && message.getAsJsonArray("attachments").size() > 0)
+		{
+			JsonObject attachment = message.getAsJsonArray("attachments").get(0).getAsJsonObject();
+			attachmentUrl = attachment.has("url") ? attachment.get("url").getAsString() : null;
+		}
+		final String fallback = attachmentUrl;
+		if (messageId == null || channelId == null)
+		{
+			finishWithLink(fallback, callback);
+			return;
+		}
+		okHttpClient.newCall(new Request.Builder().url(webhook).get().build()).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				finishWithLink(fallback, callback);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (Response r = response)
+				{
+					String guildId = null;
+					if (r.isSuccessful() && r.body() != null)
+					{
+						JsonObject info = gson.fromJson(r.body().string(), JsonObject.class);
+						guildId = info != null && info.has("guild_id") ? info.get("guild_id").getAsString() : null;
+					}
+					finishWithLink(guildId == null ? fallback
+						: "https://discord.com/channels/" + guildId + "/" + channelId + "/" + messageId, callback);
+				}
+			}
+		});
+	}
+
+	private static void finishWithLink(String link, java.util.function.BiConsumer<String, String> callback)
+	{
+		if (link == null)
+		{
+			callback.accept(null, "Screenshot posted, but Discord gave no usable link");
+		}
+		else
+		{
+			callback.accept(link, null);
+		}
+	}
 
 	/**
 	 * Posts progress on a goal the host flagged with "screenshot": proof lands in Discord

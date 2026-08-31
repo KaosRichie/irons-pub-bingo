@@ -398,6 +398,11 @@ class BingoTileDetail extends JPanel
 		JCheckBox complete = new JCheckBox("Mark the whole tile complete instead");
 		JTextField note = new JTextField();
 		JTextField links = new JTextField();
+		JCheckBox proofShot = new JCheckBox("Attach a screenshot (posts to your Discord webhook)");
+		proofShot.setEnabled(plugin.webhookConfigured());
+		proofShot.setToolTipText(plugin.webhookConfigured()
+			? "Screenshots the game, posts it to your Discord webhook and files its link as proof"
+			: "Set a Discord webhook in the settings first");
 		form.add(new JLabel("Amount to credit (e.g. 40):"));
 		form.add(amount);
 		form.add(complete);
@@ -405,6 +410,7 @@ class BingoTileDetail extends JPanel
 		form.add(note);
 		form.add(new JLabel("Proof link(s) - screenshots on Discord/Imgur:"));
 		form.add(links);
+		form.add(proofShot);
 
 		int answer = JOptionPane.showConfirmDialog(this, form,
 			"Request admin credit - " + tile.label, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -439,18 +445,43 @@ class BingoTileDetail extends JPanel
 		rebuild();
 		revalidate();
 		repaint();
-		plugin.submitCreditRequest(tileIndex, goalIndex, add, complete.isSelected(),
-			note.getText().trim(), links.getText().trim(),
+		final Long addFinal = add;
+		final String noteText = note.getText().trim();
+		final String manualLinks = links.getText().trim();
+		if (proofShot.isSelected())
+		{
+			// Screenshot first, so its Discord link rides along as a proof link. A failed
+			// screenshot never blocks the request itself.
+			plugin.postProofScreenshot(tile.label, (link, shotError) -> SwingUtilities.invokeLater(() ->
+				sendRequest(tileIndex, goalIndex, addFinal, complete.isSelected(), noteText,
+					link == null ? manualLinks : manualLinks.isEmpty() ? link : manualLinks + " " + link,
+					shotError)));
+		}
+		else
+		{
+			sendRequest(tileIndex, goalIndex, addFinal, complete.isSelected(), noteText, manualLinks, null);
+		}
+	}
+
+	private void sendRequest(int tileIndex, Integer goalIndex, Long add, boolean complete,
+		String note, String links, String screenshotError)
+	{
+		plugin.submitCreditRequest(tileIndex, goalIndex, add, complete, note, links,
 			(ok, error) -> SwingUtilities.invokeLater(() ->
 			{
 				requestInFlight = false;
 				rebuild();
 				revalidate();
 				repaint();
-				JOptionPane.showMessageDialog(this,
-					ok ? "Request sent - a team admin will review it on the sheet."
-						: "Could not send the request: " + error,
-					"Irons Pub Bingo", ok ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+				String message = ok ? "Request sent - a team admin will review it on the sheet."
+					: "Could not send the request: " + error;
+				if (ok && screenshotError != null)
+				{
+					message += "\nThe screenshot didn't attach (" + screenshotError
+						+ ") - add a proof link yourself if the admin needs one.";
+				}
+				JOptionPane.showMessageDialog(this, message, "Irons Pub Bingo",
+					ok && screenshotError == null ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
 			}));
 	}
 
