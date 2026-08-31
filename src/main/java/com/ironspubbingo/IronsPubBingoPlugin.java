@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +33,7 @@ import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
@@ -50,7 +52,7 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.events.ServerNpcLoot;
 import net.runelite.client.events.PartyChanged;
 import net.runelite.client.events.PlayerLootReceived;
 import net.runelite.client.events.RuneScapeProfileChanged;
@@ -173,10 +175,21 @@ public class IronsPubBingoPlugin extends Plugin
 	private String lastKnownName;
 	/** Highest board revision seen from a teammate, when newer than ours. */
 	private Integer newerBoardVersion;
+	/** The newer revision came from the store itself, so Import from store has it. */
+	private boolean newerBoardFromStore;
 	/** Store key the board definition was last uploaded for. */
 	private String metaSentForBoard;
 	/** Last total Agility XP seen, for lap detection; -1 = unseeded (never count a seed). */
 	private long lastAgilityXp = -1;
+	/** Tick of the last pickpocket message, to ignore the loot the server announces for it. */
+	private int pickpocketTick = -1;
+	/**
+	 * What the store last accepted from us, member id -> serialized state. Polls resend
+	 * only members whose state changed since; the server merges per tile anyway, so a
+	 * partial push is exactly as correct as a full one and far smaller. Cleared whenever
+	 * the scope changes (board, team, mode, store generation) or a push fails.
+	 */
+	private final Map<String, String> storePushed = new HashMap<>();
 	/** Marks of grace held at the last inventory change; -1 = unseeded (never count a seed). */
 	private int lastMarkCount = -1;
 	/** Marks dropped while on a course; re-picking them up must not count again. */
@@ -465,14 +478,14 @@ public class IronsPubBingoPlugin extends Plugin
 			List<Object> goals = new ArrayList<>();
 			for (BingoGoal goal : tile.goals)
 			{
-				if (goal.goalType == GoalType.MANUAL)
-				{
-					continue;
-				}
+				// Manual goals ride along too: leaving them out shifted every later
+				// goal's index, so mixed tiles' progress and admin credit landed on
+				// the wrong columns - and manual-only tiles vanished from the portal.
 				Map<String, Object> goalMeta = new HashMap<>();
 				goalMeta.put("label", goal.shortDescribe());
 				goalMeta.put("target", goal.target());
 				goalMeta.put("distinct", goal.usesMatchedSet());
+				goalMeta.put("manual", goal.goalType == GoalType.MANUAL);
 				goals.add(goalMeta);
 			}
 			tileMeta.put("goals", goals);
@@ -485,6 +498,7 @@ public class IronsPubBingoPlugin extends Plugin
 	private void activateBoard(BingoBoard parsed)
 	{
 		newerBoardVersion = null;
+		newerBoardFromStore = false;
 		metaSentForBoard = null;
 		storeError = null; // whatever the store objected to, it was about the old board
 		board = parsed;
@@ -492,6 +506,7 @@ public class IronsPubBingoPlugin extends Plugin
 		// canonical content hash, so whitespace differences in the pasted JSON don't
 		// put teammates on different keys.
 		boardKey = parsed.storageKey(gson);
+		storePushed.clear();
 		loadProgress();
 	}
 
@@ -610,7 +625,9 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return null;
 		}
-		return "Board v" + newerBoardVersion + " is out - ask your host for the new board code";
+		return newerBoardFromStore
+			? "Board v" + newerBoardVersion + " is out - reimport it: Setup, Import board, Import from store"
+			: "Board v" + newerBoardVersion + " is out - ask your host for the new board code";
 	}
 
 	/** Board name plus revision, e.g. "Summer Bingo (v2)". */
@@ -627,6 +644,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		saveProgress(true);
 		newerBoardVersion = null;
+		newerBoardFromStore = false;
 		board = null;
 		boardKey = null;
 		boardCodeHash = null;
@@ -744,6 +762,32 @@ public class IronsPubBingoPlugin extends Plugin
 	boolean hasTeamData()
 	{
 		return !activeTeamProgress().isEmpty();
+	}
+
+	/**
+	 * Everyone known to be on this team - you, plus every teammate the caches have seen -
+	 * sorted, own name first. Membership, not presence: nothing here says who is online.
+	 */
+	List<String> teamMemberNames()
+	{
+		Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+		for (Map.Entry<String, TeamMemberState> entry : activeTeamProgress().entrySet())
+		{
+			if (!isAdminMember(entry.getKey()) && entry.getValue().name != null
+				&& !entry.getValue().name.isEmpty())
+			{
+				names.add(entry.getValue().name);
+			}
+		}
+		String own = localPlayerName();
+		List<String> ordered = new ArrayList<>();
+		if (own != null)
+		{
+			names.remove(own);
+			ordered.add(own);
+		}
+		ordered.addAll(names);
+		return ordered;
 	}
 
 	/**
@@ -1060,6 +1104,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		log.debug("Store generation {} -> {}, dropping cached team data", seen, epoch);
+		storePushed.clear();
 		teamProgress.clear();
 		removedMembers.clear();
 		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, removedCacheKey(code));
@@ -1332,6 +1377,7 @@ public class IronsPubBingoPlugin extends Plugin
 	private void applyStoreToggle(boolean wasOn)
 	{
 		storeRequestsInFlight = 0; // toggling modes invalidates any in-flight accounting
+		storePushed.clear();
 		storeStandings.clear();
 		if (wasOn)
 		{
@@ -1378,6 +1424,7 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Swaps party membership and the per-team member cache over to the new team code. */
 	private void applyTeamSwitch(String oldCode)
 	{
+		storePushed.clear();
 		teamProgress.clear();
 		if (boardKey != null && configManager.getRSProfileKey() != null)
 		{
@@ -1535,7 +1582,7 @@ public class IronsPubBingoPlugin extends Plugin
 	/** The panel's "Choose team" picker: the host-defined teams from the store's sheet. */
 	void fetchStoreTeams(java.util.function.BiConsumer<List<BingoTeamStore.TeamInfo>, String> callback)
 	{
-		teamStore.fetchTeams(callback);
+		teamStore.fetchTeams(boardKey, callback);
 	}
 
 	/** The panel's "Get board from store": the board code the host pasted on the sheet. */
@@ -1604,7 +1651,8 @@ public class IronsPubBingoPlugin extends Plugin
 		request.complete = complete;
 		request.note = note;
 		request.links = links;
-		teamStore.submitRequest(storeScopedKey(), request, callback);
+		teamStore.submitRequest(storeScopedKey(), request, boardCodeHash,
+			board == null ? null : board.version, callback);
 	}
 
 	String teamStatusText()
@@ -2015,7 +2063,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			// Keep this short: it is shown on the store button next to "No board imported".
 			storeError = teamCode == null ? "No team" : "Party-only team";
-			teamStore.fetchTeams((teams, error) -> clientThread.invokeLater(() ->
+			teamStore.fetchTeams(boardKey, (teams, error) -> clientThread.invokeLater(() ->
 			{
 				cacheStoreTeams(teams);
 				String code = normalizedTeamCode();
@@ -2050,13 +2098,27 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
+		// Push only what the store doesn't already have; an unchanged poll uploads
+		// nothing and just pulls. The reply always carries the full merged state.
+		final Map<String, String> sending = new HashMap<>();
+		Map<String, TeamMemberState> toSend = new HashMap<>();
+		for (Map.Entry<String, TeamMemberState> entry : known.entrySet())
+		{
+			String json = gson.toJson(entry.getValue());
+			if (!json.equals(storePushed.get(entry.getKey())))
+			{
+				toSend.put(entry.getKey(), entry.getValue());
+				sending.put(entry.getKey(), json);
+			}
+		}
 		final String forBoard = storeScopedKey();
 		// The board definition lets the store render a readable board for admins; it only
 		// changes when the board does, so send it once per board per session.
 		Object meta = forBoard.equals(metaSentForBoard) ? null : buildBoardMeta();
 		storeRequestsInFlight++;
 		refreshPanel();
-		teamStore.sync(forBoard, known, meta, self, earnedPoints(), boardCodeHash,
+		teamStore.sync(forBoard, toSend, meta, self, earnedPoints(), boardCodeHash,
+			board == null ? null : board.version,
 			(payload, error) -> clientThread.invokeLater(() ->
 		{
 			storeRequestsInFlight = Math.max(0, storeRequestsInFlight - 1);
@@ -2085,12 +2147,22 @@ public class IronsPubBingoPlugin extends Plugin
 			if (error != null)
 			{
 				storeError = error;
+				// The store rejected us for running an outdated board: surface it via
+				// the same notice a teammate's newer revision would trigger.
+				if (payload != null && payload.newerVersion != null && board != null
+					&& (board.version == null || payload.newerVersion > board.version)
+					&& (newerBoardVersion == null || payload.newerVersion > newerBoardVersion))
+				{
+					newerBoardVersion = payload.newerVersion;
+					newerBoardFromStore = true;
+				}
 			}
 			else
 			{
 				storeError = null;
 				storeSyncedAt = new SimpleDateFormat("HH:mm").format(new Date());
 				metaSentForBoard = forBoard;
+				storePushed.putAll(sending);
 				applyStoreEpoch(payload.epoch);
 				// The store owns admin credit and evictions outright, so a credit or member
 				// removed there must disappear here too - merging alone would keep the
@@ -2169,6 +2241,10 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 			lines += (row ? 1 : 0) + (col ? 1 : 0);
 		}
+		if (!board.diagonalsCount())
+		{
+			return lines;
+		}
 		boolean diag = true;
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
@@ -2191,6 +2267,11 @@ public class IronsPubBingoPlugin extends Plugin
 	boolean progressFill()
 	{
 		return config.progressFill();
+	}
+
+	boolean showTileNumbers()
+	{
+		return config.showTileNumbers();
 	}
 
 	/**
@@ -2258,6 +2339,10 @@ public class IronsPubBingoPlugin extends Plugin
 				}
 			}
 		}
+		if (!board.diagonalsCount())
+		{
+			return cells;
+		}
 		boolean diag = true;
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
@@ -2304,6 +2389,10 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				segments.add(new int[]{r, (size - 1) * size + r});
 			}
+		}
+		if (!board.diagonalsCount())
+		{
+			return segments;
 		}
 		boolean diag = true;
 		boolean anti = true;
@@ -2392,27 +2481,41 @@ public class IronsPubBingoPlugin extends Plugin
 
 	// ---------------------------------------------------------------- event handlers
 
+	/**
+	 * NPC kill loot, as announced by the game's own loot tracker script. This is the same
+	 * source RuneLite's Loot Tracker uses, and the only one that sees loot delivered
+	 * straight to the inventory (Araxxor's harvested corpse) instead of onto the ground.
+	 * The legacy ground-scan event (NpcLootReceived) fires alongside this for ordinary
+	 * kills, so subscribing to both would count them twice.
+	 */
 	@Subscribe
-	public void onNpcLootReceived(NpcLootReceived event)
+	public void onServerNpcLoot(ServerNpcLoot event)
 	{
-		handleLoot(event.getNpc().getName(), event.getItems(), true);
+		// The server announces pickpocket loot through the same script. It counts as
+		// loot from that NPC - so pickpocket-farmed tiles work - but never as a kill.
+		BingoGoal.LootKind kind = pickpocketTick == client.getTickCount()
+			? BingoGoal.LootKind.PICKPOCKET
+			: BingoGoal.LootKind.KILL;
+		handleLoot(event.getComposition().getName(), event.getItems(), kind);
 	}
 
 	@Subscribe
 	public void onPlayerLootReceived(PlayerLootReceived event)
 	{
-		handleLoot(event.getPlayer().getName(), event.getItems(), false);
+		handleLoot(event.getPlayer().getName(), event.getItems(), BingoGoal.LootKind.OTHER);
 	}
 
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
-		// NPC and player loot already arrives via the dedicated events above.
-		if (event.getType() == LootRecordType.NPC || event.getType() == LootRecordType.PLAYER)
+		// NPC, player and pickpocket loot already arrives via the dedicated events
+		// above - the Loot Tracker's re-posts of them would count everything twice.
+		if (event.getType() == LootRecordType.NPC || event.getType() == LootRecordType.PLAYER
+			|| event.getType() == LootRecordType.PICKPOCKET)
 		{
 			return;
 		}
-		handleLoot(event.getName(), event.getItems(), false);
+		handleLoot(event.getName(), event.getItems(), BingoGoal.LootKind.OTHER);
 	}
 
 	/**
@@ -2454,7 +2557,7 @@ public class IronsPubBingoPlugin extends Plugin
 		gained -= owed;
 		if (gained > 0 && course != null && board != null)
 		{
-			handleLoot(course.getDisplayName(), List.of(new ItemStack(ItemID.GRACE, gained)), false);
+			handleLoot(course.getDisplayName(), List.of(new ItemStack(ItemID.GRACE, gained)), BingoGoal.LootKind.OTHER);
 		}
 	}
 
@@ -2472,7 +2575,22 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		String message = Text.removeTags(event.getMessage());
 		String lower = message.toLowerCase(Locale.ROOT);
+		if (lower.startsWith("you pick ") && lower.contains(" pocket"))
+		{
+			pickpocketTick = client.getTickCount();
+		}
 		final boolean active = trackingActive();
+		// For region-gated CHAT goals: the plain region, and the template region when the
+		// player stands in an instance (whose real-world coordinates are throwaway).
+		int worldRegion = -1;
+		int instanceRegion = -1;
+		if (client.getLocalPlayer() != null)
+		{
+			worldRegion = client.getLocalPlayer().getWorldLocation().getRegionID();
+			instanceRegion = WorldPoint.fromLocalInstance(client, client.getLocalPlayer().getLocalLocation()).getRegionID();
+		}
+		final int chatWorldRegion = worldRegion;
+		final int chatInstanceRegion = instanceRegion;
 
 		Matcher kcMatcher = KC_MESSAGE.matcher(message);
 		String kcBoss = kcMatcher.find() ? kcMatcher.group(1) : null;
@@ -2516,7 +2634,8 @@ public class IronsPubBingoPlugin extends Plugin
 						&& Wildcards.anyMatch(goal.petPatterns, collectionLogItem)
 						&& addMatched(p, collectionLogItem);
 				case CHAT:
-					return active && goal.chatPattern.matcher(message).find() && bump(p, 1);
+					return active && goal.allowsRegion(chatWorldRegion, chatInstanceRegion)
+						&& goal.chatPattern.matcher(message).find() && bump(p, 1);
 				default:
 					return false;
 			}
@@ -2648,7 +2767,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	// ---------------------------------------------------------------- tracking
 
-	private void handleLoot(String source, Collection<ItemStack> items, boolean npcKill)
+	private void handleLoot(String source, Collection<ItemStack> items, BingoGoal.LootKind kind)
 	{
 		if (board == null || !trackingActive() || items == null || items.isEmpty())
 		{
@@ -2657,6 +2776,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 		int n = items.size();
 		String[] names = new String[n];
+		int[] ids = new int[n];
 		int[] quantities = new int[n];
 		long totalValue = 0;
 		int i = 0;
@@ -2667,12 +2787,16 @@ public class IronsPubBingoPlugin extends Plugin
 			// values the pile at 0 and silently fails VALUE goals.
 			int canonicalId = itemManager.canonicalize(stack.getId());
 			names[i] = itemManager.getItemComposition(canonicalId).getName();
+			ids[i] = canonicalId;
 			quantities[i] = stack.getQuantity();
 			totalValue += (long) itemManager.getItemPrice(canonicalId) * stack.getQuantity();
 			i++;
 		}
 		final long lootValue = totalValue;
 		Raid raid = Raid.fromLootSource(source);
+		// What each DROP/VALUE goal actually received, so a completion post can say
+		// which drop finished the tile.
+		Map<BingoGoal, String> lootDetails = new HashMap<>();
 
 		Set<Integer> before = completedTiles();
 		Set<Long> changed = visitGoals((tile, goal, p) ->
@@ -2681,25 +2805,35 @@ public class IronsPubBingoPlugin extends Plugin
 			switch (goal.goalType)
 			{
 				case KILL:
-					// One NpcLootReceived = one kill the game attributed to us (it awards
+					// One server-announced kill loot = one kill attributed to us (it awards
 					// loot to whoever dealt the most damage - the ironman rule) - so a
 					// shared kill counts exactly once across the team.
-					return npcKill
+					return kind == BingoGoal.LootKind.KILL
 						&& Wildcards.anyMatch(goal.npcPatterns, source)
 						&& bump(p, 1);
 				case DROP:
-					if (!Wildcards.anyMatch(goal.sourcePatterns, source))
+					if (!goal.allowsLoot(kind) || !Wildcards.anyMatch(goal.sourcePatterns, source))
 					{
 						return false;
 					}
+					StringBuilder got = new StringBuilder();
 					for (int idx = 0; idx < names.length; idx++)
 					{
-						if (Wildcards.anyMatch(goal.itemPatterns, names[idx]))
+						if (goal.matchesItem(names[idx], ids[idx]))
 						{
 							any |= goal.isDistinct()
 								? addMatched(p, names[idx])
 								: bump(p, quantities[idx]);
+							got.append(got.length() > 0 ? ", " : "").append(names[idx]);
+							if (quantities[idx] > 1)
+							{
+								got.append(" x").append(quantities[idx]);
+							}
 						}
+					}
+					if (any)
+					{
+						lootDetails.put(goal, got + " from " + source);
 					}
 					return any;
 				case RAID_PURPLE:
@@ -2711,21 +2845,34 @@ public class IronsPubBingoPlugin extends Plugin
 					{
 						if (raid.isUnique(name))
 						{
-							any |= bump(p, 1);
+							any |= goal.isDistinct() ? addMatched(p, name) : bump(p, 1);
 						}
 					}
 					return any;
 				case VALUE:
-					return Wildcards.anyMatch(goal.sourcePatterns, source)
-						&& lootValue >= goal.amount
-						&& bump(p, 1);
+					if (!goal.allowsLoot(kind) || !Wildcards.anyMatch(goal.sourcePatterns, source)
+						|| lootValue < goal.amount || !bump(p, 1))
+					{
+						return false;
+					}
+					StringBuilder pile = new StringBuilder();
+					for (int idx = 0; idx < names.length; idx++)
+					{
+						pile.append(idx > 0 ? ", " : "").append(names[idx]);
+						if (quantities[idx] > 1)
+						{
+							pile.append(" x").append(quantities[idx]);
+						}
+					}
+					lootDetails.put(goal, String.format("%s (%,d gp) from %s", pile, lootValue, source));
+					return true;
 				default:
 					return false;
 			}
 		});
 		if (!changed.isEmpty())
 		{
-			afterChange(before, tilesOf(changed), changed);
+			afterChange(before, tilesOf(changed), changed, lootDetails);
 		}
 	}
 
@@ -2756,6 +2903,33 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 		}
 		return changed;
+	}
+
+	/**
+	 * The goal whose progress in this change finished the tile, described for humans -
+	 * or null for single-goal tiles, where the label already says everything.
+	 */
+	private String finishingGoal(int tileIndex, Set<Long> changedGoals)
+	{
+		BingoTile tile = board.getTiles().get(tileIndex);
+		if (tile.goals.size() < 2)
+		{
+			return null;
+		}
+		for (long pair : changedGoals)
+		{
+			if ((int) (pair >> 16) != tileIndex)
+			{
+				continue;
+			}
+			BingoGoal goal = tile.goals.get((int) (pair & 0xFFFF));
+			long merged = goal.progressOf(mergedProgressFor(tileIndex).goal((int) (pair & 0xFFFF), tile.goals.size()));
+			if (merged >= goal.target())
+			{
+				return goal.shortDescribe();
+			}
+		}
+		return null;
 	}
 
 	private static Set<Integer> tilesOf(Set<Long> changedGoals)
@@ -2851,6 +3025,10 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 			lines += (row ? 1 : 0) + (col ? 1 : 0);
 		}
+		if (!board.diagonalsCount())
+		{
+			return lines;
+		}
 		boolean diag = true;
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
@@ -2915,6 +3093,13 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	private void afterChange(Set<Integer> completedBefore, Set<Integer> changedTiles, Set<Long> changedGoals)
 	{
+		afterChange(completedBefore, changedTiles, changedGoals, null);
+	}
+
+	/** lootDetails: what each DROP/VALUE goal just received, for the completion post. */
+	private void afterChange(Set<Integer> completedBefore, Set<Integer> changedTiles, Set<Long> changedGoals,
+		Map<BingoGoal, String> lootDetails)
+	{
 		long now = System.currentTimeMillis();
 		for (int tileIndex : changedTiles)
 		{
@@ -2923,11 +3108,32 @@ public class IronsPubBingoPlugin extends Plugin
 
 		Set<Integer> completedAfter = completedTiles();
 		List<String> newlyCompleted = new ArrayList<>();
+		Set<Integer> newlyCompletedIdx = new HashSet<>();
+		List<String> discordLabels = new ArrayList<>();
+		List<String> completionLoot = new ArrayList<>();
 		for (Integer idx : completedAfter)
 		{
 			if (!completedBefore.contains(idx))
 			{
-				newlyCompleted.add(board.getTiles().get(idx).label);
+				BingoTile tile = board.getTiles().get(idx);
+				newlyCompleted.add(tile.label);
+				newlyCompletedIdx.add(idx);
+				// For Discord, name the goal that finished a multi-goal tile - "which
+				// half of the OR was it" is the first thing teammates ask.
+				String via = finishingGoal(idx, changedGoals);
+				discordLabels.add(via == null ? tile.label : tile.label + " (" + via + ")");
+				if (lootDetails != null)
+				{
+					for (BingoGoal goal : tile.goals)
+					{
+						String detail = lootDetails.get(goal);
+						if (detail != null && !completionLoot.contains(detail))
+						{
+							completionLoot.add(detail);
+							break;
+						}
+					}
+				}
 			}
 		}
 
@@ -2945,13 +3151,19 @@ public class IronsPubBingoPlugin extends Plugin
 				continue;
 			}
 			nonXpChange = true;
-			if (progressMessagesEnabled(goal.goalType))
+			long merged = goal.progressOf(mergedProgressFor(t).goal(g, tile.goals.size()));
+			if (progressMessagesEnabled(goal.goalType)
+				&& merged <= goal.target() && shown++ < MAX_PROGRESS_MESSAGES_PER_EVENT)
 			{
-				long merged = goal.progressOf(mergedProgressFor(t).goal(g, tile.goals.size()));
-				if (merged <= goal.target() && shown++ < MAX_PROGRESS_MESSAGES_PER_EVENT)
-				{
-					sendHighlightedMessage("Bingo progress - " + tile.label + ": " + merged + "/" + goal.target());
-				}
+				sendHighlightedMessage("Bingo progress - " + tile.label + ": " + merged + "/" + goal.target());
+			}
+			if (goal.wantsScreenshot() && !newlyCompletedIdx.contains(t))
+			{
+				// The host flagged this goal for proof-as-you-go (rare drops, mostly).
+				// When this very change completes the tile, the completion post below
+				// carries the screenshot instead of doubling up.
+				discordNotifier.postGoalProgress(localPlayerName(), tile.label,
+					goal.shortDescribe(), merged, goal.target());
 			}
 		}
 
@@ -2969,7 +3181,8 @@ public class IronsPubBingoPlugin extends Plugin
 		if (!newlyCompleted.isEmpty())
 		{
 			discordNotifier.postCompletion(localPlayerName(),
-				board.getName(), newlyCompleted, completedAfter.size(), board.getTiles().size(), bonus);
+				board.getName(), discordLabels, completedAfter.size(), board.getTiles().size(), bonus,
+				completionLoot.isEmpty() ? null : String.join("; ", completionLoot));
 		}
 
 		// XP-only changes arrive every xp drop; batch their team broadcasts.

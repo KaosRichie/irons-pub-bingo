@@ -106,11 +106,43 @@ var STATUS_COLORS = { Pending: '#fff2cc', Done: '#d9ead3', Rejected: '#f4cccc' }
 var HIDDEN_SHEETS = [STORE_SHEET, META_SHEET, REMOVED_SHEET, SCORES_SHEET];
 
 var REFRESH_THROTTLE_MS = 60000;
+// Client clocks drift; anything further ahead than this is clamped on write. An
+// unclamped future stamp would out-rank every later write - including the owner's
+// own reset - forever.
+var MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------- web endpoints
 
 function doPost(e)
 {
+	var body;
+	try
+	{
+		body = JSON.parse(e.postData.contents);
+
+		// Read-only requests answer before the write lock is even attempted: a store
+		// busy merging someone's push can still hand out the team list and the board.
+		if (body.teamsOnly)
+		{
+			// The plugin's "Choose team" picker: the host-defined team list, each with
+			// the names already signed up, so players can see who they would join.
+			return ContentService.createTextOutput(JSON.stringify(
+				{ teams: teamsWithMembers(String(body.board || '')) }))
+				.setMimeType(ContentService.MimeType.JSON);
+		}
+		if (body.fetchBoard)
+		{
+			// The plugin's "Get board from store": the board code the host pasted onto
+			// the Board code tab. Manual Import board keeps working regardless.
+			return fetchBoardResponse();
+		}
+	}
+	catch (err)
+	{
+		console.error('doPost failed: ' + err);
+		return jsonError('Script error - see the executions log on the sheet');
+	}
+
 	var lock = LockService.getScriptLock();
 	if (!lock.tryLock(25000))
 	{
@@ -120,19 +152,6 @@ function doPost(e)
 	}
 	try
 	{
-		var body = JSON.parse(e.postData.contents);
-		if (body.teamsOnly)
-		{
-			// The plugin's "Choose team" picker: just the host-defined team list.
-			return ContentService.createTextOutput(JSON.stringify({ teams: readTeamRows() }))
-				.setMimeType(ContentService.MimeType.JSON);
-		}
-		if (body.fetchBoard)
-		{
-			// The plugin's "Get board from store": the board code the host pasted onto
-			// the Board code tab. Manual Import board keeps working regardless.
-			return fetchBoardResponse();
-		}
 		var board = String(body.board || '');
 		var members = body.members || {};
 
@@ -177,8 +196,15 @@ function doPost(e)
 		var canonicalHash = canonicalCode ? sha256Hex(canonicalCode) : null;
 		if (canonicalHash && String(body.boardHash || '') !== canonicalHash)
 		{
+			// A client behind on versions gets told about the update; any other
+			// mismatch is a locally edited board. The error stays short (it sits on
+			// the plugin's store button); newerVersion carries the guidance instead.
+			var canonicalVersion = Number((parseJson(canonicalCode, {}) || {}).version || 0);
+			var clientVersion = Number(body.boardVersion || 0);
+			var outdated = canonicalVersion && clientVersion && clientVersion < canonicalVersion;
 			return ContentService.createTextOutput(JSON.stringify({ board: board,
-				error: 'Wrong board - use Import board, then Import from store' }))
+				error: outdated ? 'Board updated' : 'Wrong board - use Import board, then Import from store',
+				newerVersion: outdated ? canonicalVersion : undefined }))
 				.setMimeType(ContentService.MimeType.JSON);
 		}
 		if (body.rejoin && /^[0-9a-f]{16}$/.test(String(body.rejoin)))
@@ -198,20 +224,25 @@ function doPost(e)
 			recordRequest(board, body.request, false);
 		}
 
+		var scores = readScores();
 		if (typeof body.teamPoints === 'number' && body.teamPoints >= 0)
 		{
 			// The team's self-computed total, for the cross-team standings.
-			upsertScore(board, Math.floor(body.teamPoints));
+			upsertScore(board, Math.floor(body.teamPoints), scores);
 		}
 
+		var metaChanged = false;
 		if (body.meta)
 		{
-			saveMeta(board, body.meta);
+			metaChanged = saveMeta(board, body.meta);
 		}
 
+		// Every sheet read is a slow RPC, so each tab is read ONCE per request and the
+		// results are threaded through (the write lock is held - nothing can change).
 		var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
 		var rows = readRows(sheet);
-		var removed = removedFor(board);
+		var marks = allDepartures();
+		var removed = removedFor(board, marks);
 
 		// One team per board per member: a member's tracked data lives where THEIR OWN
 		// client syncs (the rejoin id above moves it). A relayed copy can never create
@@ -222,7 +253,6 @@ function doPost(e)
 		{
 			// Rows left behind in a team the member has since left don't count as owning
 			// them - those are parked, waiting for a return, not an active membership.
-			var marks = allDepartures();
 			for (var rk in rows)
 			{
 				if (rows[rk].board !== board && rows[rk].board.indexOf(prefix) === 0
@@ -250,10 +280,16 @@ function doPost(e)
 			// Last-write-wins per tile, by the owning player's own timestamp.
 			var incomingTiles = incoming.tiles || {};
 			var changed = false;
+			var maxTs = Date.now() + MAX_CLOCK_SKEW_MS;
 			for (var tile in incomingTiles)
 			{
 				var inc = incomingTiles[tile];
 				var cur = current[tile];
+				if (inc && inc.ts > maxTs)
+				{
+					// Clamp to now, not to now+skew: the next honest write must win.
+					inc.ts = Date.now();
+				}
 				if (inc && (!cur || (inc.ts || 0) > (cur.ts || 0)))
 				{
 					current[tile] = inc;
@@ -267,8 +303,8 @@ function doPost(e)
 			}
 		}
 
-		var response = respond(board, readRows(sheet));
-		maybeRefreshViews(board, false);
+		var response = respond(board, rows, removed, teams, scores);
+		maybeRefreshViews(board, metaChanged);
 		return response;
 	}
 	catch (err)
@@ -334,6 +370,18 @@ function portalPage()
 			var metaGoals = meta.tiles[t].goals || [];
 			for (var g = 0; g < metaGoals.length; g++)
 			{
+				if (metaGoals[g].manual)
+				{
+					// Manual goals have no counters; their progress IS the tick.
+					var tickers = Object.keys(totals.manualBy[t]);
+					goals.push({
+						label: String(metaGoals[g].label || 'Manual tick'),
+						target: 1,
+						total: tickers.length ? 1 : 0,
+						by: tickers.length ? 'ticked by ' + tickers.join(', ') : ''
+					});
+					continue;
+				}
 				goals.push({
 					label: String(metaGoals[g].label || ('Goal ' + (g + 1))),
 					target: Number(metaGoals[g].target || 0),
@@ -357,7 +405,9 @@ function portalPage()
 				requests.push({
 					when: String(requestValues[r][0]).slice(0, 10),
 					player: String(requestValues[r][2]),
-					tile: String(requestValues[r][3]),
+					// The cell may carry "3 - <label>"; the portal only needs the number
+					// (it renders the label from the board itself).
+					tile: String(parseInt(requestValues[r][3], 10) || requestValues[r][3]),
 					what: (requestValues[r][6] ? 'complete' : '+' + requestValues[r][5]),
 					status: status
 				});
@@ -376,7 +426,7 @@ function portalPage()
 	var data = JSON.stringify(boards).replace(/</g, '\\u003c');
 	var html = '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">'
 		+ '<title>Irons Pub Bingo</title><style>'
-		+ 'body{font-family:sans-serif;background:#282828;color:#ddd;max-width:560px;margin:0 auto;padding:16px}'
+		+ 'body{font-family:sans-serif;background:#282828;color:#ddd;max-width:1100px;margin:0 auto;padding:16px}'
 		+ 'label{display:block;margin-top:12px;font-size:14px}'
 		+ 'input,select,button{width:100%;box-sizing:border-box;padding:8px;margin-top:4px;'
 		+ 'background:#1e1e1e;color:#ddd;border:1px solid #555;border-radius:4px;font-size:15px}'
@@ -422,13 +472,14 @@ function portalPage()
 		+ 'c.className=t.done?"cell done":"cell";c.textContent=cellText(t,i);grid.appendChild(c);});\n'
 		+ 'var goals=el("goals").tBodies[0];goals.innerHTML="";'
 		+ 'b.tiles.forEach(function(t,i){t.goals.forEach(function(g,gi){var tr=document.createElement("tr");'
-		+ '[gi===0?String(i+1):"",g.label,g.target?g.total+" / "+g.target:"",g.by||""]'
+		+ '[gi===0?cellText(t,i):"",g.label,g.target?g.total+" / "+g.target:"",g.by||""]'
 		+ '.forEach(function(v){var td=document.createElement("td");td.textContent=v;tr.appendChild(td);});'
 		+ 'goals.appendChild(tr);});});\n'
 		+ 'var reqs=el("reqs").tBodies[0];reqs.innerHTML="";'
 		+ 'b.requests.forEach(function(q){var tr=document.createElement("tr");'
-		+ '[q.when,q.player,q.tile,q.what].forEach(function(v){var td=document.createElement("td");'
-		+ 'td.textContent=v;tr.appendChild(td);});'
+		+ 'var rt=b.tiles[Number(q.tile)-1];'
+		+ '[q.when,q.player,rt?cellText(rt,Number(q.tile)-1):q.tile,q.what].forEach(function(v){'
+		+ 'var td=document.createElement("td");td.textContent=v;tr.appendChild(td);});'
 		+ 'var st=document.createElement("td");st.textContent=q.status;st.className="st-"+q.status.toLowerCase();'
 		+ 'tr.appendChild(st);reqs.appendChild(tr);});\n'
 		+ 'tileSel.innerHTML="";b.tiles.forEach(function(t,i){var o=document.createElement("option");'
@@ -483,10 +534,11 @@ function submitFormRequest(payload)
 }
 
 /** Stored players plus the synthetic "admin:" members built from the Adjustments tab. */
-function respond(board, rows)
+function respond(board, rows, removed, teams, scores)
 {
 	var members = {};
-	var removed = removedFor(board);
+	removed = removed || removedFor(board);
+	var epoch = storeEpoch();
 	for (var key in rows)
 	{
 		var row = rows[key];
@@ -496,38 +548,50 @@ function respond(board, rows)
 			members[row.member] = { name: row.name, tiles: parseJson(row.data, {}) };
 		}
 	}
-	var credited = buildAdjustmentMembers(board, readMeta(board));
+	var credited = buildAdjustmentMembers(board, cachedMeta(board, epoch));
 	for (var id in credited)
 	{
 		members[id] = credited[id];
 	}
 	return ContentService
 		.createTextOutput(JSON.stringify({ board: board, members: members,
-			teams: readTeamRows(), removed: Object.keys(removedFor(board)),
-			pollSeconds: readPollInterval(), epoch: storeEpoch(),
-			standings: standingsFor(board) }))
+			teams: teams || readTeamRows(), removed: Object.keys(removed),
+			pollSeconds: readPollInterval(), epoch: epoch,
+			standings: standingsFor(board, scores) }))
 		.setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Latest points per team on this board scope's board, best first (Scores tab). */
-function upsertScore(board, points)
+/** The Scores tab read once, for upsertScore and standingsFor to share. */
+function readScores()
 {
 	var sheet = getSheet(SCORES_SHEET, SCORES_HEADERS);
-	var values = sheet.getDataRange().getValues();
-	for (var i = 1; i < values.length; i++)
+	return { sheet: sheet, values: sheet.getDataRange().getValues() };
+}
+
+function upsertScore(board, points, scores)
+{
+	scores = scores || readScores();
+	for (var i = 1; i < scores.values.length; i++)
 	{
-		if (String(values[i][0]) === board)
+		if (String(scores.values[i][0]) === board)
 		{
-			sheet.getRange(i + 1, 2, 1, 2).setValues([[points, new Date().toISOString()]]);
+			if (Number(scores.values[i][1]) === points)
+			{
+				return; // most polls change nothing - skip the write entirely
+			}
+			scores.sheet.getRange(i + 1, 2, 1, 2).setValues([[points, new Date().toISOString()]]);
+			scores.values[i][1] = points;
 			return;
 		}
 	}
-	var range = sheet.getRange(sheet.getLastRow() + 1, 1, 1, 3);
+	var range = scores.sheet.getRange(scores.sheet.getLastRow() + 1, 1, 1, 3);
 	range.setNumberFormat('@');
 	range.setValues([[board, points, new Date().toISOString()]]);
+	scores.values.push([board, points, '']);
 }
 
-function standingsFor(board)
+function standingsFor(board, scores)
 {
 	var at = board.lastIndexOf('_');
 	if (at < 0)
@@ -535,7 +599,7 @@ function standingsFor(board)
 		return [];
 	}
 	var prefix = board.substring(0, at + 1);
-	var values = getSheet(SCORES_SHEET, SCORES_HEADERS).getDataRange().getValues();
+	var values = (scores || readScores()).values;
 	var standings = [];
 	for (var i = 1; i < values.length; i++)
 	{
@@ -571,6 +635,47 @@ function readTeamRows()
 	return teams;
 }
 
+/**
+ * The Teams tab plus, per team, the member display names stored under the given board
+ * key (players who left are filtered out). Without a board key - the client has not
+ * imported a board yet - names are collected from every board scope of that team.
+ */
+function teamsWithMembers(boardKey)
+{
+	var teams = readTeamRows();
+	if (!teams.length)
+	{
+		return teams;
+	}
+	var rows = readRows(getSheet(STORE_SHEET, STORE_HEADERS));
+	var marks = allDepartures();
+	for (var i = 0; i < teams.length; i++)
+	{
+		var suffix = '_' + teams[i].code;
+		var names = [];
+		for (var key in rows)
+		{
+			var row = rows[key];
+			var inScope = boardKey
+				? row.board === boardKey + suffix
+				: row.board.length > suffix.length
+					&& row.board.lastIndexOf(suffix) === row.board.length - suffix.length;
+			if (!inScope || marks[row.board + '|' + row.member])
+			{
+				continue;
+			}
+			var name = row.name || row.member;
+			if (names.indexOf(name) < 0)
+			{
+				names.push(name);
+			}
+		}
+		names.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+		teams[i].members = names;
+	}
+	return teams;
+}
+
 function hasTeam(teams, code)
 {
 	for (var i = 0; i < teams.length; i++)
@@ -601,15 +706,17 @@ function allDepartures()
 }
 
 /** Member ids that left this board scope; their data is kept but stops counting. */
-function removedFor(board)
+// Pass preloaded allDepartures() marks to avoid re-reading the Removed tab.
+function removedFor(board, marks)
 {
-	var values = getSheet(REMOVED_SHEET, REMOVED_HEADERS).getDataRange().getValues();
+	marks = marks || allDepartures();
 	var removed = {};
-	for (var i = 1; i < values.length; i++)
+	var prefix = board + '|';
+	for (var key in marks)
 	{
-		if (String(values[i][0]) === board && values[i][1])
+		if (key.indexOf(prefix) === 0)
 		{
-			removed[String(values[i][1])] = true;
+			removed[key.substring(prefix.length)] = true;
 		}
 	}
 	return removed;
@@ -641,6 +748,14 @@ function recordRequest(board, request, fromForm)
 		return 0;
 	}
 	var team = teamOf(board);
+	// The Tile cell carries the label too ("3 - Manual me baby"): admins reviewing the
+	// tab shouldn't need the board open. Every reader parseInt()s the leading number.
+	var tileCell = String(tile);
+	var meta = cachedMeta(board);
+	if (meta && meta.tiles && meta.tiles[tile - 1] && meta.tiles[tile - 1].label)
+	{
+		tileCell = tile + ' - ' + meta.tiles[tile - 1].label;
+	}
 	var sheet = getSheet(REQUESTS_SHEET, REQUESTS_HEADERS);
 	var values = sheet.getDataRange().getValues();
 	for (var i = 1; i < values.length; i++)
@@ -648,7 +763,7 @@ function recordRequest(board, request, fromForm)
 		// A retried send must not stack duplicate pending rows.
 		if (isPending(values[i][9]) && String(values[i][8]) === member
 			&& String(values[i][2]) === player
-			&& String(values[i][1]) === team && String(values[i][3]) === String(tile)
+			&& String(values[i][1]) === team && parseInt(values[i][3], 10) === tile
 			&& String(values[i][4]) === String(goal) && String(values[i][5]) === String(add)
 			&& String(values[i][6]) === complete && String(values[i][7]) === note)
 		{
@@ -658,7 +773,7 @@ function recordRequest(board, request, fromForm)
 	var row = sheet.getLastRow() + 1;
 	var range = sheet.getRange(row, 1, 1, REQUESTS_HEADERS.length);
 	range.setNumberFormat('@');
-	range.setValues([[new Date().toISOString(), team, player, tile, goal, add, complete,
+	range.setValues([[new Date().toISOString(), team, player, tileCell, goal, add, complete,
 		note, member, 'Pending', links]]);
 	styleStatusCell(sheet, row, 'Pending');
 	return row;
@@ -1073,9 +1188,9 @@ function annotateAdjustments(meta)
  * deployment shows every team - a single shared tab would only ever show the team that
  * synced last.
  */
-function refreshBoardView(board)
+function refreshBoardView(board, meta)
 {
-	var meta = readMeta(board);
+	meta = meta || cachedMeta(board);
 	var sheet = getSheet(boardTabName(board), null);
 	sheet.clear();
 
@@ -1086,10 +1201,14 @@ function refreshBoardView(board)
 		return;
 	}
 
-	var totals = tileTotals(board, meta);
+	// One read per tab for the whole render; tileTotals and lastSyncLine share them.
+	var rows = readRows(getSheet(STORE_SHEET, STORE_HEADERS));
+	var removed = removedFor(board);
+	var totals = tileTotals(board, meta, rows, removed);
 	var size = meta.size || Math.round(Math.sqrt(meta.tiles.length));
 	sheet.getRange(1, 1).setValue(meta.name || 'Bingo board').setFontWeight('bold').setFontSize(14);
 	sheet.getRange(2, 1).setValue('Team: ' + (teamOf(board) || '-') + '   ·   updated ' + new Date().toISOString());
+	sheet.getRange(3, 1).setValue(lastSyncLine(board, rows, removed));
 
 	// Grid, mirroring the in-game board.
 	var grid = [];
@@ -1164,10 +1283,31 @@ function refreshBoardView(board)
 		.setWarningOnly(true);
 }
 
-/** Per-tile, per-goal totals from stored players and from admin credit. */
-function tileTotals(board, meta)
+/**
+ * One line naming each member and when their client last reached the store - the first
+ * thing to check when someone says their progress is not syncing.
+ */
+function lastSyncLine(board, rows, removed)
 {
-	var rows = readRows(getSheet(STORE_SHEET, STORE_HEADERS));
+	rows = rows || readRows(getSheet(STORE_SHEET, STORE_HEADERS));
+	removed = removed || removedFor(board);
+	var parts = [];
+	for (var key in rows)
+	{
+		var row = rows[key];
+		if (row.board === board && /^[0-9a-f]{16}$/.test(row.member) && !removed[row.member])
+		{
+			parts.push((row.name || row.member) + ' ' + row.updated.replace('T', ' ').substring(0, 16));
+		}
+	}
+	parts.sort();
+	return parts.length ? 'Last sync (UTC): ' + parts.join('   ·   ') : 'No members have synced yet.';
+}
+
+/** Per-tile, per-goal totals from stored players and from admin credit. */
+function tileTotals(board, meta, rows, removed)
+{
+	rows = rows || readRows(getSheet(STORE_SHEET, STORE_HEADERS));
 	var credited = buildAdjustmentMembers(board, meta);
 	var tracked = [];
 	var verified = [];
@@ -1241,7 +1381,7 @@ function tileTotals(board, meta)
 		}
 	}
 
-	var removedIds = removedFor(board);
+	var removedIds = removed || removedFor(board);
 	for (var key in rows)
 	{
 		var row = rows[key];
@@ -1324,25 +1464,66 @@ function zeros(n)
 
 // ---------------------------------------------------------------- board metadata
 
+/**
+ * Stores the board definition. Returns whether it changed; the caller refreshes the
+ * views AFTER the whole request lands - rendering from here would show the store as it
+ * was before this request's own progress rows were written, and the render throttle
+ * would then swallow the up-to-date pass.
+ */
 function saveMeta(board, meta)
 {
 	var sheet = getSheet(META_SHEET, META_HEADERS);
 	var values = sheet.getDataRange().getValues();
 	var json = JSON.stringify(meta);
+	try
+	{
+		CacheService.getScriptCache().put('meta_' + storeEpoch() + '_' + board, json, 21600);
+	}
+	catch (err)
+	{
+		// Too big for the cache - readers fall back to this sheet.
+	}
 	for (var i = 1; i < values.length; i++)
 	{
 		if (String(values[i][0]) === board)
 		{
-			if (String(values[i][2]) !== json)
+			if (String(values[i][2]) === json)
 			{
-				sheet.getRange(i + 1, 1, 1, 3).setValues([[board, new Date().toISOString(), json]]);
-				maybeRefreshViews(board, true);
+				return false;
 			}
-			return;
+			sheet.getRange(i + 1, 1, 1, 3).setValues([[board, new Date().toISOString(), json]]);
+			return true;
 		}
 	}
 	sheet.appendRow([board, new Date().toISOString(), json]);
-	maybeRefreshViews(board, true);
+	return true;
+}
+
+/**
+ * readMeta through the script cache. Safe because saveMeta is the ONLY writer and
+ * writes through, and the epoch in the key orphans every entry when the host resets
+ * the store. A cache miss (eviction, size cap) just falls back to the sheet.
+ */
+function cachedMeta(board, epoch)
+{
+	var key = 'meta_' + (epoch || storeEpoch()) + '_' + board;
+	var cache = CacheService.getScriptCache();
+	var hit = cache.get(key);
+	if (hit !== null)
+	{
+		return hit === '' ? null : parseJson(hit, null);
+	}
+	var meta = readMeta(board);
+	try
+	{
+		// Caching "no board yet" as '' is safe: that state only changes via saveMeta.
+		cache.put(key, meta ? JSON.stringify(meta) : '', 21600);
+	}
+	catch (err)
+	{
+		// Over the cache's size cap - just serve from the sheet every time.
+	}
+	return meta;
 }
 
 function readMeta(board)
@@ -1385,9 +1566,9 @@ function maybeRefreshViews(board, force)
 	props.setProperty('lastRefresh_' + board, String(Date.now()));
 	try
 	{
-		var meta = readMeta(board);
+		var meta = cachedMeta(board);
 		annotateAdjustments(meta);
-		refreshBoardView(board);
+		refreshBoardView(board, meta);
 	}
 	catch (err)
 	{
@@ -1571,6 +1752,7 @@ function readRows(sheet)
 			board: board,
 			member: member,
 			name: String(values[i][2] || ''),
+			updated: String(values[i][3] || ''),
 			data: String(values[i][4] || '')
 		};
 	}
@@ -1579,14 +1761,18 @@ function readRows(sheet)
 
 function writeStoreRow(sheet, rows, key, board, memberId, name, tiles)
 {
-	var values = [board, memberId, name, new Date().toISOString(), JSON.stringify(tiles)];
+	var updated = new Date().toISOString();
+	var data = JSON.stringify(tiles);
 	var row = rows[key];
 	var rowIndex = row ? row.rowIndex : sheet.getLastRow() + 1;
 	var range = sheet.getRange(rowIndex, 1, 1, 5);
 	// Force plain-text cells: account ids are long hex strings and Sheets would otherwise
 	// coerce anything numeric-looking, mangling the member key.
 	range.setNumberFormat('@');
-	range.setValues([values]);
+	range.setValues([[board, memberId, name, updated, data]]);
+	// Keep the in-memory map current: respond() reuses it instead of re-reading the tab.
+	rows[key] = { rowIndex: rowIndex, board: board, member: memberId,
+		name: name, updated: updated, data: data };
 }
 
 function parseJson(text, fallback)

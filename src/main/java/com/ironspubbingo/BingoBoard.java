@@ -18,9 +18,9 @@ public class BingoBoard
 	String name;
 	/**
 	 * Optional stable identifier. Boards sharing an id share progress and team sync, so a
-	 * host can fix a typo or adjust points mid-event without resetting anyone — as long as
-	 * tiles keep their position (edit in place, don't insert or reorder) and keep tracking
-	 * the same things. Change what a tile tracks and it counts as a different board.
+	 * host can edit the board mid-event without resetting anyone — labels, icons, points,
+	 * targets, even what a tile tracks — as long as tiles keep their position (edit in
+	 * place, don't insert or reorder). Only a new id (or removing it) is a new board.
 	 */
 	String id;
 	/** Optional board revision, shown next to the board name. */
@@ -31,6 +31,8 @@ public class BingoBoard
 	String end;
 	/** Optional bonus points per completed bingo line (row, column or diagonal). */
 	Integer linePoints;
+	/** Whether the two diagonals count as bingo lines. Default true. */
+	Boolean diagonals;
 	/** Optional bonus points for completing the whole board. */
 	Integer blackoutPoints;
 	int size;
@@ -186,9 +188,9 @@ public class BingoBoard
 
 	/**
 	 * The key progress and team sync are stored under. Without an id, any edit at all is a
-	 * new board. With one, the id is paired with a hash of what the board TRACKS: cosmetic
-	 * hotfixes keep everyone's progress, while a board that tracks something else is a
-	 * different board - its progress, its cached teammates and its store scope are its own.
+	 * new board. With one, the id IS the board: hosts may tune tiles mid-event without a
+	 * reset. Tampering is not this key's job - the store rejects any client whose exact
+	 * board code differs from the host's, and that gate is what keeps store events honest.
 	 */
 	String storageKey(Gson gson)
 	{
@@ -196,33 +198,13 @@ public class BingoBoard
 		{
 			return Integer.toHexString(gson.toJson(this).hashCode());
 		}
-		return identityKey() + "-" + Integer.toHexString(trackingSignature().hashCode());
+		return identityKey();
 	}
 
 	/** The board's identity across revisions (its host-set id), or null when it has none. */
 	String identityKey()
 	{
 		return normalizedId == null ? null : "id_" + normalizedId;
-	}
-
-	/**
-	 * What the board tracks, canonically: the grid size and every goal's rules, in order.
-	 * Names, descriptions, icons, points, dates and the version are presentation, and are
-	 * deliberately left out so a host can reword a tile without resetting the event.
-	 */
-	private String trackingSignature()
-	{
-		StringBuilder sb = new StringBuilder().append(size).append('|');
-		for (BingoTile tile : tiles)
-		{
-			sb.append(tile.anyMode ? "any" : "all").append(':');
-			for (BingoGoal goal : tile.goals)
-			{
-				goal.appendSignature(sb);
-			}
-			sb.append(';');
-		}
-		return sb.toString();
 	}
 
 	int linePointsValue()
@@ -235,10 +217,15 @@ public class BingoBoard
 		return blackoutPoints == null || blackoutPoints < 0 ? 0 : blackoutPoints;
 	}
 
-	/** Rows + columns + both diagonals. */
+	/** Rows + columns, plus both diagonals when they count. */
 	int maxLines()
 	{
-		return 2 * size + 2;
+		return 2 * size + (diagonalsCount() ? 2 : 0);
+	}
+
+	boolean diagonalsCount()
+	{
+		return diagonals == null || diagonals;
 	}
 
 	String getName()

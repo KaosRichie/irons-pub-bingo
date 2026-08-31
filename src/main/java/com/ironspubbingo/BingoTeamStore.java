@@ -55,6 +55,8 @@ class BingoTeamStore
 	{
 		String code;
 		String name;
+		/** Display names signed up under this team on the client's board, for the picker. */
+		List<String> members;
 	}
 
 	/** One team's score on the shared board, for the placement display. */
@@ -113,10 +115,14 @@ class BingoTeamStore
 		Integer teamPoints;
 		/** Request: fingerprint of the sender's board code; must match the host's, if set. */
 		String boardHash;
+		/** Request: the sender's board version, so an outdated client is told to update. */
+		Integer boardVersion;
 		/** Response: every team's points on this board, sorted best first. */
 		List<Standing> standings;
 		/** Response: why the push was rejected (e.g. a team code the host didn't define). */
 		String error;
+		/** Response beside a "Board updated" rejection: the version the host pasted. */
+		Integer newerVersion;
 
 		StorePayload(String board, Map<String, TeamMemberState> members, Object meta)
 		{
@@ -160,12 +166,13 @@ class BingoTeamStore
 	 * client thread before touching plugin state.
 	 */
 	void sync(String board, Map<String, TeamMemberState> members, Object meta, String selfId,
-		int teamPoints, String boardHash, BiConsumer<StorePayload, String> callback)
+		int teamPoints, String boardHash, Integer boardVersion, BiConsumer<StorePayload, String> callback)
 	{
 		StorePayload request = new StorePayload(board, members, meta);
 		request.rejoin = selfId;
 		request.teamPoints = teamPoints;
 		request.boardHash = boardHash;
+		request.boardVersion = boardVersion;
 		post(request, (payload, error) ->
 		{
 			if (error != null || payload == null)
@@ -218,10 +225,14 @@ class BingoTeamStore
 	}
 
 	/** Files a credit request onto the admins' Requests tab. Callback gets (ok, error). */
-	void submitRequest(String board, CreditRequest request, BiConsumer<Boolean, String> callback)
+	// The board fingerprint rides along: requests pass the store's tamper gate too.
+	void submitRequest(String board, CreditRequest request, String boardHash, Integer boardVersion,
+		BiConsumer<Boolean, String> callback)
 	{
 		StorePayload payload = new StorePayload(board, java.util.Collections.emptyMap(), null);
 		payload.request = request;
+		payload.boardHash = boardHash;
+		payload.boardVersion = boardVersion;
 		post(payload, (reply, error) ->
 		{
 			String problem = error != null ? error : reply != null ? reply.error : null;
@@ -244,9 +255,10 @@ class BingoTeamStore
 	}
 
 	/** Fetches the host-defined team list (Teams tab); empty when the host defined none. */
-	void fetchTeams(BiConsumer<List<TeamInfo>, String> callback)
+	// The board key (nullable) scopes each team's member names to the client's board.
+	void fetchTeams(String boardKey, BiConsumer<List<TeamInfo>, String> callback)
 	{
-		StorePayload payload = new StorePayload(null, null, null);
+		StorePayload payload = new StorePayload(boardKey, null, null);
 		payload.teamsOnly = true;
 		post(payload, (reply, error) ->
 		{

@@ -49,14 +49,19 @@ class IronsPubBingoPanel extends PluginPanel
 	private final IronsPubBingoPlugin plugin;
 	private final BingoTileDetail tileDetail;
 
-	private final JLabel boardNameLabel = new JLabel();
-	private final JLabel teamNameLabel = new JLabel();
+	// Wrapped, not JLabels: long board or team names must fold onto extra lines, never
+	// clip to "..." in the narrow sidebar.
+	private final BingoWrappedLabel boardNameLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
+	private final BingoWrappedLabel teamNameLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
 	private final JLabel pointsLabel = new JLabel();
 	private static final Icon MEDAL_GOLD = medalIcon(new Color(0xFF, 0xD7, 0x00), new Color(0xB8, 0x86, 0x0B));
 	private static final Icon MEDAL_SILVER = medalIcon(new Color(0xE8, 0xE8, 0xE8), new Color(0x8F, 0x8F, 0x8F));
 	private static final Icon MEDAL_BRONZE = medalIcon(new Color(0xD7, 0x8D, 0x4A), new Color(0x8B, 0x5A, 0x2B));
-	private final JLabel eventStatusLabel = new JLabel();
+	private final BingoWrappedLabel eventStatusLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
 	private final BingoWrappedLabel boardUpdateLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
+	private final BingoWrappedLabel membersLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
+	private final JButton membersToggle = smallButton("Members  ▸");
+	private boolean membersExpanded;
 	private final JButton connectButton = new JButton("Connect live");
 	private final JButton storePauseButton = new JButton("Pause store");
 	private final JButton syncButton = new JButton("Sync now");
@@ -152,10 +157,8 @@ class IronsPubBingoPanel extends PluginPanel
 		titleRow.add(title, java.awt.BorderLayout.CENTER);
 		titleRow.add(popOutButton, java.awt.BorderLayout.EAST);
 
-		smallLabel(boardNameLabel, ColorScheme.LIGHT_GRAY_COLOR);
-		smallLabel(teamNameLabel, ColorScheme.LIGHT_GRAY_COLOR);
 		smallLabel(pointsLabel, ColorScheme.LIGHT_GRAY_COLOR);
-		smallLabel(eventStatusLabel, ColorScheme.BRAND_ORANGE);
+		eventStatusLabel.setForeground(ColorScheme.BRAND_ORANGE);
 		boardUpdateLabel.setForeground(new Color(224, 108, 85));
 
 		JButton importButton = new JButton("Import board");
@@ -247,7 +250,7 @@ class IronsPubBingoPanel extends PluginPanel
 				{
 					dots.append('.');
 				}
-				storePauseButton.setText("<html>" + DOT_ORANGE + "Store: Syncing" + dots + "</html>");
+				storePauseButton.setText("<html><nobr>" + DOT_ORANGE + "Store: Syncing" + dots + "</nobr></html>");
 			}
 		});
 		countdownTimer.start();
@@ -259,6 +262,16 @@ class IronsPubBingoPanel extends PluginPanel
 		teamBody.add(buttonRow(storePauseButton));
 		teamBody.add(Box.createVerticalStrut(4));
 		teamBody.add(buttonRow(syncButton, portalButton));
+		teamBody.add(Box.createVerticalStrut(4));
+		membersToggle.setHorizontalAlignment(SwingConstants.LEFT);
+		membersToggle.addActionListener(e ->
+		{
+			membersExpanded = !membersExpanded;
+			refresh();
+		});
+		teamBody.add(membersToggle);
+		membersLabel.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 0));
+		teamBody.add(membersLabel);
 		teamCard.add(collapsibleHeader("Team", teamBody));
 		teamCard.add(teamBody);
 
@@ -380,8 +393,9 @@ class IronsPubBingoPanel extends PluginPanel
 				+ "- While you set up, the Store line in the Team section shows which\n"
 				+ "  step is still missing.\n"
 				+ "- Tiles turn amber on progress and green when complete.\n"
-				+ "- Click a tile for its goals, who contributed, and its actions\n"
-				+ "  (manual tick, credit request, reset).\n"
+				+ "- Click a tile for its goals, who contributed, and its actions.\n"
+				+ "  Store teams claim untracked completions via credit requests;\n"
+				+ "  without a store, tiles can be ticked off by hand.\n"
 				+ "\n"
 				+ "TEAM PLAY\n"
 				+ "- Put the team code from your host in the settings, or pick it with\n"
@@ -591,7 +605,6 @@ class IronsPubBingoPanel extends PluginPanel
 	{
 		cooldownTimer.stop();
 		countdownTimer.stop();
-		tileDetail.stopTimers();
 	}
 
 	/** Selects a tile in the detail view (e.g. clicked in the pop-out window). */
@@ -703,6 +716,11 @@ class IronsPubBingoPanel extends PluginPanel
 		String teamMode = plugin.teamModeText();
 		teamNameLabel.setVisible(teamName != null);
 		teamNameLabel.setText(teamName == null ? "" : "Team: " + teamName);
+		java.util.List<String> memberNames = plugin.teamMemberNames();
+		membersToggle.setVisible(memberNames.size() > 1);
+		membersToggle.setText("Members  " + (membersExpanded ? "▾" : "▸"));
+		membersLabel.setVisible(memberNames.size() > 1 && membersExpanded);
+		membersLabel.setText(memberNames.size() > 1 ? String.join(", ", memberNames) : "");
 		teamNameLabel.setToolTipText(teamMode == null ? null
 			: "store team".equals(teamMode)
 				? "Store team - this team is on the host's team list; progress syncs live and via the team store"
@@ -751,8 +769,10 @@ class IronsPubBingoPanel extends PluginPanel
 		// The live and store buttons ARE the status: blip + state as text, click to act.
 		String liveDot = plugin.inTeamParty() ? DOT_GREEN
 			: plugin.inAnyParty() ? DOT_ORANGE : DOT_GRAY;
-		connectButton.setText("<html>" + liveDot + "Live sync: "
-			+ BingoUi.escapeHtml(plugin.teamStatusText()) + "</html>");
+		// <nobr>: the buttons are one text line tall, so overflow must clip at the
+		// right edge like a plain button - html wrapping would clip at the BOTTOM.
+		connectButton.setText("<html><nobr>" + liveDot + "Live sync: "
+			+ BingoUi.escapeHtml(plugin.teamStatusText()) + "</nobr></html>");
 
 		// Amber, not red, for a failed attempt that has succeeded before: nothing is
 		// lost, the next sync resends everything.
@@ -764,8 +784,8 @@ class IronsPubBingoPanel extends PluginPanel
 			: plugin.storeSetupHint() != null ? DOT_ORANGE
 			: !plugin.storeHasError() ? (plugin.storeEverSynced() ? DOT_GREEN : DOT_ORANGE)
 			: plugin.storeEverSynced() ? DOT_ORANGE : DOT_RED;
-		storePauseButton.setText("<html>" + storeDot
-			+ BingoUi.escapeHtml(storeButtonState()) + "</html>");
+		storePauseButton.setText("<html><nobr>" + storeDot
+			+ BingoUi.escapeHtml(storeButtonState()) + "</nobr></html>");
 		storePauseButton.setEnabled(plugin.storeConfigured());
 
 		syncButton.setEnabled(plugin.getBoard() != null && syncCooldown <= 0);
@@ -854,7 +874,21 @@ class IronsPubBingoPanel extends PluginPanel
 					? team.code : team.name + "  (" + team.code + ")";
 			}
 			JComboBox<String> box = new JComboBox<>(labels);
-			int answer = JOptionPane.showConfirmDialog(this, box, "Choose your team",
+			// Who is already on the selected team, so players can find their mates.
+			BingoWrappedLabel membersList = new BingoWrappedLabel("", 280);
+			membersList.setWrapWidth(280);
+			Runnable showMembers = () ->
+			{
+				java.util.List<String> names = teams.get(box.getSelectedIndex()).members;
+				membersList.setText(names == null || names.isEmpty()
+					? "No members yet" : "Members: " + String.join(", ", names));
+			};
+			showMembers.run();
+			box.addActionListener(ev -> showMembers.run());
+			JPanel picker = new JPanel(new java.awt.BorderLayout(0, 6));
+			picker.add(box, java.awt.BorderLayout.NORTH);
+			picker.add(membersList, java.awt.BorderLayout.CENTER);
+			int answer = JOptionPane.showConfirmDialog(this, picker, "Choose your team",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 			if (answer == JOptionPane.OK_OPTION)
 			{

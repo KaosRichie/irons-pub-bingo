@@ -66,6 +66,18 @@ public interface IronsPubBingoConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "showTileNumbers",
+		name = "Tile numbers in tile view",
+		description = "Prefix the selected tile's header with its board position - turn off if your labels start with numbers",
+		section = generalSection,
+		position = 16
+	)
+	default boolean showTileNumbers()
+	{
+		return true;
+	}
+
 	@ConfigSection(
 		name = "Progress Messages",
 		description = "Which goal types show progress chat messages, while Progress chat messages is on",

@@ -60,6 +60,11 @@ class BingoWrappedLabel extends JComponent
 		});
 	}
 
+	String getText()
+	{
+		return text;
+	}
+
 	void setText(String text)
 	{
 		this.text = text == null ? "" : text;
@@ -140,6 +145,18 @@ class BingoWrappedLabel extends JComponent
 					lines.add(current.toString());
 					current = new StringBuilder(word);
 				}
+				// A single unbreakable run (a URL, a pasted code) wider than the column
+				// would otherwise overflow; break it mid-word instead.
+				while (metrics.stringWidth(current.toString()) > width && current.length() > 1)
+				{
+					int fit = current.length() - 1;
+					while (fit > 1 && metrics.stringWidth(current.substring(0, fit)) > width)
+					{
+						fit--;
+					}
+					lines.add(current.substring(0, fit));
+					current = new StringBuilder(current.substring(fit));
+				}
 			}
 			lines.add(current.toString());
 		}
@@ -179,14 +196,20 @@ class BingoWrappedLabel extends JComponent
 		FontMetrics metrics = g.getFontMetrics();
 		Insets insets = getInsets();
 		int width = wrapWidth();
-		int y = insets.top + metrics.getAscent();
+		List<String> mainLines = wrap(metrics, text, width);
+		List<String> secondaryLines = wrap(metrics, secondary, width);
+		// Layouts can hand this component more height than the text needs (the tile
+		// title stretched to its icon's height): center the text block in the extra.
+		int contentHeight = (mainLines.size() + secondaryLines.size()) * metrics.getHeight();
+		int y = insets.top + metrics.getAscent()
+			+ Math.max(0, (getHeight() - insets.top - insets.bottom - contentHeight) / 2);
 
 		g.setColor(getForeground());
-		y = paintLines(g, metrics, wrap(metrics, text, width), width, insets.left, y);
+		y = paintLines(g, metrics, mainLines, width, insets.left, y);
 		if (secondary != null)
 		{
 			g.setColor(secondaryColor);
-			paintLines(g, metrics, wrap(metrics, secondary, width), width, insets.left, y);
+			paintLines(g, metrics, secondaryLines, width, insets.left, y);
 		}
 	}
 

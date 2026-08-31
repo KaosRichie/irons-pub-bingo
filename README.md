@@ -1,128 +1,138 @@
 # Irons Pub Bingo
 
-A RuneLite plugin for clan bingo events. The host shares a board file; the plugin tracks
-drops, kill counts, pets, XP, laps and more on a bingo board in the sidebar.
+A RuneLite plugin for clan bingo events. Your host shares a board, the plugin tracks the
+tiles as you play and combines progress across your team. It tracks drops, boss kill
+counts, pets, XP, agility laps, loot value and chat messages.
 
-## Players
+## Getting started
 
 1. Enable **Irons Pub Bingo** and open the bingo icon in the sidebar.
-2. **Setup → Import board**, then paste the board code from your host — or hit
-   **Import from store** if your event uses a team store.
-3. Play. Tiles turn amber on progress and green when complete.
-4. Click a tile for its goals, who contributed, and its actions (manual tick, credit
-   request, reset).
+2. In the plugin settings, turn on **Use team store** and paste the store URL from your
+   host.
+3. **Setup → Import board → Import from store**.
+4. **Setup → Choose team** and pick your team.
+5. Play. Tiles turn amber on progress and green when complete.
 
-**Team play:** put the team code from your host in the settings, or pick it with
-**Choose team**, then **Connect live sync**. Progress combines across the team: counts add
-up, distinct item lists count each item once, manual ticks apply team-wide.
+While you set up, the Store line in the Team section shows which step is still missing.
+If your event has no store, import the board code by hand instead and put your host's
+team code in the settings.
 
-Notes:
+## Tiles and credit requests
 
-- Keep the built-in **Loot Tracker** enabled — chest and raid loot comes from its events.
-- For tiles chasing a *specific* pet, enable **Collection log - New addition notification**.
+Click a tile to see its goals, who contributed what, and its actions.
+
+The tracker can miss progress, for example drops on mobile or kills from before you
+imported the board. Use **Request admin credit** on the tile and link a screenshot as
+proof. An admin reviews it, and approved credit counts for the whole team. The store URL
+opened in a browser is the player portal. It shows the live board and all requests, and
+mobile players can file requests there.
+
+## Good to know
+
+- Keep the built-in **Loot Tracker** enabled. Chest and raid loot comes from its events.
+- For specific pet tiles, enable **Collection log - New addition notification**.
 - XP and kill-count goals start counting when you import the board.
-- Each team keeps its own progress. Changing your team code (or the store toggle) switches
-  the board to that team's progress — nothing counts for two teams, and coming back to a
-  team restores what you had there.
+- Each team keeps its own progress. Switching teams parks it, switching back restores it.
 - Optional: set a **Discord webhook** to post your completions with a screenshot.
 
-## Hosts
+## Hosting an event
 
 1. **Build the board** with [Bingo Forge](https://kaosrichie.github.io/irons-pub-bingo/board-builder.html)
-   (source: [docs/board-builder.html](docs/board-builder.html)). Set an
-   `id`, `version`, the event `start`/`end` and points, then export the code.
-2. **Set up the team store** (~10 minutes, once per event — recommended so progress syncs
-   even when players are never online together): blank Google Sheet → Extensions → Apps
-   Script → paste [docs/apps-script-store.gs](docs/apps-script-store.gs) → Deploy → Web
-   app, *Execute as: Me*, *Who has access: Anyone*. Copy the `/exec` URL.
+   (source: [board-builder.html](docs/board-builder.html)). Set an `id`, `version`, the
+   event `start`/`end` and points, then export the code. For chat goal region ids, use
+   the [region map](https://kaosrichie.github.io/irons-pub-bingo/region-map.html).
+2. **Set up the team store**, once per event, about 10 minutes. It syncs progress even
+   when players are never online together. Blank Google Sheet → Extensions → Apps
+   Script → paste [apps-script-store.gs](docs/apps-script-store.gs) → Deploy → Web app,
+   *Execute as: Me*, *Who has access: Anyone*. Copy the `/exec` URL.
 3. **Fill the sheet**: `/exec` URL into **Settings → Portal URL**, the board code into
    **Board code**, one row per team into **Teams**. The store rejects every sync until
    **Teams** has rows, so fill it before sharing the URL.
-4. **Share the `/exec` URL** with the clan. Players turn on *Use team store*, paste the
-   URL, then **Import from store** and **Choose team**.
-5. Run the event from the sheet. Share the sheet with your **admins only** — players never
-   need it, and editors can see everything.
+4. **Share the `/exec` URL** with the clan.
+5. Run the event from the sheet. Share the sheet with your **admins only**. Players never
+   need it.
 
-One sheet runs the whole event; teams are kept apart by team code. Without a store, share
-the board code and a team code instead — everything else still works over live party sync.
+One sheet runs the whole event. Teams are kept apart by team code. Without a store, share
+the board code and a team code instead. Everything else works over live party sync.
 
 ### The sheet
 
 | Tab | What it's for |
 |---|---|
-| **Board code** | The official board. Players import it from here, and clients running a different board are rejected. |
-| **Teams** | Code + display name per team. Fill this first: only listed codes may sync, and it fills the Choose team picker. |
-| **Adjustments** | Credit progress by hand. Rows add up; a negative row corrects a mistake. |
+| **Board code** | The official board. Players import it from here. Clients running a different board are rejected. |
+| **Teams** | Code + display name per team. Fill this first. Only listed codes may sync, and it fills the Choose team picker. |
+| **Adjustments** | Credit progress by hand. Rows add up. A negative row corrects a mistake. |
 | **Requests** | Player credit requests. Set Status to `Done` (writes the ledger row for you) or `Rejected`. |
-| **Board \<team\>** | Read-only view per team: the grid, per-goal progress, who contributed what. |
-| **Removed** | Who stopped counting. Auto-filled when someone leaves a team — their progress there is parked and returns if they rejoin. Add a row to evict by hand. |
+| **Board \<team\>** | Read-only view per team: the grid, per-goal progress, who contributed what, and when each member last synced. |
+| **Removed** | Who stopped counting. Auto-filled when someone leaves a team. Their progress is parked and returns if they rejoin. Add a row to evict by hand. |
 | **Settings** | Portal URL, and `Poll interval (seconds)` to tune how often clients sync. |
 
-Each client talks to the store every 2 minutes — one call both uploads and downloads —
-plus once per tile completion and once when you log out. Change that with
-`Poll interval (seconds)` on the **Settings** tab: `60` keeps a short event close to live,
-a few hundred keeps the traffic down on a long one. It is clamped to 60–900 seconds, and
-completions always sync immediately whatever it is set to.
+Each client talks to the store every 2 minutes, plus once per tile completion and once on
+logout. One call both uploads and downloads. Tune it with `Poll interval (seconds)` on the
+**Settings** tab, clamped to 60 to 900. Use 60 for a short event, a few hundred for a long
+one. Completions always sync immediately.
 
 Menu: **Irons Pub Bingo → Open player portal · Refresh board view · Approve/Deny selected
 request(s) · Reset store data**.
-
-The `/exec` URL opened in a **browser** is the player portal: live board, request statuses,
-and a form to request credit with proof links — for mobile players and anyone without the
-plugin.
 
 ### Board format
 
 ```json
 {"name": "Summer Bingo", "id": "summer-2026", "version": 1,
  "start": "2026-08-29T18:00Z", "end": "2026-09-07T20:00Z",
- "size": 5, "linePoints": 10, "blackoutPoints": 50,
+ "size": 5, "linePoints": 10, "blackoutPoints": 50, "diagonals": true,
  "tiles": [ ... size*size tiles, left-to-right, top-to-bottom ... ]}
 ```
 
 A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goals": []}`
 
-- `id` — keep it stable. Same id means you can fix a board mid-event without resetting
-  anyone: reword labels, swap icons, adjust points, edit tiles in place, and never insert,
-  remove or reorder them. Bump `version` so players see they need the new code. Change what
-  a tile *tracks* and it counts as a different board — progress starts fresh.
-- `start`/`end` — outside the window automatic tracking doesn't count; manual ticks do.
-- `icon` — an item name, or a numeric item id for untradeables.
+- `id`: keep it stable. Same id lets you edit a live board without resetting progress,
+  even what a tile tracks. Edit tiles in place, never insert, remove or reorder them.
+  Bump `version` so players see they need the new code. A new id is a new board with
+  fresh progress.
+- `start`/`end`: outside the window automatic tracking doesn't count, manual ticks do.
+- `diagonals`: set `false` and only rows and columns count as lines.
+- `icon`: an item name, or a numeric item id for untradeables.
+- Any goal takes `"screenshot": true` to post its progress and a screenshot to the
+  player's Discord webhook as it happens.
 
 ### Goal types
 
 | type | tracks | fields |
 |---|---|---|
-| `DROP` | item drops | `items`, `sources`?, `count`, `distinct`? |
-| `RAID_PURPLE` | raid uniques | `raids` (`COX`/`TOB`/`TOA`), `count` |
+| `DROP` | item drops, pickpockets included | `items`, `itemIds`?, `sources`?, `loot`?, `count`, `distinct`? |
+| `RAID_PURPLE` | raid uniques | `raids` (`COX`/`TOB`/`TOA`), `count`, `distinct`? |
 | `KC` | kill count of bosses that print one | `npcs`, `count` |
-| `KILL` | kills of any NPC — counted from the loot the game gives you, so a shared kill counts once | `npcs`, `count` |
+| `KILL` | kills of any NPC, a shared kill counts once | `npcs`, `count` |
 | `PET` | pets received | `pets`?, `count` |
 | `XP` | XP since import | `skill`, `amount` |
 | `LAP` | agility course laps | `course`, `count` |
-| `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `count` |
-| `CHAT` | a game message matching a regex | `pattern`, `count` |
-| `MANUAL` | nothing — players tick it by hand | — |
+| `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `loot`?, `count` |
+| `CHAT` | a game message matching a regex | `pattern`, `regions`?, `count` |
+| `MANUAL` | nothing, players tick it by hand | none |
 
 Item and NPC names are case-insensitive globs (`Ancient page*`). Add `name` to a goal to
-label its progress bar.
+label its progress bar. `itemIds` matches exact ids, for items that share a name with
+something else. `regions` limits a chat goal to certain map regions. `loot` lists which
+loot kinds a drop or loot value goal counts, any subset of `"KILL"`, `"PICKPOCKET"` and
+`"OTHER"` (chests, caskets, events). Omitted, everything counts.
+
+Drop and loot value goals only count what RuneLite's Loot Tracker sees. If loot doesn't
+show up there, it can't count here. Most thieving chests are like this. A chat goal with
+`regions` often covers what the tracker misses.
 
 Marks of grace are a `DROP` goal with the course as the source. They're read from your
-inventory, so they're cheatable — run those tiles on trust, or ask for before/after
+inventory, so they're cheatable. Run those tiles on trust, or ask for before/after
 screenshots.
 
-A full example: [docs/example-board.json](docs/example-board.json). To try the plugin
-without running an event, import [docs/test-board.json](docs/test-board.json) - a 3x3
-F2P board whose tiles you can finish around Lumbridge in a few minutes.
+A full example: [example-board.json](docs/example-board.json). To try the plugin without
+an event, import [test-board.json](docs/test-board.json). It is a 3x3 F2P board you can
+finish around Lumbridge in a few minutes.
 
 ### Fairness
 
-- Clients must run the host's exact board code; a locally edited board can't sync.
+- Clients must run the host's exact board code. A locally edited board can't sync.
 - Progress belongs to the team it was earned on.
 - Credit requests count only once an admin approves them.
-- A rebuilt client could still fake numbers — the sheet's per-player audit and your proof
+- A rebuilt client could still fake numbers. The sheet's per-player audit and your proof
   policy are the backstop.
-
-## Building
-
-`gradlew build` builds the plugin; `gradlew run` starts a dev client with it loaded.

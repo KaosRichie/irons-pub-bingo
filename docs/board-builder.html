@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Bingo Forge</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -66,6 +67,19 @@ label { color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transf
 }
 .topbar .field { display: flex; flex-direction: column; }
 .topbar input[type=text] { min-width: 220px; }
+.topbar select { box-sizing: border-box; height: 32px; }
+input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; box-sizing: border-box; padding: 0;
+  width: 16px; height: 16px; margin: 0; position: relative; cursor: pointer;
+  flex: 0 0 auto;
+  background: var(--inset); border: 1px solid var(--line); border-radius: 3px;
+}
+input[type=checkbox]:checked { background: var(--gold); border-color: var(--gold-deep); }
+input[type=checkbox]:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
+  border: solid var(--ground); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.topbar input[type=checkbox] { margin: 7px auto 5px; }
 .topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: flex-end; }
 
 .wrap {
@@ -168,12 +182,12 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     <input type="number" id="boardVersion" min="1" style="width:60px">
   </div>
   <div class="field">
-    <label for="startTime">Starts (your time)</label>
-    <input type="datetime-local" id="startTime">
+    <label for="boardSize">Size</label>
+    <select id="boardSize"></select>
   </div>
   <div class="field">
-    <label for="endTime">Ends (your time)</label>
-    <input type="datetime-local" id="endTime">
+    <label for="diagonals" title="Whether the two diagonals count as bingo lines">Diagonals</label>
+    <input type="checkbox" id="diagonals" checked>
   </div>
   <div class="field">
     <label for="linePoints" title="Bonus points per completed row, column or diagonal">Line pts</label>
@@ -184,8 +198,12 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     <input type="number" id="blackoutPoints" min="0" style="width:64px">
   </div>
   <div class="field">
-    <label for="boardSize">Size</label>
-    <select id="boardSize"></select>
+    <label for="startTime">Starts (your time)</label>
+    <input type="datetime-local" id="startTime">
+  </div>
+  <div class="field">
+    <label for="endTime">Ends (your time)</label>
+    <input type="datetime-local" id="endTime">
   </div>
   <div class="actions">
     <button id="btnNew" class="ghost">New</button>
@@ -215,16 +233,17 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   <summary>Goal type cheat sheet</summary>
   <div class="sheet">
     <p>Item, source, NPC and pet names are case-insensitive and <code>*</code> matches anything — <code>Ancient page*</code> matches all four pages. Every goal has a <b>count</b> (how many times it must happen).</p>
+    <p><b>Drop</b> and <b>Loot value</b> goals see exactly what RuneLite's Loot Tracker sees: if loot doesn't show up there, it can't count here either. Kills, pickpockets, clue caskets and the big reward chests are all tracked, but some containers aren't — most thieving chests, for example. Check the Loot Tracker first when planning an unusual tile; a <b>Chat message</b> goal (with map regions) often covers what it misses.</p>
     <div class="tablewrap"><table>
-      <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list".</td></tr>
-      <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples").</td></tr>
+      <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list". Pickpocketed loot counts too, with the NPC as its source — untick <i>loot from</i> kinds to count only kills, only pickpockets, or exclude chest loot. For items that share a name with something else (the moon key halves vs the crystal ones), list exact <i>item ids</i>.</td></tr>
+      <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples"). Tick <i>distinct</i> to count different uniques once each ("3 different ToB uniques").</td></tr>
       <tr><th>Boss kill count</th><td>Kill count gained since the player imported the board, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Kills the player had before importing don't count.</td></tr>
       <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage — ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones); the rare monsters with empty drop tables can't be counted.</td></tr>
       <tr><th>Pet</th><td>Any pet, or specific pets (players need the collection log chat notification enabled for specific pets).</td></tr>
       <tr><th>XP</th><td>XP gained in a skill, counted from the moment the player imports the board.</td></tr>
       <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source — but note they're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so either run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
       <tr><th>Loot value</th><td>A single loot pile worth at least X gp at GE prices ("a 4m+ drop").</td></tr>
-      <tr><th>Chat message</th><td>A game message matching a regex — speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording.</td></tr>
+      <tr><th>Chat message</th><td>A game message matching a regex — speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places - the moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
       <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players tick the tile off by hand.</td></tr>
     </table></div>
     <p>A tile with several goals completes when <b>all</b> of them are done, or switch it to <b>any</b> for "X or Y" tiles.</p>
@@ -251,7 +270,7 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 'use strict';
 
 const COURSES = ["GNOME","SHAYZIEN_BASIC","DRAYNOR","AL_KHARID","PYRAMID","VARROCK","PENGUIN","BARBARIAN","CANIFIS","APE_ATOLL","SHAYZIEN_ADVANCED","FALADOR","WILDERNESS","WEREWOLF","SEERS","POLLNIVNEACH","RELLEKKA","PRIFDDINAS","ARDOUGNE"];
-const SKILLS = ["ATTACK","STRENGTH","DEFENCE","RANGED","PRAYER","MAGIC","RUNECRAFT","CONSTRUCTION","HITPOINTS","AGILITY","HERBLORE","THIEVING","CRAFTING","FLETCHING","SLAYER","HUNTER","MINING","SMITHING","FISHING","COOKING","FIREMAKING","WOODCUTTING","FARMING"];
+const SKILLS = ["ATTACK","STRENGTH","DEFENCE","RANGED","PRAYER","MAGIC","RUNECRAFT","CONSTRUCTION","HITPOINTS","AGILITY","HERBLORE","THIEVING","CRAFTING","FLETCHING","SLAYER","HUNTER","MINING","SMITHING","FISHING","COOKING","FIREMAKING","WOODCUTTING","FARMING","SAILING"];
 const GOAL_TYPES = [
   ["DROP", "Drop"],
   ["RAID_PURPLE", "Raid purple"],
@@ -271,7 +290,7 @@ function randomId() {
   catch (e) { for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); }
   return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-function freshBoard() { return { name: "", id: randomId(), version: 1, start: "", end: "", linePoints: 0, blackoutPoints: 0, size: 5, tiles: [] }; }
+function freshBoard() { return { name: "", id: randomId(), version: 1, start: "", end: "", linePoints: 0, blackoutPoints: 0, diagonals: true, size: 5, tiles: [] }; }
 function toLocalInput(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -291,15 +310,16 @@ let tileClipboard = null;
 
 function emptyTile() { return { label: "", description: "", mode: "ALL", icon: "", points: 0, goals: [] }; }
 function defaultGoal(type) {
-  const g = { type: type || "DROP", count: 1 };
-  if (g.type === "DROP") { g.items = []; g.sources = []; g.distinct = false; }
-  if (g.type === "RAID_PURPLE") { g.raids = ["COX", "TOB", "TOA"]; }
+  const g = { type: type || "DROP", count: 1, screenshot: false };
+  if (g.type === "DROP") { g.items = []; g.sources = []; g.itemIds = []; g.loot = ["KILL", "PICKPOCKET", "OTHER"]; g.distinct = false; }
+  if (g.type === "RAID_PURPLE") { g.raids = ["COX", "TOB", "TOA"]; g.distinct = false; }
+  if (g.type === "CHAT") { g.regions = []; }
   if (g.type === "KC") { g.npcs = []; }
   if (g.type === "KILL") { g.npcs = []; }
   if (g.type === "PET") { g.pets = []; }
   if (g.type === "XP") { g.skill = "SLAYER"; g.amount = 1000000; }
   if (g.type === "LAP") { g.course = "CANIFIS"; }
-  if (g.type === "VALUE") { g.amount = 1000000; g.sources = []; }
+  if (g.type === "VALUE") { g.amount = 1000000; g.sources = []; g.loot = ["KILL", "PICKPOCKET", "OTHER"]; }
   if (g.type === "CHAT") { g.pattern = ""; }
   return g;
 }
@@ -315,7 +335,10 @@ function validateGoal(g) {
   const errs = [];
   const list = v => (v || []).filter(s => s && s.trim());
   switch (g.type) {
-    case "DROP": if (!list(g.items).length) errs.push("Drop goal needs at least one item name."); break;
+    case "DROP":
+      if (!list(g.items).length && !cleanIntList(g.itemIds).length) errs.push("Drop goal needs at least one item name or item id.");
+      if (!(g.loot || []).length) errs.push("Tick at least one loot kind.");
+      break;
     case "KC": if (!list(g.npcs).length) errs.push("Boss kill count goal needs at least one NPC name."); break;
     case "KILL": if (!list(g.npcs).length) errs.push("NPC kills goal needs at least one NPC name."); break;
     case "RAID_PURPLE": if (!(g.raids || []).length) errs.push("Pick at least one raid."); break;
@@ -323,7 +346,10 @@ function validateGoal(g) {
       if (!g.skill) errs.push("XP goal needs a skill.");
       if (!(g.amount > 0)) errs.push("XP goal needs a positive amount.");
       break;
-    case "VALUE": if (!(g.amount > 0)) errs.push("Loot value goal needs a positive gp amount."); break;
+    case "VALUE":
+      if (!(g.amount > 0)) errs.push("Loot value goal needs a positive gp amount.");
+      if (!(g.loot || []).length) errs.push("Tick at least one loot kind.");
+      break;
     case "LAP": if (!g.course) errs.push("Course laps goal needs a course."); break;
     case "CHAT":
       if (!g.pattern || !g.pattern.trim()) { errs.push("Chat goal needs a pattern."); break; }
@@ -342,6 +368,56 @@ function validateTile(t) {
 
 // ---------- export / import ----------
 function cleanList(v) { return (v || []).map(s => s.trim()).filter(Boolean); }
+// ---------- item icons (RuneLite's public cache dump; best effort, offline-safe) ----------
+let itemNameMap = null;      // lowercased name -> lowest item id (icon previews)
+let itemIdsByName = null;    // lowercased name -> {name, ids: every id carrying it}
+let itemNamesLoading = false;
+function ensureItemNames() {
+  if (itemNameMap || itemNamesLoading) return;
+  itemNamesLoading = true;
+  fetch("https://static.runelite.net/cache/item/names.json")
+    .then(r => r.json())
+    .then(names => {
+      itemNameMap = {};
+      itemIdsByName = {};
+      for (const id in names) {
+        const name = String(names[id]);
+        const key = name.toLowerCase();
+        const n = parseInt(id, 10);
+        if (!(key in itemNameMap) || n < itemNameMap[key]) {
+          itemNameMap[key] = n;
+        }
+        if (!itemIdsByName[key]) itemIdsByName[key] = { name: name, ids: [] };
+        itemIdsByName[key].ids.push(n);
+      }
+      for (const key in itemIdsByName) itemIdsByName[key].ids.sort((a, b) => a - b);
+      renderGrid();
+      // Re-rendering the editor would wipe whatever the user is typing into it.
+      if (!document.activeElement || !document.activeElement.dataset.keepFocus) renderEditor();
+    })
+    .catch(() => {});   // offline: previews and the id finder just stay quiet
+}
+function iconIdFor(icon) {
+  const raw = (icon == null ? "" : String(icon)).trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return parseInt(raw, 10);
+  if (itemNameMap) return itemNameMap[raw.toLowerCase()] || null;
+  ensureItemNames();
+  return null;
+}
+function iconImg(icon, size) {
+  const id = iconIdFor(icon);
+  if (id == null) return null;
+  const img = document.createElement("img");
+  img.src = "https://static.runelite.net/cache/item/icon/" + id + ".png";
+  img.style.cssText = "width:" + size + "px;height:" + size + "px;object-fit:contain;image-rendering:pixelated";
+  img.addEventListener("error", () => img.remove());
+  return img;
+}
+
+function cleanIntList(list) {
+  return (list || []).map(v => parseInt(v, 10)).filter(v => v > 0);
+}
 function exportBoard() {
   const out = { name: (board.name || "Irons Pub Bingo").trim() };
   const id = (board.id || "").trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
@@ -351,6 +427,7 @@ function exportBoard() {
   if (board.end) out.end = board.end;
   if (board.linePoints > 0) out.linePoints = Math.round(board.linePoints);
   if (board.blackoutPoints > 0) out.blackoutPoints = Math.round(board.blackoutPoints);
+  if (board.diagonals === false) out.diagonals = false;
   out.size = board.size;
   const tiles = board.tiles.map(t => {
     const out = { label: (t.label || "").trim() };
@@ -363,16 +440,29 @@ function exportBoard() {
       const o = { type: g.type };
       if (g.name && g.name.trim()) o.name = g.name.trim();
       if (g.type === "DROP") {
-        o.items = cleanList(g.items);
+        const its = cleanList(g.items); if (its.length) o.items = its;
+        const ids = cleanIntList(g.itemIds); if (ids.length) o.itemIds = ids;
         const src = cleanList(g.sources); if (src.length) o.sources = src;
+        if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
         if (g.distinct) o.distinct = true;
       }
-      if (g.type === "RAID_PURPLE" && g.raids.length < 3) o.raids = g.raids.slice();
+      if (g.type === "RAID_PURPLE") {
+        if (g.raids.length < 3) o.raids = g.raids.slice();
+        if (g.distinct) o.distinct = true;
+      }
       if (g.type === "KC" || g.type === "KILL") o.npcs = cleanList(g.npcs);
       if (g.type === "PET") { const p = cleanList(g.pets); if (p.length) o.pets = p; }
       if (g.type === "XP") { o.skill = g.skill; o.amount = Math.round(g.amount); }
-      if (g.type === "VALUE") { o.amount = Math.round(g.amount); const src = cleanList(g.sources); if (src.length) o.sources = src; }
-      if (g.type === "CHAT") o.pattern = g.pattern;
+      if (g.type === "VALUE") {
+        o.amount = Math.round(g.amount);
+        const src = cleanList(g.sources); if (src.length) o.sources = src;
+        if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
+      }
+      if (g.type === "CHAT") {
+        o.pattern = g.pattern;
+        const reg = cleanIntList(g.regions); if (reg.length) o.regions = reg;
+      }
+      if (g.screenshot && g.type !== "MANUAL" && g.type !== "XP") o.screenshot = true;
       if (g.type === "LAP") o.course = g.course;
       if (g.type !== "MANUAL" && g.type !== "XP" && g.count && g.count !== 1) o.count = Math.round(g.count);
       return o;
@@ -397,6 +487,7 @@ function importBoard(json) {
     end: b.end ? fromLocalInput(toLocalInput(b.end)) || String(b.end) : "",
     linePoints: b.linePoints > 0 ? Math.round(b.linePoints) : 0,
     blackoutPoints: b.blackoutPoints > 0 ? Math.round(b.blackoutPoints) : 0,
+    diagonals: b.diagonals !== false,
     size, tiles: b.tiles.map(t => {
     const tile = emptyTile();
     tile.label = t.label || "";
@@ -409,8 +500,15 @@ function importBoard(json) {
       const goal = defaultGoal(GOAL_TYPES.some(x => x[0] === type) ? type : "DROP");
       if (g.name) goal.name = String(g.name);
       ["items", "sources", "npcs", "pets", "raids"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].slice(); });
+      ["itemIds", "regions"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].map(v => parseInt(v, 10)).filter(v => v > 0); });
+      if (g.screenshot) goal.screenshot = true;
       if (g.count) goal.count = g.count;
       if (g.distinct) goal.distinct = true;
+      if (g.loot) {
+        const kinds = (Array.isArray(g.loot) ? g.loot : [g.loot])
+          .map(v => String(v).toUpperCase()).filter(v => ["KILL", "PICKPOCKET", "OTHER"].includes(v));
+        if (kinds.length) goal.loot = kinds;
+      }
       if (g.skill) goal.skill = String(g.skill).toUpperCase();
       if (g.course) goal.course = String(g.course).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
       if (g.amount) goal.amount = g.amount;
@@ -444,6 +542,7 @@ function renderTopbar() {
   $("endTime").value = toLocalInput(board.end);
   $("linePoints").value = board.linePoints || 0;
   $("blackoutPoints").value = board.blackoutPoints || 0;
+  $("diagonals").checked = board.diagonals !== false;
   const sel = $("boardSize");
   sel.innerHTML = "";
   for (let s = 1; s <= 10; s++) {
@@ -455,7 +554,7 @@ function renderTopbar() {
 }
 function renderGrid() {
   const tilePoints = board.tiles.reduce((sum, t) => sum + (t.points > 0 ? Math.round(t.points) : 0), 0);
-  const maxLines = 2 * board.size + 2;
+  const maxLines = 2 * board.size + (board.diagonals === false ? 0 : 2);
   const totalPoints = tilePoints + (board.linePoints > 0 ? board.linePoints * maxLines : 0)
     + (board.blackoutPoints > 0 ? Math.round(board.blackoutPoints) : 0);
   $("boardHeader").textContent = totalPoints > 0 ? "Board — " + totalPoints + " pts total" : "Board";
@@ -471,7 +570,16 @@ function renderGrid() {
     const n = document.createElement("span");
     n.className = "n"; n.textContent = i + 1;
     cell.appendChild(n);
-    cell.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+    const cellIcon = iconImg(t.icon, 22);
+    if (cellIcon) {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px";
+      wrap.appendChild(cellIcon);
+      wrap.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+      cell.appendChild(wrap);
+    } else {
+      cell.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+    }
     cell.addEventListener("click", () => { selected = i; renderGrid(); renderEditor(); });
     cell.draggable = true;
     cell.title = "Drag onto another tile to swap positions";
@@ -500,7 +608,8 @@ function field(labelText, node, hint) {
   wrap.appendChild(node);
   if (hint) {
     const h = document.createElement("div");
-    h.className = "fieldhint"; h.textContent = hint;
+    h.className = "fieldhint";
+    if (hint instanceof Node) { h.appendChild(hint); } else { h.textContent = hint; }
     wrap.appendChild(h);
   }
   return wrap;
@@ -511,6 +620,87 @@ function textInput(value, onInput, placeholder) {
   i.addEventListener("input", () => { onInput(i.value); saveDraft(); renderGrid(); });
   return i;
 }
+/**
+ * Inline item suggestions on a text field: as the current token grows past two
+ * letters, matching item names list under the field with icon and id; picking one
+ * rewrites the token via applyPick and fires the field's own input handler.
+ */
+function attachItemSuggest(input, applyPick) {
+  const wrap = document.createElement("div");
+  wrap.style.position = "relative";
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const drop = document.createElement("div");
+  drop.style.cssText = "display:none;position:absolute;top:100%;left:0;right:0;max-height:220px;"
+    + "overflow-y:auto;background:#1d1d1d;border:1px solid #555;border-radius:4px;z-index:40";
+  wrap.appendChild(drop);
+  input.dataset.keepFocus = "1";
+  input.autocomplete = "off";
+
+  function currentToken() {
+    return input.value.split(",").pop().trim();
+  }
+  function refresh() {
+    const q = currentToken().toLowerCase();
+    if (q.length < 3 || /^\d+$/.test(q)) { drop.style.display = "none"; return; }
+    ensureItemNames();
+    drop.style.display = "block";
+    drop.innerHTML = "";
+    if (!itemIdsByName) {
+      drop.innerHTML = "<div style='padding:4px 8px;color:#888'>loading the item list...</div>";
+      setTimeout(() => { if (document.activeElement === input) refresh(); }, 600);
+      return;
+    }
+    let shown = 0;
+    // Exact name first, then prefix matches, then the rest - otherwise a plain
+    // "Slayer helmet" drowns below twenty cosmetic variants that sort before S.
+    const keys = Object.keys(itemIdsByName).filter(k => k.includes(q));
+    keys.sort((a, b) => {
+      const ra = a === q ? 0 : a.startsWith(q) ? 1 : 2;
+      const rb = b === q ? 0 : b.startsWith(q) ? 1 : 2;
+      return ra - rb || a.localeCompare(b);
+    });
+    for (const key of keys) {
+      const entry = itemIdsByName[key];
+      for (const id of entry.ids) {
+        if (shown++ >= 50) break;
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer";
+        row.addEventListener("mouseenter", () => row.style.background = "#3a3a3a");
+        row.addEventListener("mouseleave", () => row.style.background = "");
+        const img = document.createElement("img");
+        img.src = "https://static.runelite.net/cache/item/icon/" + id + ".png";
+        img.style.cssText = "width:22px;height:22px;object-fit:contain;image-rendering:pixelated;flex:0 0 auto";
+        img.addEventListener("error", () => img.style.visibility = "hidden");
+        const label = document.createElement("span");
+        label.textContent = entry.name + "  (" + id + ")";
+        row.appendChild(img);
+        row.appendChild(label);
+        // mousedown, not click: it must beat the input's blur.
+        row.addEventListener("mousedown", e => {
+          e.preventDefault();
+          applyPick(input, entry, id);
+          input.dispatchEvent(new Event("input"));
+          drop.style.display = "none";
+        });
+        drop.appendChild(row);
+      }
+      if (shown >= 50) break;
+    }
+    if (!shown) drop.style.display = "none";
+  }
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", refresh);
+  input.addEventListener("blur", () => setTimeout(() => { drop.style.display = "none"; }, 150));
+}
+
+/** Replaces the trailing comma-separated token with the picked item's id. */
+function pickIntoIdList(input, entry, id) {
+  const tokens = input.value.split(",").slice(0, -1).map(t => t.trim()).filter(Boolean);
+  tokens.push(String(id));
+  input.value = tokens.join(", ");
+}
+
 function numberInput(value, onInput, min) {
   const i = document.createElement("input");
   i.type = "number"; i.value = value; i.min = min == null ? 1 : min;
@@ -564,13 +754,32 @@ function renderEditor() {
     textInput(tile.description, v => tile.description = v, "Screenshot with team code required")));
   const iconRow = document.createElement("div");
   iconRow.className = "row";
-  const iconField = field("Icon (optional)",
-    textInput(tile.icon, v => tile.icon = v, "Twisted bow  |  20997"),
-    "Exact item name, or numeric item ID (needed for untradeables). Find IDs by adding ?action=raw to a wiki page URL and reading id = ... in the Infobox Item block.");
+  const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Twisted bow  |  20997");
+  const iconField = field("Icon (optional)", iconInput,
+    "Item name or numeric id (untradeables need the id).");
+  attachItemSuggest(iconInput, (input, entry, id) => {
+    // Always the id: the plugin resolves names through the tradeable-item search,
+    // so an untradeable's name (Enhanced crystal key) would silently fail in-game.
+    input.value = String(id);
+  });
   iconField.style.flex = "2";
+  const iconPreview = document.createElement("div");
+  iconPreview.style.cssText = "width:34px;height:34px;flex:0 0 auto;align-self:center;background:#222;"
+    + "border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#777";
+  iconPreview.title = "Icon preview - a question mark means the name was not recognized";
+  function refreshIconPreview() {
+    iconPreview.innerHTML = "";
+    const raw = (tile.icon || "").trim();
+    if (!raw) return;
+    const img = iconImg(raw, 30);
+    if (img) { iconPreview.appendChild(img); }
+    else if (itemNameMap) { iconPreview.textContent = "?"; }
+  }
+  refreshIconPreview();
   const pointsField = field("Points", numberInput(tile.points, v => tile.points = v, 0),
     "0 = no points");
   iconRow.appendChild(iconField);
+  iconRow.appendChild(iconPreview);
   iconRow.appendChild(pointsField);
   editor.appendChild(iconRow);
 
@@ -636,21 +845,57 @@ function renderGoal(tile, goal, gi) {
 
   box.appendChild(field("Progress bar label (optional)",
     textInput(goal.name, v => goal.name = v, goal.type === "CHAT" ? "Sub-7 Corrupted Gauntlet" : "auto"),
-    "Shown on this goal's progress bar in-game. Leave empty to generate one from the settings below."));
+    "Leave empty to generate one from the settings below."));
 
-  const commaHint = "Comma-separated. * matches anything.";
-  if (goal.type === "DROP") {
-    box.appendChild(field("Items", listInput(goal.items, v => goal.items = v, "Zenyte shard, Venator shard"), commaHint));
-    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Mithril dragon"), "Leave empty for any monster/chest."));
+  const commaHint = "Comma-separated; * matches anything.";
+  function lootMaskField(goal, gi) {
+    const lootRow = document.createElement("div");
+    lootRow.className = "row";
+    [["KILL", "Kills"], ["PICKPOCKET", "Pickpockets"], ["OTHER", "Chests & other"]].forEach(([v, t]) => {
+      const wrap = document.createElement("div");
+      wrap.className = "checkline";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.id = "loot" + gi + v; cb.checked = (goal.loot || []).includes(v);
+      cb.addEventListener("change", () => {
+        goal.loot = (goal.loot || []).filter(k => k !== v);
+        if (cb.checked) goal.loot.push(v);
+        saveDraft(); renderGrid();
+      });
+      const cl = document.createElement("label");
+      cl.htmlFor = cb.id; cl.textContent = t;
+      wrap.appendChild(cb); wrap.appendChild(cl);
+      lootRow.appendChild(wrap);
+    });
+    return field("Loot from", lootRow,
+      "Chests & other covers caskets, events and everything not from a kill.");
+  }
+  function checkbox(id, label, checked, onChange) {
     const check = document.createElement("div");
     check.className = "checkline";
     const cb = document.createElement("input");
-    cb.type = "checkbox"; cb.id = "distinct" + gi; cb.checked = !!goal.distinct;
-    cb.addEventListener("change", () => { goal.distinct = cb.checked; saveDraft(); });
+    cb.type = "checkbox"; cb.id = id; cb.checked = checked;
+    cb.addEventListener("change", () => { onChange(cb.checked); saveDraft(); });
     const cl = document.createElement("label");
-    cl.htmlFor = cb.id; cl.textContent = "Distinct — each different item counts once";
+    cl.htmlFor = id; cl.textContent = label;
     check.appendChild(cb); check.appendChild(cl);
-    box.appendChild(check);
+    return check;
+  }
+  if (goal.type === "DROP") {
+    const itemsInput = listInput(goal.items, v => goal.items = v, "Zenyte shard, Venator shard");
+    box.appendChild(field("Items", itemsInput, commaHint));
+    attachItemSuggest(itemsInput, (input, entry, id) => {
+      const tokens = input.value.split(",").slice(0, -1).map(t => t.trim()).filter(Boolean);
+      tokens.push(entry.name);
+      input.value = tokens.join(", ");
+    });
+    const idsInput = listInput((goal.itemIds || []).map(String), v => goal.itemIds = v.map(x => parseInt(x, 10)).filter(x => x > 0), "30107");
+    box.appendChild(field("Item ids (optional)", idsInput,
+      "Exact ids for items that share a name with something else."));
+
+    attachItemSuggest(idsInput, pickIntoIdList);
+    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Mithril dragon"), "Leave empty for any monster/chest."));
+    box.appendChild(lootMaskField(goal, gi));
+    box.appendChild(checkbox("distinct" + gi, "Distinct — each different item counts once", !!goal.distinct, v => goal.distinct = v));
   }
   if (goal.type === "RAID_PURPLE") {
     const raids = document.createElement("div");
@@ -671,15 +916,16 @@ function renderGoal(tile, goal, gi) {
       raids.appendChild(wrap);
     });
     box.appendChild(field("Raids", raids));
+    box.appendChild(checkbox("raiddistinct" + gi, "Distinct — each different unique counts once", !!goal.distinct, v => goal.distinct = v));
   }
   if (goal.type === "KC") {
-    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), commaHint + " Matched against kill count chat messages - bosses, raids, Wintertodt etc. For regular monsters use NPC kills instead."));
+    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), "Read from kill count chat messages — for regular monsters use NPC kills instead."));
   }
   if (goal.type === "KILL") {
-    box.appendChild(field("NPCs", listInput(goal.npcs, v => goal.npcs = v, "Man, Woman"), commaHint + " A kill counts for whoever the game awards the loot to (most damage, like ironman rules), so shared kills never count twice. NPCs that drop nothing at all can't be counted."));
+    box.appendChild(field("NPCs", listInput(goal.npcs, v => goal.npcs = v, "Man, Woman"), "A kill counts for whoever the game awards the loot to, so shared kills count once."));
   }
   if (goal.type === "PET") {
-    box.appendChild(field("Specific pets (optional)", listInput(goal.pets, v => goal.pets = v, "Pet snakeling"), "Leave empty for any pet. Specific pets need the collection log chat notification."));
+    box.appendChild(field("Specific pets (optional)", listInput(goal.pets, v => goal.pets = v, "Pet snakeling"), "Leave empty for any pet."));
   }
   if (goal.type === "XP") {
     const sel = document.createElement("select");
@@ -699,6 +945,7 @@ function renderGoal(tile, goal, gi) {
   if (goal.type === "VALUE") {
     box.appendChild(field("Minimum value of a single loot pile (gp)", numberInput(goal.amount, v => goal.amount = v)));
     box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Revenant*"), "Leave empty for any source."));
+    box.appendChild(lootMaskField(goal, gi));
   }
   if (goal.type === "LAP") {
     const sel = document.createElement("select");
@@ -710,12 +957,26 @@ function renderGoal(tile, goal, gi) {
       sel.appendChild(o);
     });
     sel.addEventListener("change", () => { goal.course = sel.value; saveDraft(); renderGrid(); });
-    box.appendChild(field("Agility course", sel, "A lap counts when it completes at the course's end, like RuneLite's lap counter."));
+    box.appendChild(field("Agility course", sel, "Laps count like RuneLite's lap counter."));
   }
   if (goal.type === "CHAT") {
     box.appendChild(field("Game message pattern (regex)",
       textInput(goal.pattern, v => goal.pattern = v, "Corrupted challenge duration: [0-6]:[0-5][0-9]"),
       "Counts once per matching game message."));
+    box.appendChild(field("Map region ids (optional)", listInput((goal.regions || []).map(String),
+      v => goal.regions = v.map(tok => {
+        const pair = tok.match(/^(\d+)\s+(\d+)$/);
+        if (pair) return Math.floor(pair[1] / 64) * 256 + Math.floor(pair[2] / 64);
+        return parseInt(tok, 10);
+      }).filter(x => x > 0), "6038  or  2571 2240"),
+      (() => {
+        const hint = document.createElement("span");
+        const link = document.createElement("a");
+        link.href = "region-map.html"; link.target = "_blank"; link.textContent = "region map";
+        hint.append("Only count the message in these regions — find ids on the ", link,
+          ", or paste x y tile coordinates.");
+        return hint;
+      })()));
   }
   if (goal.type === "MANUAL") {
     const p = document.createElement("p");
@@ -726,6 +987,7 @@ function renderGoal(tile, goal, gi) {
   }
   if (goal.type !== "MANUAL" && goal.type !== "XP") {
     box.appendChild(field("Count (how many times)", numberInput(goal.count, v => goal.count = v)));
+    box.appendChild(checkbox("shot" + gi, "Screenshot progress to the Discord webhook", !!goal.screenshot, v => goal.screenshot = v));
   }
   return box;
 }
@@ -800,6 +1062,7 @@ $("startTime").addEventListener("input", e => { board.start = fromLocalInput(e.t
 $("endTime").addEventListener("input", e => { board.end = fromLocalInput(e.target.value); saveDraft(); });
 $("linePoints").addEventListener("input", e => { board.linePoints = parseInt(e.target.value, 10) || 0; saveDraft(); renderGrid(); });
 $("blackoutPoints").addEventListener("input", e => { board.blackoutPoints = parseInt(e.target.value, 10) || 0; saveDraft(); renderGrid(); });
+$("diagonals").addEventListener("change", e => { board.diagonals = e.target.checked; saveDraft(); renderGrid(); });
 $("boardSize").addEventListener("change", e => {
   board.size = parseInt(e.target.value, 10);
   resizeTiles(); saveDraft(); renderGrid(); renderEditor();

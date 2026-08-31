@@ -36,18 +36,13 @@ class BingoTileDetail extends JPanel
 
 	private final IronsPubBingoPlugin plugin;
 	private final int widthBasis;
-	private final Timer tickCooldownTimer;
 
 	private int selectedTile = -1;
 	private boolean detailsExpanded;
 	private boolean actionsExpanded;
-	/**
-	 * Manual-tick anti-spam deadline (epoch ms), SHARED between the sidebar and pop-out
-	 * instances so alternating surfaces can't dodge the cooldown.
-	 */
-	private static long tickCooldownUntil;
-	private JButton manualTickButton;
-	private String manualTickBaseText = "";
+	private boolean teammatesExpanded;
+	/** Rebuild-scoped: the Contributors toggle renders once, above the first goal that has bars. */
+	private boolean teammatesToggleAdded;
 	/** A credit request is on its way to the store; the button says so meanwhile. */
 	private boolean requestInFlight;
 
@@ -58,19 +53,6 @@ class BingoTileDetail extends JPanel
 		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
 		setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		setAlignmentX(LEFT_ALIGNMENT);
-		tickCooldownTimer = new Timer(1000, e ->
-		{
-			if (tickCooldownRemaining() <= 0)
-			{
-				((Timer) e.getSource()).stop();
-			}
-			updateManualTickButton();
-		});
-	}
-
-	void stopTimers()
-	{
-		tickCooldownTimer.stop();
 	}
 
 	void setSelectedTile(int tileIndex)
@@ -85,6 +67,7 @@ class BingoTileDetail extends JPanel
 	 */
 	boolean rebuild()
 	{
+		teammatesToggleAdded = false;
 		removeAll();
 		BingoBoard board = plugin.getBoard();
 		boolean show = board != null && selectedTile >= 0 && selectedTile < board.getTiles().size();
@@ -101,7 +84,7 @@ class BingoTileDetail extends JPanel
 		Map<String, TileProgress> members = teamView ? plugin.memberProgressFor(selectedTile) : null;
 
 		BingoWrappedLabel titleLabel = new BingoWrappedLabel(
-			(selectedTile + 1) + ". " + tile.label, widthBasis - 44);
+			(plugin.showTileNumbers() ? (selectedTile + 1) + ". " : "") + tile.label, widthBasis - 44);
 		titleLabel.setFont(FontManager.getRunescapeBoldFont());
 		titleLabel.setForeground(Color.WHITE);
 		AsyncBufferedImage itemIcon = plugin.iconFor(tile);
@@ -201,6 +184,9 @@ class BingoTileDetail extends JPanel
 
 			if (teamView)
 			{
+				// Per-member bars fold away by default: on a big team they dwarf the
+				// tile's own information. One toggle drives every goal's bars.
+				List<MemberBar> bars = new ArrayList<>();
 				for (Map.Entry<String, TileProgress> entry : members.entrySet())
 				{
 					long share = goal.progressOf(entry.getValue().goal(g, tile.goals.size()));
@@ -225,8 +211,30 @@ class BingoTileDetail extends JPanel
 					{
 						memberBar.setToolTipText("Credited by an admin on the team sheet (verified progress)");
 					}
+					bars.add(memberBar);
+				}
+				if (!bars.isEmpty() && !teammatesToggleAdded)
+				{
+					teammatesToggleAdded = true;
+					JButton contributors = smallButton("Contributors  " + (teammatesExpanded ? "▾" : "▸"));
+					contributors.setHorizontalAlignment(SwingConstants.LEFT);
+					contributors.addActionListener(e ->
+					{
+						teammatesExpanded = !teammatesExpanded;
+						rebuild();
+						revalidate();
+						repaint();
+					});
 					add(Box.createVerticalStrut(2));
-					add(memberBar);
+					add(contributors);
+				}
+				if (teammatesExpanded)
+				{
+					for (MemberBar memberRow : bars)
+					{
+						add(Box.createVerticalStrut(2));
+						add(memberRow);
+					}
 				}
 			}
 		}
@@ -309,27 +317,19 @@ class BingoTileDetail extends JPanel
 
 		add(Box.createVerticalStrut(6));
 
-		// Manual tick as a cooldown button rather than a checkbox: every toggle
-		// broadcasts to the team and the store, so it must not be spammable.
+		// On a store team every completion claim goes through an admin, so the manual
+		// tick disappears entirely - a self-serve tick would bypass the review the
+		// Requests tab exists for. Party-only teams keep it (there is no reviewer).
 		final int tileIndex = selectedTile;
 		final boolean ownTicked = own.manual;
-		manualTickBaseText = ownTicked ? "Remove manual tick" : "Tick off tile (manual)";
-		JButton tick = smallButton(manualTickBaseText);
-		tick.setToolTipText(ownTicked
-			? "Un-tick this tile (your manual completion is removed team-wide)"
-			: "Mark this tile completed by hand (for tiles the tracker can't count)");
-		tick.addActionListener(e ->
+		JButton tick = null;
+		if (!plugin.storeConfigured())
 		{
-			tickCooldownUntil = System.currentTimeMillis() + 10_000;
-			tickCooldownTimer.restart();
-			plugin.setManualComplete(tileIndex, !ownTicked);
-		});
-		manualTickButton = tick;
-		updateManualTickButton();
-		if (tickCooldownRemaining() > 0 && !tickCooldownTimer.isRunning())
-		{
-			// The cooldown was started on the other surface; keep this button counting too.
-			tickCooldownTimer.start();
+			tick = smallButton(ownTicked ? "Remove manual tick" : "Tick off tile (manual)");
+			tick.setToolTipText(ownTicked
+				? "Un-tick this tile (your manual completion is removed team-wide)"
+				: "Mark this tile completed by hand (for tiles the tracker can't count)");
+			tick.addActionListener(e -> plugin.setManualComplete(tileIndex, !ownTicked));
 		}
 
 		JButton request = smallButton(requestInFlight ? "Sending request..." : "Request admin credit");
@@ -355,8 +355,11 @@ class BingoTileDetail extends JPanel
 		actionsCard.setLayout(new BoxLayout(actionsCard, BoxLayout.Y_AXIS));
 		actionsCard.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		actionsCard.setAlignmentX(LEFT_ALIGNMENT);
-		actionsCard.add(tick);
-		actionsCard.add(Box.createVerticalStrut(4));
+		if (tick != null)
+		{
+			actionsCard.add(tick);
+			actionsCard.add(Box.createVerticalStrut(4));
+		}
 		actionsCard.add(request);
 		actionsCard.add(Box.createVerticalStrut(4));
 		actionsCard.add(reset);
@@ -373,26 +376,6 @@ class BingoTileDetail extends JPanel
 		add(Box.createVerticalStrut(4));
 		add(actionsCard);
 		return true;
-	}
-
-	private static long tickCooldownRemaining()
-	{
-		return Math.max(0, (tickCooldownUntil - System.currentTimeMillis() + 999) / 1000);
-	}
-
-	/** Reflects the shared manual-tick cooldown on whichever tick button is currently shown. */
-	private void updateManualTickButton()
-	{
-		JButton button = manualTickButton;
-		if (button == null)
-		{
-			return;
-		}
-		long remaining = tickCooldownRemaining();
-		button.setEnabled(remaining <= 0);
-		button.setText(remaining > 0
-			? manualTickBaseText + " (" + remaining + "s)"
-			: manualTickBaseText);
 	}
 
 	/** Dialog for a credit request: amount or completion, plus a note for the admin. */

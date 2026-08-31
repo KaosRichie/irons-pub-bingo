@@ -50,7 +50,38 @@ class BingoDiscordNotifier
 	@Inject
 	private IronsPubBingoConfig config;
 
-	void postCompletion(String player, String boardName, List<String> tileLabels, int completed, int total, String bonus)
+	/**
+	 * Posts progress on a goal the host flagged with "screenshot": proof lands in Discord
+	 * as it happens instead of one screenshot at tile completion. Rides the completion
+	 * toggle and webhook - nothing extra to configure.
+	 */
+	void postGoalProgress(String player, String tileLabel, String goalLabel, long progress, long target)
+	{
+		if (!config.postCompletions())
+		{
+			return;
+		}
+		HttpUrl url = HttpUrl.parse(config.webhookUrl().trim());
+		if (url == null)
+		{
+			return;
+		}
+		StringBuilder content = new StringBuilder();
+		content.append(":camera_with_flash: **").append(player == null ? "Someone" : player)
+			.append("** - ").append(tileLabel).append(": ").append(goalLabel)
+			.append(" (").append(progress).append('/').append(target).append(')');
+		String team = config.teamName().trim();
+		if (!team.isEmpty())
+		{
+			content.append(" for team **").append(team).append("**");
+		}
+		String message = content.toString();
+		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
+	}
+
+	/** lootDetail: the drop (or valued loot pile) that finished the tile, or null. */
+	void postCompletion(String player, String boardName, List<String> tileLabels, int completed, int total,
+		String bonus, String lootDetail)
 	{
 		if (!config.postCompletions())
 		{
@@ -71,6 +102,10 @@ class BingoDiscordNotifier
 			content.append(" for team **").append(team).append("**");
 		}
 		content.append(" — ").append(boardName).append(" (").append(completed).append('/').append(total).append(" tiles)");
+		if (lootDetail != null)
+		{
+			content.append("\n:package: ").append(lootDetail);
+		}
 		if (bonus != null)
 		{
 			content.append("\n:sparkles: ").append(bonus);

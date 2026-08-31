@@ -113,7 +113,6 @@ class BingoBoardWindow extends JFrame
 	public void dispose()
 	{
 		countdownTimer.stop();
-		detail.stopTimers();
 		super.dispose();
 	}
 

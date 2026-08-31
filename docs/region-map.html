@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Region Finder</title>
+<!-- self-contained: no external scripts, so sandboxed previews render it too.
+     The map list is embedded from basemaps.json of the version named below;
+     regenerate it when the wiki adds new maps. -->
+<style>
+  html, body { height: 100%; margin: 0; background: #1b1b1b; overflow: hidden; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; cursor: crosshair; touch-action: none; }
+  .panel {
+    position: absolute; z-index: 10; background: rgba(20, 20, 20, .88); color: #eee;
+    font: 13px/1.45 system-ui, sans-serif; border-radius: 6px; padding: 8px 12px;
+  }
+  #readout { top: 10px; left: 10px; min-width: 210px; }
+  #readout b { font-size: 16px; }
+  #readout .muted { color: #9a9a9a; }
+  #planes { top: 10px; right: 10px; display: flex; gap: 4px; padding: 6px; }
+  #planes button, #zoomer button {
+    background: #333; color: #ddd; border: 1px solid #555; border-radius: 4px;
+    padding: 4px 10px; cursor: pointer; font: inherit;
+  }
+  #planes button.on { background: #7a5c00; border-color: #a98100; color: #fff; }
+  #zoomer { top: 62px; right: 10px; display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+  #zoomer button { width: 34px; font-size: 16px; }
+  #zoomer button.on { background: #7a5c00; border-color: #a98100; color: #fff; }
+  #about { bottom: 10px; left: 10px; max-width: 430px; }
+  #about a { color: #e8c46a; }
+  #results div { padding: 5px 8px; cursor: pointer; }
+  #results div:hover { background: #444; }
+  #results .src { color: #8a8a8a; font-size: 11px; margin-left: 6px; }
+  #copied {
+    position: absolute; z-index: 20; left: 50%; top: 14px; transform: translateX(-50%);
+    background: #2e5d2e; color: #fff; padding: 6px 14px; border-radius: 6px;
+    font: 13px system-ui, sans-serif; display: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<div id="readout" class="panel">Looking for the newest map tiles...</div>
+<div id="planes" class="panel">
+  <span style="position:relative">
+    <input id="search" placeholder="Search maps and places..." autocomplete="off"
+      style="width:220px;background:#333;color:#ddd;border:1px solid #555;border-radius:4px;padding:4px 6px;font:inherit">
+    <div id="results" style="display:none;position:absolute;top:28px;left:0;width:280px;max-height:320px;overflow-y:auto;background:#222;border:1px solid #555;border-radius:4px;z-index:30"></div>
+  </span>
+</div>
+<div id="zoomer" class="panel"><button id="zin">+</button><button id="zout">&minus;</button><button id="grid" class="on" title="Region grid and ids">#</button></div>
+<div id="about" class="panel">
+  Hover for the map region id, click to copy it. Drag to pan, scroll to zoom. Dungeons
+  and instances sit north of the surface at their real coordinates; the search box finds
+  the wiki-rendered maps and any wiki place name. Tiles come straight from the
+  <a href="https://maps.runescape.wiki" target="_blank" rel="noopener">OSRS Wiki's map server</a>,
+  which keeps up with new game content; the newest published version is detected
+  automatically. Paste ids into a Chat goal's <i>Map region ids</i> field in Bingo Forge.
+</div>
+<div id="copied">Region id copied</div>
+<script>
+"use strict";
+
+/* Tile scheme (maps.runescape.wiki): versions/<v>/tiles/rendered/0/<zoom>/<plane>_<tx>_<ty>.png
+   zoom 0-3, a 256px tile spans 2^(8-zoom) game tiles, tile y counts up from the south.
+   No libraries on purpose: sandboxed previews block CDN scripts, so everything is inline. */
+const FALLBACK_VERSION = "2026-08-12_a";
+const BASE = "https://maps.runescape.wiki/osrs/versions/";
+const MAX_TILE_ZOOM = 3;
+const MIN_ZOOM = -2;                // below 0 reuses zoom-0 tiles, scaled down
+const MAX_ZOOM = 5;                 // 4-5 reuse zoom-3 tiles, scaled up
+
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+const readout = document.getElementById("readout");
+
+const MAPS = [[0,"Gielinor Surface",2496,3328,896,1984,4096,4288],[10000,"Abandoned Mine - Level 1",3424,9632,3328,9536,3520,9728],[10001,"Abandoned Mine - Level 2",2784,4576,2688,4480,2880,4672],[10003,"Abandoned Mine - Level 4",2784,4512,2688,4416,2880,4608],[10005,"Abandoned Mine - Level 6",2784,4448,2688,4352,2880,4544],[10006,"Abyss",3040,4800,2880,4672,3200,4928],[10007,"Abyssal Area",3040,4896,2944,4800,3136,4992],[10008,"Ah Za Rhoon",2912,9344,2816,9216,3008,9472],[10010,"Airship platform",2080,5408,1984,5312,2176,5504],[1,"Ancient Cavern",1760,5344,1664,5248,1920,5504],[10014,"Ape Atoll Dungeon",2752,9120,2624,9024,2880,9216],[46,"Ardent Ocean Underground",2691,9564,2496,9280,3200,9728],[2,"Ardougne Underground",2575,9694,2432,9536,2816,9920],[3,"Asgarnia Ice Cave",2973,9568,2816,9472,3264,9728],[10018,"Banana plantation (Ape Atoll)",2720,9184,2624,9088,2816,9280],[10019,"Barbarian Assault",1888,5440,1792,5312,1984,5568],[10020,"Barbarian Assault lobby",2592,5280,2496,5184,2688,5376],[10021,"Barrows crypts",3552,9696,3456,9600,3648,9792],[10022,"Blast Furnace",1952,4960,1856,4864,2048,5056],[10023,"Boots of lightness areas",2656,9760,2560,9664,2752,9856],[4,"Braindeath Island",2144,5101,2048,4992,2240,5248],[10025,"Brimhaven Agility Arena",2784,9568,2688,9472,2880,9664],[10026,"Brine Rat Cavern",2720,10144,2624,10048,2816,10240],[10027,"Bryophyta's lair",3232,9952,3136,9856,3328,10048],[10028,"Burthorpe Games Room",2208,4960,2112,4864,2304,5056],[44,"Cam Torum",1440,9568,1280,9408,1600,9728],[10030,"Cerberus's Lair",1312,1280,1152,1152,1472,1408],[10031,"Corporeal Beast's lair",2976,4256,2880,4160,3072,4352],[10033,"Cosmic entity's plane",2080,4832,1984,4736,2176,4928],[10035,"Crandor Lab",2848,9696,2752,9600,2944,9792],[10036,"Crash Site Cavern",2112,5664,1984,5568,2240,5760],[10037,"Creature Creation",3040,4384,2944,4288,3136,4480],[10038,"Daeyalt Essence mine",3680,9760,3584,9664,3776,9856],[10039,"Death altar",2208,4832,2112,4736,2304,4928],[10040,"Desert Eagle Lair",3424,9568,3328,9472,3520,9664],[10041,"Desert Mining Camp dungeon",3296,9440,3200,9344,3392,9536],[10042,"Digsite Dungeon (rocks blown up)",3360,9760,3264,9664,3456,9856],[10044,"Dondakan's mine (during quest)",2368,4960,2240,4864,2496,5056],[5,"Dorgesh-Kaan",2720,5344,2624,5184,2944,5568],[10045,"Dorgesh-Kaan South Dungeon",2720,5216,2624,5120,2816,5312],[10047,"Dream World - challenges",1760,5088,1664,4992,1856,5184],[10048,"Dream World - Dream Mentor",1824,5152,1728,5056,1920,5248],[10050,"Drill Demon",3168,4832,3072,4736,3264,4928],[6,"Dwarven Mines",3040,9824,2880,9600,3328,9920],[10052,"Eagles' Peak Dungeon",2016,4960,1920,4864,2112,5056],[10053,"Elemental Workshop",2720,9888,2624,9792,2816,9984],[10054,"Enakhra's Temple",3104,9312,3008,9216,3200,9408],[10055,"Enchanted Valley",3040,4512,2944,4416,3136,4608],[10056,"Enlightened Journey crash areas",1824,4896,1728,4800,1920,4992],[10057,"Evil Bob's Island",2528,4768,2432,4672,2624,4864],[10058,"Evil Chicken's Lair",2464,4384,2368,4288,2560,4480],[10059,"Evil Twin",1888,5152,1792,5056,1984,5248],[10060,"Eyes of Glouphrie war cutscene",2144,4960,2048,4864,2240,5056],[10061,"Fairy Resistance Hideout",2336,4448,2240,4352,2432,4544],[31,"Feldip Hills Underground",1989,9023,1600,8896,2176,9280],[10062,"Fisher Realm (diseased)",2784,4704,2688,4608,2880,4800],[10063,"Fisher Realm (healthy)",2656,4704,2560,4608,2752,4800],[10064,"Fishing Trawler",1952,4832,1856,4736,2048,4928],[10065,"Fishing Trawler",1888,4832,1792,4736,1984,4928],[10066,"Fishing Trawler",2016,4832,1920,4736,2112,4928],[10067,"Fossil Island boat",1824,4768,1728,4672,1920,4864],[30,"Fossil Island Underground",3744,10272,3520,10048,4032,10368],[10068,"Fragment of Seren fight",3296,5920,3200,5824,3392,6016],[10069,"Freaky Forester",2592,4768,2496,4672,2688,4864],[17,"Fremennik Slayer Cave",2784,10016,2624,9856,2880,10112],[-1,"Full Map",2496,3328,896,1152,4288,12672],[10070,"Genie cave",3360,9312,3264,9216,3456,9408],[8,"Ghorrock Prison",2935,6391,2816,6272,3072,6528],[10071,"Glarial's Tomb",2528,9824,2432,9728,2624,9920],[10072,"Goblin cook",2976,9888,2880,9792,3072,9984],[7,"God Wars Dungeon",2880,5312,2752,5056,3072,5440],[10073,"Gorak Plane",3040,5344,2944,5248,3136,5440],[10074,"H.A.M. Store room",2592,5216,2496,5120,2688,5312],[10075,"Hallowed Sepulchre - Level 1",2272,5984,2112,5824,2432,6144],[10076,"Hallowed Sepulchre starting area",2400,5984,2304,5888,2496,6080],[10077,"Harmony Island lower level",3808,9248,3712,9152,3904,9344],[10078,"Isafdar (Song of the Elves)",2784,6112,2624,5952,2944,6272],[10079,"Jaldraocht Pyramid - Level 1",2912,4960,2816,4864,3008,5056],[10080,"Jaldraocht Pyramid - Level 2",2848,4960,2752,4864,2944,5056],[10081,"Jaldraocht Pyramid - Level 3",2784,4960,2688,4864,2880,5056],[10082,"Jaldraocht Pyramid - Level 4",3232,9312,3136,9216,3328,9408],[10083,"Jatizso mine",2400,10208,2304,10112,2496,10304],[10084,"Jiggig Dungeon",2464,9408,2368,9280,2560,9536],[10085,"Jungle Eagle lair/Red chinchompa hunting ground",2528,9312,2432,9216,2624,9408],[10086,"Karamjan Temple",2848,9280,2752,9152,2944,9408],[33,"Kebos Underground",1266,10206,1024,9792,1472,10368],[10087,"Keep Le Faye (instance)",1696,4256,1600,4160,1792,4352],[10,"Keldagrim",2879,10176,2752,9984,3008,10304],[10088,"Keldagrim Rat Pits",1952,4704,1856,4608,2048,4800],[42,"Kharidian Desert Underground",3488,9504,3072,9024,3584,9728],[10089,"Killerwatt Plane",2656,5216,2560,5120,2752,5312],[10090,"King's Ransom dungeon",1888,4256,1792,4160,1984,4352],[10091,"Kiss the frog",2464,4768,2368,4672,2560,4864],[10092,"Klenter's Pyramid",3296,9184,3200,9088,3392,9280],[32,"Kourend Underground",1664,10048,1216,9728,1984,10240],[10093,"Kruk's Dungeon",2496,9152,2240,8960,2752,9344],[10094,"Lady Trahaern hideout",2336,9568,2240,9472,2432,9664],[24,"Lair of Tarn Razorlor",3168,4564,3072,4480,3456,4736],[41,"Lassar Undercity",2656,6368,2432,6208,2816,6528],[10095,"Library Historical Archive",1568,10208,1472,10112,1664,10304],[10096,"Lighthouse cutscene",2464,4576,2368,4480,2560,4672],[10097,"Lighthouse Dungeon",2528,10016,2432,9920,2624,10112],[10098,"Lighthouse Dungeon (cutscene)",2528,4640,2432,4544,2624,4736],[10099,"Lithkren Vault",1568,5088,1472,4992,1664,5184],[10100,"Lithkren Vault entrance (during quest)",3552,10400,3456,10304,3648,10496],[10101,"Lithkren Vault entrance (post-quest)",3552,10464,3456,10368,3648,10560],[10102,"Lizardman Temple",1312,10080,1216,9984,1408,10176],[36,"LMS Desert Island",3456,5824,3328,5696,3584,5952],[38,"LMS Wild Varrock",3552,6120,3392,5952,3712,6272],[10103,"Lumbridge Castle (Recipe for Disaster)",1888,5344,1792,5248,1984,5440],[10104,"Mage Training Arena rooms",3360,9664,3264,9536,3456,9792],[10105,"Maniacal monkey hunter area",2912,9120,2816,9024,3008,9216],[10106,"Meiyerditch Laboratories",3584,9760,3456,9600,3712,9920],[10107,"Meiyerditch Mine",2400,4640,2304,4544,2496,4736],[10108,"Mime",2016,4768,1920,4672,2112,4864],[10109,"Misthalin Mystery",1664,4832,1536,4736,1792,4928],[12,"Misthalin Underground",3168,9632,3008,9408,3392,10112],[10110,"Mogre Camp",2976,9504,2880,9408,3072,9600],[13,"Mole Hole",1760,5183,1664,5056,1856,5312],[10111,"Monkey Madness hangar (post-quest)",2656,4512,2560,4416,2752,4608],[10112,"Monkey Madness hangar and Bonzara",2400,9888,2304,9792,2496,9984],[23,"Mor Ul Rek",2489,5118,2304,4928,2624,5248],[14,"Morytania Underground",3479,9837,3264,9472,3968,10048],[15,"Mos Le'Harmless Cave",3775,9407,3648,9280,3904,9536],[10113,"Mourner Tunnels",1952,4640,1792,4544,2112,4736],[10114,"Mouse hole",2272,5536,2176,5440,2368,5632],[10115,"My Arm's Big Adventure boat cutscene",1888,4896,1792,4800,1984,4992],[10116,"Myreque Hideout (Burgh de Rott)",3488,9632,3392,9536,3584,9728],[10117,"Myreque Hideout (Canifis)",3456,9856,3328,9728,3584,9984],[10118,"Myreque Hideout (Meiyerditch)",3616,9632,3520,9536,3712,9728],[10119,"Nature altar",2400,4832,2304,4736,2496,4928],[45,"Neypotzli",1440,9632,1280,9408,1600,9856],[10120,"Nightmare of Ashihama",3872,9952,3776,9856,3968,10048],[10121,"North-east Karamja cutscene",2528,4576,2432,4480,2624,4672],[51,"Northern Ocean Underground",2559,10272,2048,10112,3008,10560],[10122,"Observatory Dungeon",2336,9376,2240,9280,2432,9472],[10123,"Ogre Enclave",2592,9440,2496,9344,2688,9536],[10124,"Old School Museum",3040,9952,2944,9856,3136,10048],[16,"Ourania Altar",3040,5600,2944,5504,3136,5696],[10125,"Paterdomus Temple underground",3424,9888,3328,9792,3520,9984],[10126,"Polar Eagle lair",2720,10208,2624,10112,2816,10304],[29,"Prifddinas",3263,6079,3072,5888,3456,6272],[35,"Prifddinas Grand Library",2623,6143,2496,6016,3136,6272],[10183,"Prifddinas Grand Library (post-quest)",3232,12512,3136,12416,3328,12608],[34,"Prifddinas Underground",3263,12479,3072,12288,3392,12608],[10127,"Prison Pete",2080,4448,1984,4352,2176,4544],[10128,"Puro-Puro",2592,4320,2496,4224,2688,4416],[10129,"Pyramid Plunder",1952,4448,1856,4352,2048,4544],[10130,"Quidamortem Cave",1184,9952,1088,9856,1280,10048],[10131,"Quiz Master",1952,4768,1856,4672,2048,4864],[10132,"Rantz's cave",2656,9376,2560,9280,2752,9472],[10133,"Rashiliyia's Tomb",2912,9504,2816,9408,3008,9600],[10134,"Ratcatchers Mansion",2848,5088,2752,4992,2944,5184],[10135,"Recipe for Disaster Ape Atoll Dungeon",3040,5472,2944,5376,3136,5568],[10136,"Recruitment Drive",2464,4960,2368,4864,2560,5056],[10137,"Rogues' Den",3008,5024,2880,4864,3136,5184],[39,"Ruins of Camdozaal",2952,5766,2816,5696,3136,5952],[10138,"Saba's cave",2272,4768,2176,4672,2368,4864],[10139,"Shadow Dungeon",2688,5088,2560,4992,2816,5184],[48,"Shrouded Ocean Underground",2016,9184,1856,8640,2368,9408],[10140,"Skavid caves",2528,9440,2432,9344,2624,9536],[10141,"Smoke Dungeon",3264,9376,3136,9280,3392,9472],[10142,"Sophanem bank",2784,5152,2688,5056,2880,5248],[10143,"Sophanem Dungeon",2272,4320,2048,4160,2496,4480],[10144,"Sorceress's Garden",2912,5472,2816,5376,3008,5568],[18,"Stronghold of Security",1888,5216,1792,4800,2112,5312],[19,"Stronghold Underground",2432,9812,2176,9664,2624,10112],[49,"Sunset Ocean Underground",1181,9198,1088,9088,1280,9280],[10145,"Surprise Exam",1888,5024,1792,4928,1984,5120],[20,"Taverley Underground",2912,9824,2560,9536,3072,10112],[10146,"Tears of Guthix cave",3232,9504,3136,9408,3328,9600],[10147,"Temple of Ikov",2688,9856,2560,9728,2816,9984],[10148,"Temple of Marimbo Dungeon",2784,9184,2688,9088,2880,9280],[10149,"Temple Trekking",2080,5024,1984,4928,2176,5120],[10150,"Thammaron's throne room",2720,4896,2624,4800,2816,4992],[40,"The Abyss",3040,4832,2880,4672,3200,4992],[10151,"The Grand Tree - Monkey Madness II",1984,5568,1856,5440,2112,5696],[10152,"The Kendal's cave",2784,10080,2688,9984,2880,10176],[21,"Tolna's Rift",3104,5280,3008,5184,3200,5376],[10153,"Train station",2464,5536,2368,5440,2560,5632],[10154,"Tree Gnome Village dungeon",2528,9568,2432,9472,2624,9664],[10155,"Tree Gnome Village dungeon (instance)",2592,4448,2496,4352,2688,4544],[10156,"Troll arena - Trollheim tunnel",2912,10016,2816,9920,3008,10112],[22,"Troll Stronghold",2822,10087,2752,9984,3072,10240],[10157,"Trollweiss Dungeon",2784,10208,2688,10112,2880,10304],[10158,"Tunnel of Chaos",3168,5216,3072,5120,3264,5312],[37,"Tutorial Island",1695,6111,1536,5952,1856,6272],[10159,"Tutorial Island dungeon",3104,9504,3008,9408,3200,9600],[10182,"Tutorial Island v2 dungeon",1696,12512,1600,12416,1792,12608],[10160,"Tyras Camp cutscene",2336,4576,2240,4480,2432,4672],[10161,"Underground Pass - bottom level",2336,9856,2240,9728,2432,9984],[10162,"Underground Pass - bottom level (Song of the Elves instance)",2464,6144,2368,6016,2560,6272],[10163,"Underground Pass - first level",2432,9696,2304,9600,2560,9792],[10164,"Underground Pass - Iban's Temple (post-quest)",2016,4704,1920,4608,2112,4800],[10165,"Underground Pass - platforms",2144,4640,2048,4480,2240,4800],[10166,"Underground Pass - second level",2400,9600,2304,9472,2496,9728],[10167,"Underground Pass - swamp fail and final area",2464,9632,2368,9536,2560,9728],[10168,"Ungael Laboratory",2272,10464,2176,10368,2368,10560],[47,"Unquiet Ocean Underground",3168,8864,2624,8512,3392,8960],[10169,"Uzer Dungeon",2720,4896,2624,4800,2816,4992],[52,"Vampyrium",2620,7814,2368,7616,2880,8000],[43,"Varlamore Underground",1696,9504,1216,9216,1920,9920],[10170,"Varrock Museum basement (higher)",1760,4960,1664,4864,1856,5056],[10171,"Varrock Museum basement (lower)",1632,4960,1536,4864,1728,5056],[10172,"Varrock Rat Pits",2912,5088,2816,4992,3008,5184],[10173,"Viyeldi caves (lower level)",2400,4704,2304,4608,2496,4800],[10174,"Viyeldi caves (upper level)",2784,9312,2688,9216,2880,9408],[10175,"Water Ravine Dungeon",3360,9568,3264,9472,3456,9664],[25,"Waterbirth Dungeon",2495,10144,2368,9536,2816,10240],[10176,"Waterfall Dungeon",2592,9888,2496,9792,2688,9984],[10177,"Waterfall Dungeon (water)",2528,9888,2432,9792,2624,9984],[50,"Western Ocean Underground",2264,9880,1856,9408,2368,10112],[26,"Wilderness Dungeons",3040,10303,2816,9984,3520,10496],[10178,"Wilderness Wars",3296,4640,3200,4544,3392,4736],[10179,"Witchaven Dungeon",2336,5088,2240,4992,2432,5184],[10180,"Wrath altar",2336,4832,2240,4736,2432,4928],[9,"Yama's Lair",1472,5568,1408,5504,1600,5696],[10181,"Yanille cutscene",2912,4704,2816,4608,3008,4800],[27,"Yanille Underground",2580,9522,2240,9344,2752,9600],[28,"Zanaris",2447,4448,2304,4288,2560,4544]];
+const view = { x: 3222, y: 3220, zoom: 3, plane: 0, grid: true, version: null };
+const tiles = new Map();            // url -> {img, ok}
+
+function probe(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
+/* The tile server has no CORS, but images need none: find the newest version by probing
+   one tiny tile per candidate date, newest first. Cached for a day where storage works. */
+async function findVersion() {
+  try {
+    const cached = JSON.parse(localStorage.getItem("region-map-version") || "null");
+    if (cached && Date.now() - cached.at < 86400e3) return cached.v;
+  } catch (e) { /* storage blocked: probe every load */ }
+  let found = null;
+  for (let back = 0; back < 90 && !found; back++) {
+    const date = new Date(Date.now() - back * 86400e3).toISOString().slice(0, 10);
+    if (await probe(BASE + date + "_a/tiles/rendered/0/0/0_12_12.png")) {
+      found = date + "_a";
+      for (const s of ["b", "c", "d"]) {   // same-day re-renders get a later letter
+        if (await probe(BASE + date + "_" + s + "/tiles/rendered/0/0/0_12_12.png")) {
+          found = date + "_" + s;
+        }
+      }
+    }
+  }
+  const version = found || FALLBACK_VERSION;
+  try { localStorage.setItem("region-map-version", JSON.stringify({ v: version, at: Date.now() })); } catch (e) { }
+  return version;
+}
+
+function unitsPerPixel() { return 1 / Math.pow(2, view.zoom - 3) / 8; }  // 8 px per tile at zoom 3
+function pixelsPerUnit() { return Math.pow(2, view.zoom - 3) * 8; }
+
+function gameAt(px, py) {
+  const u = unitsPerPixel();
+  return { x: view.x + (px - canvas.clientWidth / 2) * u, y: view.y - (py - canvas.clientHeight / 2) * u };
+}
+
+let tileFails = 0;
+let tileWins = 0;
+
+/* Zoomed out, one frame can want hundreds of tiles (every visible map at zoom 0).
+   Firing them all at once gets some dropped by the server, and a dropped request
+   cached as "missing" leaves a permanent hole - so loads go through a small queue,
+   and a failure retries twice before the tile is written off. */
+const MAX_INFLIGHT = 24;
+let inflight = 0;
+const pendingTiles = [];
+function pumpTiles() {
+  while (inflight < MAX_INFLIGHT && pendingTiles.length) {
+    const t = pendingTiles.shift();
+    inflight++;
+    t.img.src = t.url;
+  }
+}
+function tileFor(url) {
+  let t = tiles.get(url);
+  if (!t) {
+    t = { img: new Image(), ok: false, url: url, attempts: 0 };
+    t.img.onload = () => {
+      inflight--;
+      t.ok = true;
+      tileWins++;
+      requestDraw();
+      pumpTiles();
+    };
+    t.img.onerror = () => {
+      inflight--;
+      t.attempts++;
+      if (t.attempts < 2) {
+        setTimeout(() => { pendingTiles.push(t); pumpTiles(); }, 500);
+      } else {
+        // Two strikes: genuinely absent (ocean) or unreachable. One retry heals a
+        // dropped request; more just hammers the server with repeat 404s for water.
+        tileFails++;
+        if (tileWins === 0 && tileFails >= 12) {
+          readout.innerHTML = "<b>This viewer blocks the map tiles.</b><br>"
+            + "<span class='muted'>Open the page in a normal browser tab -<br>"
+            + "the map images come from maps.runescape.wiki.</span>";
+        }
+      }
+      pumpTiles();
+    };
+    pendingTiles.push(t);
+    pumpTiles();
+    tiles.set(url, t);
+  }
+  return t;
+}
+
+let drawQueued = false;
+function requestDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(() => { drawQueued = false; draw(); });
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr; canvas.height = h * dpr;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  if (!view.version) return;
+  ctx.imageSmoothingEnabled = view.zoom < MAX_TILE_ZOOM || view.zoom < 0;
+
+  // The server's mapId -1 "Full Map" is the whole world pre-composited - surface,
+  // every underground and instance at their true coordinates. Drawing ONLY it
+  // sidesteps every overlap problem hand-compositing 220 maps had (quest-variant
+  // tiles blanketing neighbours with their black padding, order-dependent wins).
+  const tileZ = Math.max(0, Math.min(view.zoom, MAX_TILE_ZOOM));
+  const span = Math.pow(2, 8 - tileZ);              // game units per tile
+  const px = pixelsPerUnit();
+  const tilePx = span * px;
+  const topLeft = gameAt(0, 0);
+  const bottomRight = gameAt(w, h);
+  const full = MAPS.find(m => m[0] === -1) || [-1, "", 0, 0, 896, 1152, 4288, 12672];
+  const tx0 = Math.floor(Math.max(full[4], topLeft.x, 0) / span);
+  const tx1 = Math.floor(Math.max(0, Math.min(full[6] - .01, bottomRight.x)) / span);
+  const ty0 = Math.floor(Math.max(full[5], bottomRight.y, 0) / span);
+  const ty1 = Math.floor(Math.max(0, Math.min(full[7] - .01, topLeft.y)) / span);
+  for (let tx = tx0; tx <= tx1; tx++) {
+    for (let ty = ty0; ty <= ty1; ty++) {
+      const t = tileFor(BASE + view.version + "/tiles/rendered/-1/" + tileZ + "/"
+        + view.plane + "_" + tx + "_" + ty + ".png");
+      if (!t.ok) continue;
+      const sx = w / 2 + (tx * span - view.x) * px;
+      const sy = h / 2 - ((ty + 1) * span - view.y) * px;
+      ctx.drawImage(t.img, sx, sy, tilePx, tilePx);
+    }
+  }
+
+  // Region grid + ids: every region is 64 game units.
+  const regionPx = 64 * px;
+  if (view.grid && regionPx >= 14) {
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let gx = Math.ceil(Math.max(0, topLeft.x) / 64) * 64; gx <= bottomRight.x; gx += 64) {
+      const sx = Math.round(w / 2 + (gx - view.x) * px) + .5;
+      ctx.moveTo(sx, 0); ctx.lineTo(sx, h);
+    }
+    for (let gy = Math.ceil(Math.max(0, bottomRight.y) / 64) * 64; gy <= topLeft.y; gy += 64) {
+      const sy = Math.round(h / 2 - (gy - view.y) * px) + .5;
+      ctx.moveTo(0, sy); ctx.lineTo(w, sy);
+    }
+    ctx.stroke();
+  }
+  if (view.grid && regionPx >= 48) {
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "11px system-ui, sans-serif";
+    for (let gx = Math.floor(Math.max(0, topLeft.x) / 64) * 64; gx <= bottomRight.x; gx += 64) {
+      for (let gy = Math.floor(Math.max(0, bottomRight.y) / 64) * 64; gy <= topLeft.y; gy += 64) {
+        const id = Math.floor(gx / 64) * 256 + Math.floor(gy / 64);
+        const sx = w / 2 + (gx - view.x) * px + 3;
+        const sy = h / 2 - (gy + 64 - view.y) * px + 12;
+        ctx.fillText(id, sx, sy);
+      }
+    }
+  }
+}
+
+// ---------- interactions ----------
+let dragging = null;
+canvas.addEventListener("pointerdown", e => {
+  dragging = { px: e.clientX, py: e.clientY, moved: 0 };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (dragging) {
+    const u = unitsPerPixel();
+    view.x -= (e.clientX - dragging.px) * u;
+    view.y += (e.clientY - dragging.py) * u;
+    dragging.moved += Math.abs(e.clientX - dragging.px) + Math.abs(e.clientY - dragging.py);
+    dragging.px = e.clientX; dragging.py = e.clientY;
+    requestDraw();
+  }
+  const g = gameAt(e.clientX, e.clientY);
+  const x = Math.floor(g.x), y = Math.floor(g.y);
+  const region = Math.floor(x / 64) * 256 + Math.floor(y / 64);
+  readout.innerHTML = "Region <b>" + region + "</b><br>"
+    + "<span class='muted'>x " + x + " &middot; y " + y + " &middot; plane " + view.plane
+    + "<br>click to copy the region id</span>";
+});
+canvas.addEventListener("pointerup", e => {
+  const wasClick = dragging && dragging.moved < 5;
+  dragging = null;
+  if (!wasClick) return;
+  const g = gameAt(e.clientX, e.clientY);
+  const region = Math.floor(Math.floor(g.x) / 64) * 256 + Math.floor(Math.floor(g.y) / 64);
+  const flash = () => {
+    const el = document.getElementById("copied");
+    el.style.display = "block";
+    setTimeout(() => { el.style.display = "none"; }, 1200);
+  };
+  if (navigator.clipboard) { navigator.clipboard.writeText(String(region)).then(flash, flash); }
+});
+function zoomBy(delta, anchorX, anchorY) {
+  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.zoom + delta));
+  if (next === view.zoom) return;
+  const before = gameAt(anchorX, anchorY);
+  view.zoom = next;
+  const after = gameAt(anchorX, anchorY);
+  view.x += before.x - after.x;
+  view.y += before.y - after.y;
+  requestDraw();
+}
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);
+}, { passive: false });
+document.getElementById("zin").addEventListener("click",
+  () => zoomBy(1, canvas.clientWidth / 2, canvas.clientHeight / 2));
+document.getElementById("zout").addEventListener("click",
+  () => zoomBy(-1, canvas.clientWidth / 2, canvas.clientHeight / 2));
+document.getElementById("grid").addEventListener("click", e => {
+  view.grid = !view.grid;
+  e.target.className = view.grid ? "on" : "";
+  requestDraw();
+});
+window.addEventListener("resize", requestDraw);
+
+/* Search: the embedded map names answer instantly; the wiki's API (which, unlike the
+   tile server, allows cross-origin requests) covers every other place name and stays
+   current. A wiki hit jumps to coordinates parsed from that page's Map templates. */
+const searchBox = document.getElementById("search");
+const resultsBox = document.getElementById("results");
+
+function jumpTo(x, y) {
+  view.x = x; view.y = y;
+  view.zoom = Math.max(view.zoom, 2);
+  resultsBox.style.display = "none";
+  searchBox.blur();
+  requestDraw();
+}
+
+function mapCoordCandidates(wikitext) {
+  // {{Map|mapID=45|1440, 9632|...}}, {{Map|x:1693.5,y:3232|...}}, {{Map|x=1440|y=9632|...}}
+  const out = [];
+  for (const m of wikitext.matchAll(/\{\{Map\|([^{}]*)\}\}/gi)) {
+    const body = m[1];
+    const cap = /caption\s*=\s*([^|}]+)/i.exec(body);
+    let x = null, y = null;
+    // Word boundary before x/y: rectX=5|rectY=7 must not read as coordinates.
+    let c = /(?<![a-z])x\s*[:=]\s*(\d+(?:\.\d+)?)[^\d]+(?<![a-z])y\s*[:=]\s*(\d+(?:\.\d+)?)/i.exec(body);
+    if (c) { x = +c[1]; y = +c[2]; }
+    else {
+      c = /(?:^|\|)\s*(\d{3,4}(?:\.\d+)?)\s*,\s*(\d{3,5}(?:\.\d+)?)\s*(?:\||$)/.exec(body);
+      if (c) { x = +c[1]; y = +c[2]; }
+    }
+    if (x != null && !(x >= 640 && x <= 13000 && y >= 1000 && y <= 13600)) {
+      x = null;   // outside any plausible game coordinate - a template artifact
+    }
+    if (x != null) {
+      const interior = /mapID\s*=\s*[1-9]/i.test(body) || y > 4200;
+      out.push({ x: x, y: y, label: cap ? cap[1].trim() : null, interior: interior });
+    }
+  }
+  // Interior coordinates first: for a dungeon page they are the ones with the regions.
+  out.sort((a, b) => (b.interior ? 1 : 0) - (a.interior ? 1 : 0));
+  return out;
+}
+
+async function openWikiPage(title) {
+  resultsBox.innerHTML = "<div class='src'>reading " + title + "...</div>";
+  try {
+    const r = await fetch("https://oldschool.runescape.wiki/api.php?action=parse&page="
+      + encodeURIComponent(title) + "&prop=wikitext&format=json&origin=*");
+    const j = await r.json();
+    const spots = mapCoordCandidates(j.parse.wikitext["*"]);
+    if (!spots.length) {
+      resultsBox.innerHTML = "<div class='src'>that page has no map coordinates - "
+        + "grouped caves render inside their regional Underground map</div>";
+      return;
+    }
+    jumpTo(spots[0].x, spots[0].y);
+  } catch (e) {
+    resultsBox.innerHTML = "<div class='src'>wiki lookup failed</div>";
+  }
+}
+
+let searchTimer = null;
+searchBox.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchBox.value.trim().toLowerCase();
+  if (q.length < 2) { resultsBox.style.display = "none"; return; }
+  resultsBox.style.display = "block";
+  resultsBox.innerHTML = "";
+  for (const m of MAPS.filter(x => x[1].toLowerCase().includes(q)).slice(0, 6)) {
+    const row = document.createElement("div");
+    row.textContent = m[1];
+    row.insertAdjacentHTML("beforeend", "<span class='src'>map</span>");
+    row.addEventListener("mousedown", () => jumpTo(m[2], m[3]));
+    resultsBox.appendChild(row);
+  }
+  searchTimer = setTimeout(async () => {
+    try {
+      const r = await fetch("https://oldschool.runescape.wiki/api.php?action=opensearch&search="
+        + encodeURIComponent(searchBox.value.trim()) + "&limit=6&format=json&origin=*");
+      const names = (await r.json())[1] || [];
+      for (const n of names) {
+        const row = document.createElement("div");
+        row.textContent = n;
+        row.insertAdjacentHTML("beforeend", "<span class='src'>wiki</span>");
+        row.addEventListener("mousedown", () => openWikiPage(n));
+        resultsBox.appendChild(row);
+      }
+    } catch (e) { /* offline or blocked: local names still work */ }
+  }, 250);
+});
+searchBox.addEventListener("blur", () => setTimeout(() => { resultsBox.style.display = "none"; }, 250));
+
+const planeBox = document.getElementById("planes");
+for (let p = 0; p <= 3; p++) {
+  const b = document.createElement("button");
+  b.textContent = "Plane " + p;
+  if (p === 0) b.className = "on";
+  b.addEventListener("click", () => {
+    view.plane = p;
+    planeBox.querySelectorAll("button").forEach(x => x.className = "");
+    b.className = "on";
+    requestDraw();
+  });
+  planeBox.appendChild(b);
+}
+
+// Draw immediately with the fallback version - the newest-version probe can take a few
+// seconds, and a blank sea in the meantime reads as a broken page. If the probe finds a
+// newer render, swap and let the cache refill.
+view.version = FALLBACK_VERSION;
+requestDraw();
+findVersion().then(version => {
+  if (version !== view.version) {
+    view.version = version;
+    tiles.clear();
+  }
+  if (tileWins > 0 || tileFails < 12) {
+    readout.innerHTML = "Map version <b>" + version + "</b><br><span class='muted'>hover for region ids</span>";
+  }
+  requestDraw();
+});
+</script>
+</body>
+</html>
