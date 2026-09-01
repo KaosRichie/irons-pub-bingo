@@ -290,6 +290,65 @@ public class BingoGoal
 		return goalType != GoalType.MANUAL && progressOf(p) >= target();
 	}
 
+	/**
+	 * What this goal TRACKS, canonically. Targets (count, XP amount) are excluded on
+	 * purpose: hosts may tune how much without resetting anyone. When a tile's combined
+	 * signature changes, its stored numbers describe something else and are reset.
+	 */
+	String trackingSignature()
+	{
+		List<String> parts = new ArrayList<>();
+		parts.add(goalType.name());
+		parts.add(sigNames(items));
+		parts.add(sigNumbers(itemIds));
+		parts.add(sigNames(sources));
+		parts.add(sigNames(loot));
+		parts.add(isDistinct() ? "distinct" : "");
+		parts.add(sigNames(raids));
+		parts.add(sigNames(npcs));
+		parts.add(sigNames(pets));
+		parts.add(skill == null ? "" : skill.trim().toUpperCase(Locale.ROOT));
+		parts.add(course == null ? "" : course.trim().toUpperCase(Locale.ROOT));
+		parts.add(pattern == null ? "" : pattern);
+		parts.add(sigNumbers(regions));
+		return String.join("|", parts);
+	}
+
+	/** Sorted so reordering a list (same meaning) never looks like a different goal. */
+	private static String sigNames(List<String> values)
+	{
+		if (values == null || values.isEmpty())
+		{
+			return "";
+		}
+		List<String> cleaned = new ArrayList<>();
+		for (String value : values)
+		{
+			if (value != null && !value.trim().isEmpty())
+			{
+				cleaned.add(value.trim().toLowerCase(Locale.ROOT));
+			}
+		}
+		java.util.Collections.sort(cleaned);
+		return String.join(",", cleaned);
+	}
+
+	private static String sigNumbers(List<Integer> values)
+	{
+		if (values == null || values.isEmpty())
+		{
+			return "";
+		}
+		List<Integer> sorted = new ArrayList<>(values);
+		java.util.Collections.sort(sorted);
+		StringBuilder joined = new StringBuilder();
+		for (Integer value : sorted)
+		{
+			joined.append(joined.length() > 0 ? "," : "").append(value);
+		}
+		return joined.toString();
+	}
+
 	/** Longest goal label shown in full; longer ones compact and move detail behind the toggle. */
 	private static final int MAX_LABEL_LENGTH = 46;
 

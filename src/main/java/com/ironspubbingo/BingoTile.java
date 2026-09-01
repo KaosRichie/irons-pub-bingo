@@ -97,6 +97,17 @@ public class BingoTile
 		return points == null || points < 0 ? 0 : points;
 	}
 
+	/** What this tile TRACKS - goal signatures in order. Labels and points don't count. */
+	String trackingSignature()
+	{
+		StringBuilder sig = new StringBuilder();
+		for (BingoGoal goal : goals)
+		{
+			sig.append(sig.length() > 0 ? ";" : "").append(goal.trackingSignature());
+		}
+		return sig.toString();
+	}
+
 	boolean isComplete(TileProgress progress)
 	{
 		if (progress.manual)

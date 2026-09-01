@@ -65,7 +65,8 @@ class BingoDiscordNotifier
 	 * expires; attachment CDN URLs do, so they are only the fallback.
 	 * The callback gets (link, error) on an arbitrary thread.
 	 */
-	void postProofScreenshot(String player, String tileLabel, java.util.function.BiConsumer<String, String> callback)
+	void postProofScreenshot(String player, String requestDetail, String team,
+		java.util.function.BiConsumer<String, String> callback)
 	{
 		HttpUrl url = HttpUrl.parse(config.webhookUrl().trim());
 		if (url == null)
@@ -74,7 +75,7 @@ class BingoDiscordNotifier
 			return;
 		}
 		String content = ":camera_with_flash: **" + (player == null ? "Someone" : player)
-			+ "** - proof for " + tileLabel + " (credit request)";
+			+ "** - credit request proof: " + requestDetail + teamSuffix(team);
 		drawManager.requestNextFrameListener(frame -> executor.execute(() ->
 		{
 			Map<String, Object> payload = new HashMap<>();
@@ -179,7 +180,8 @@ class BingoDiscordNotifier
 	 * as it happens instead of one screenshot at tile completion. Rides the completion
 	 * toggle and webhook - nothing extra to configure.
 	 */
-	void postGoalProgress(String player, String tileLabel, String goalLabel, long progress, long target)
+	void postGoalProgress(String player, String tileLabel, String goalLabel, long progress, long target,
+		String team)
 	{
 		if (!config.postCompletions())
 		{
@@ -190,22 +192,15 @@ class BingoDiscordNotifier
 		{
 			return;
 		}
-		StringBuilder content = new StringBuilder();
-		content.append(":camera_with_flash: **").append(player == null ? "Someone" : player)
-			.append("** - ").append(tileLabel).append(": ").append(goalLabel)
-			.append(" (").append(progress).append('/').append(target).append(')');
-		String team = config.teamName().trim();
-		if (!team.isEmpty())
-		{
-			content.append(" for team **").append(team).append("**");
-		}
-		String message = content.toString();
+		String message = ":camera_with_flash: **" + (player == null ? "Someone" : player)
+			+ "** - " + tileLabel + ": " + goalLabel
+			+ " (" + progress + '/' + target + ')' + teamSuffix(team);
 		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
 	}
 
 	/** lootDetail: the drop (or valued loot pile) that finished the tile, or null. */
 	void postCompletion(String player, String boardName, List<String> tileLabels, int completed, int total,
-		String bonus, String lootDetail)
+		String bonus, String lootDetail, String team)
 	{
 		if (!config.postCompletions())
 		{
@@ -219,12 +214,7 @@ class BingoDiscordNotifier
 
 		StringBuilder content = new StringBuilder();
 		content.append(":tada: **").append(player == null ? "Someone" : player).append("** completed **")
-			.append(String.join("**, **", tileLabels)).append("**");
-		String team = config.teamName().trim();
-		if (!team.isEmpty())
-		{
-			content.append(" for team **").append(team).append("**");
-		}
+			.append(String.join("**, **", tileLabels)).append("**").append(teamSuffix(team));
 		content.append(" — ").append(boardName).append(" (").append(completed).append('/').append(total).append(" tiles)");
 		if (lootDetail != null)
 		{
@@ -238,6 +228,12 @@ class BingoDiscordNotifier
 
 		// Grab the next rendered frame as proof, then build and send the request off the client thread.
 		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
+	}
+
+	/** " for team **X**"; the caller resolves the display name (sheet > config > code). */
+	private static String teamSuffix(String team)
+	{
+		return team == null || team.trim().isEmpty() ? "" : " for team **" + team.trim() + "**";
 	}
 
 	private void post(HttpUrl url, String message, Image frame)

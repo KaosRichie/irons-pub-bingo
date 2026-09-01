@@ -71,7 +71,9 @@
 /**
  * @OnlyCurrentDoc
  * Limits the requested permission to this script's own spreadsheet only,
- * instead of access to all spreadsheets on the account.
+ * instead of access to all spreadsheets on the account. Approval announcements to
+ * Discord additionally need the "connect to an external service" permission, which
+ * Google asks for once after deploying this version.
  */
 
 var STORE_SHEET = 'Store';
@@ -93,7 +95,7 @@ var ADJ_HEADERS = ['Team', 'Tile', 'Goal', 'Player', 'Add (+/-)', 'Complete', 'N
 	'Verified by', 'Added', '-> Tile label', '-> Running total', '-> Issues'];
 var STORE_HEADERS = ['board', 'member', 'name', 'updated', 'data'];
 var META_HEADERS = ['board', 'updated', 'meta'];
-var TEAMS_HEADERS = ['Code', 'Name'];
+var TEAMS_HEADERS = ['Code', 'Name', 'Webhook'];
 var REMOVED_HEADERS = ['board', 'member', 'when', 'reason'];
 var REQUESTS_SHEET = 'Requests';
 var REQUESTS_HEADERS = ['When', 'Team', 'Player', 'Tile', 'Goal', 'Add', 'Complete', 'Note',
@@ -152,6 +154,10 @@ function doPost(e)
 	}
 	try
 	{
+		// Web requests run fully authorized, so they deliver any announcements the
+		// Status dropdown's limited trigger context had to park.
+		flushWebhookQueue();
+
 		var board = String(body.board || '');
 		var members = body.members || {};
 
@@ -194,6 +200,10 @@ function doPost(e)
 		// numbers, but this closes the no-code cheat of editing the board JSON.
 		var canonicalCode = readBoardCode();
 		var canonicalHash = canonicalCode ? sha256Hex(canonicalCode) : null;
+		// A changed board code reconciles stored progress BEFORE the tamper gate, so
+		// the very first poll after the host pastes an update cleans the store - even
+		// a poll from a client still running the old board.
+		reconcileBoardCode(canonicalCode, canonicalHash);
 		if (canonicalHash && String(body.boardHash || '') !== canonicalHash)
 		{
 			// A client behind on versions gets told about the update; any other
@@ -824,6 +834,7 @@ function resolveSelectedRequests(approve)
 		}
 	}
 	var done = resolveRequests(rows, approve);
+	flushWebhookQueue();
 	SpreadsheetApp.getUi().alert(approve
 		? done + ' request(s) marked Done and written to the Adjustments tab.'
 		: done + ' request(s) rejected.');
@@ -878,11 +889,321 @@ function setRequestStatus(rowNumber, status)
 	}
 	if (status === 'Done' && !adjustmentExistsForRequest(rowNumber))
 	{
+		// The announcement's before/after diff around the ledger write tells whether
+		// this approval finished the tile, and which bingo lines it completed.
+		var scope = latestBoardForTeam(String(row[1] || '').trim().toLowerCase());
+		var tileIndex = parseInt(row[3], 10) - 1;
+		var doneBefore = scope ? tileTotals(scope.board, scope.meta).done.slice() : null;
 		getSheet(ADJ_SHEET, ADJ_HEADERS).appendRow([row[1], row[3], row[4], row[2], row[5],
 			row[6], 'request #' + rowNumber + ': ' + row[7], 'approved request']);
+		announceApproval(row, scope, tileIndex, doneBefore);
+	}
+	else if (status === 'Rejected' && removeAdjustmentForRequest(rowNumber))
+	{
+		// An approval flipped to Rejected takes its credit back: the tagged ledger row
+		// is removed, and clients drop the credit on their next sync. Flipping back to
+		// Done re-credits (and re-announces) cleanly.
+		announceWithdrawal(row, latestBoardForTeam(String(row[1] || '').trim().toLowerCase()));
 	}
 	styleStatusCell(sheet, rowNumber, status);
 	return true;
+}
+
+/** Deletes the ledger row(s) a request's approval wrote. Returns whether any existed. */
+function removeAdjustmentForRequest(rowNumber)
+{
+	var sheet = getSheet(ADJ_SHEET, ADJ_HEADERS);
+	var values = sheet.getDataRange().getValues();
+	var tag = 'request #' + rowNumber + ':';
+	var removed = false;
+	for (var i = values.length - 1; i >= 1; i--)
+	{
+		if (String(values[i][6] || '').indexOf(tag) === 0)
+		{
+			sheet.deleteRow(i + 1);
+			removed = true;
+		}
+	}
+	return removed;
+}
+
+/** Tells the team's webhook that an announced approval no longer stands. */
+function announceWithdrawal(row, scope)
+{
+	try
+	{
+		var team = teamInfoFor(String(row[1] || '').trim().toLowerCase());
+		if (!team || !team.webhook)
+		{
+			return;
+		}
+		sendOrQueueWebhook(team.webhook,
+			':no_entry: Credit approval withdrawn: ' + requestSummary(row, scope)
+				+ noteAndProofLines(row));
+	}
+	catch (err)
+	{
+		console.error('Withdrawal announcement failed: ' + err);
+	}
+}
+
+/** The most recently updated board scope for a team, with its meta, or null. */
+function latestBoardForTeam(team)
+{
+	var values = getSheet(META_SHEET, META_HEADERS).getDataRange().getValues();
+	var best = null;
+	for (var i = 1; i < values.length; i++)
+	{
+		var key = String(values[i][0] || '');
+		var meta = parseJson(values[i][2], null);
+		if (teamOf(key) !== team || !meta || !meta.tiles)
+		{
+			continue;
+		}
+		var updated = String(values[i][1] || '');
+		if (!best || updated > best.updated)
+		{
+			best = { board: key, meta: meta, updated: updated };
+		}
+	}
+	return best;
+}
+
+/** The tile's plain label - the sheet cell carries "N - label" for the admins only. */
+function tileLabelOf(row, scope, tileIndex)
+{
+	if (scope && scope.meta.tiles[tileIndex] && scope.meta.tiles[tileIndex].label)
+	{
+		return String(scope.meta.tiles[tileIndex].label);
+	}
+	return String(row[3] || '').replace(/^\d+\s*-\s*/, '');
+}
+
+/** Completed bingo lines in a done[] array; mirrors the plugin's counting. */
+function linesInDone(meta, done)
+{
+	var size = meta.size || Math.round(Math.sqrt(meta.tiles.length));
+	var lines = 0;
+	for (var r = 0; r < size; r++)
+	{
+		var rowDone = true;
+		var colDone = true;
+		for (var c = 0; c < size; c++)
+		{
+			rowDone = rowDone && !!done[r * size + c];
+			colDone = colDone && !!done[c * size + r];
+		}
+		lines += (rowDone ? 1 : 0) + (colDone ? 1 : 0);
+	}
+	if (meta.diagonals === false)
+	{
+		return lines;
+	}
+	var diag = true;
+	var anti = true;
+	for (var i = 0; i < size; i++)
+	{
+		diag = diag && !!done[i * size + i];
+		anti = anti && !!done[i * size + (size - 1 - i)];
+	}
+	return lines + (diag ? 1 : 0) + (anti ? 1 : 0);
+}
+
+/** The plugin's line/blackout bonus message for a done[] transition, or ''. */
+function bonusLineFor(meta, doneBefore, doneAfter)
+{
+	var total = meta.tiles.length;
+	var beforeCount = 0;
+	var afterCount = 0;
+	for (var i = 0; i < total; i++)
+	{
+		beforeCount += doneBefore[i] ? 1 : 0;
+		afterCount += doneAfter[i] ? 1 : 0;
+	}
+	// A blackout finishes lines too - announce both, lines first (like the plugin).
+	var text = '';
+	var gained = linesInDone(meta, doneAfter) - linesInDone(meta, doneBefore);
+	if (gained > 0)
+	{
+		var linePts = Number(meta.linePoints || 0);
+		text = 'Bingo! ' + (gained === 1 ? 'Line complete' : gained + ' lines complete')
+			+ (linePts > 0 ? ' (+' + (gained * linePts) + ' pts)' : '');
+	}
+	if (afterCount === total && beforeCount < total)
+	{
+		var blackoutPts = Number(meta.blackoutPoints || 0);
+		text += (text ? ' - ' : '') + 'BLACKOUT! Every tile complete'
+			+ (blackoutPts > 0 ? ' (+' + blackoutPts + ' pts)' : '');
+	}
+	return text;
+}
+
+/** The team's row on the Teams tab: { webhook, name }, or null. */
+function teamInfoFor(teamCode)
+{
+	var values = getSheet(TEAMS_SHEET, TEAMS_HEADERS).getDataRange().getValues();
+	for (var i = 1; i < values.length; i++)
+	{
+		var code = String(values[i][0] || '').trim().toLowerCase()
+			.replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+		if (code && code === teamCode)
+		{
+			var url = String(values[i][2] || '').trim();
+			return {
+				webhook: /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(url) ? url : '',
+				name: String(values[i][1] || '').trim()
+			};
+		}
+	}
+	return null;
+}
+
+/**
+ * Announces a freshly approved request on the team's Discord webhook, proof links
+ * included. When the approval finishes the tile, the announcement mirrors the plugin's
+ * completion post (the proof link stands in for the screenshot), so verified tiles get
+ * the same moment in the channel as tracked ones. Requires the Webhook column on the
+ * Teams tab; without it nothing is sent. Never throws - Discord being down must not
+ * block the approval itself.
+ */
+function announceApproval(row, scope, tileIndex, doneBefore)
+{
+	try
+	{
+		var team = teamInfoFor(String(row[1] || '').trim().toLowerCase());
+		if (!team || !team.webhook)
+		{
+			return;
+		}
+		var teamName = team.name || String(row[1] || '');
+		var doneAfter = scope ? tileTotals(scope.board, scope.meta).done : null;
+		var newlyDone = doneBefore && doneAfter && tileIndex >= 0
+			&& tileIndex < scope.meta.tiles.length
+			&& doneAfter[tileIndex] && !doneBefore[tileIndex];
+		var content;
+		if (newlyDone)
+		{
+			var doneCount = 0;
+			for (var t = 0; t < scope.meta.tiles.length; t++)
+			{
+				doneCount += doneAfter[t] ? 1 : 0;
+			}
+			content = ':tada: **' + row[2] + '** completed **' + tileLabelOf(row, scope, tileIndex)
+				+ '** (admin verified) for team **' + teamName + '** — '
+				+ (scope.meta.name || 'Bingo board')
+				+ ' (' + doneCount + '/' + scope.meta.tiles.length + ' tiles)'
+				+ '\nCredit: ' + creditText(row, scope);
+			var bonus = bonusLineFor(scope.meta, doneBefore, doneAfter);
+			if (bonus)
+			{
+				content += '\n:sparkles: ' + bonus;
+			}
+		}
+		else
+		{
+			content = ':white_check_mark: Credit approved: ' + requestSummary(row, scope);
+		}
+		sendOrQueueWebhook(team.webhook, content + noteAndProofLines(row));
+	}
+	catch (err)
+	{
+		console.error('Approval announcement failed: ' + err);
+	}
+}
+
+/** "+40 on goal 1 (Kills: Man)", or "tile complete". */
+function creditText(row, scope)
+{
+	var what = row[6] ? 'tile complete' : '+' + row[5];
+	var g = parseInt(row[4], 10);
+	if (isNaN(g) || g < 1)
+	{
+		return what;
+	}
+	var label = '';
+	var t = parseInt(row[3], 10) - 1;
+	if (scope && scope.meta.tiles[t] && (scope.meta.tiles[t].goals || [])[g - 1])
+	{
+		label = String(scope.meta.tiles[t].goals[g - 1].label || '');
+	}
+	return what + ' on goal ' + g + (label ? ' (' + label + ')' : '');
+}
+
+/** "**Alice** - 10 kills (+40 on goal 1 (Kills: Man))" - who asked for what. */
+function requestSummary(row, scope)
+{
+	return '**' + row[2] + '** - ' + tileLabelOf(row, scope, parseInt(row[3], 10) - 1)
+		+ ' (' + creditText(row, scope) + ')';
+}
+
+/** The request's note and proof-link lines, appended to every announcement. */
+function noteAndProofLines(row)
+{
+	var lines = '';
+	if (String(row[7] || '').trim())
+	{
+		lines += '\n' + row[7];
+	}
+	if (String(row[10] || '').trim())
+	{
+		lines += '\nProof: ' + String(row[10]).trim().split('\n').join('  ');
+	}
+	return lines;
+}
+
+/**
+ * Sends a webhook message, or parks it when this context may not call out. Google
+ * forbids external requests inside simple triggers (the Status dropdown's onEdit), so
+ * those messages queue and the next full-auth entry point - a client sync, or a menu
+ * action - delivers them. The queue is capped; announcements are best-effort.
+ */
+function sendOrQueueWebhook(webhook, content)
+{
+	try
+	{
+		UrlFetchApp.fetch(webhook, {
+			method: 'post',
+			contentType: 'application/json',
+			payload: JSON.stringify({ content: content }),
+			muteHttpExceptions: true
+		});
+	}
+	catch (err)
+	{
+		var props = PropertiesService.getScriptProperties();
+		var queue = parseJson(props.getProperty('webhookQueue') || '[]', []);
+		queue.push({ webhook: webhook, content: content });
+		props.setProperty('webhookQueue', JSON.stringify(queue.slice(-20)));
+	}
+}
+
+/** Delivers parked webhook messages. Call only from full-auth contexts. */
+function flushWebhookQueue()
+{
+	try
+	{
+		var props = PropertiesService.getScriptProperties();
+		var raw = props.getProperty('webhookQueue');
+		if (!raw)
+		{
+			return;
+		}
+		var queue = parseJson(raw, []);
+		props.deleteProperty('webhookQueue');
+		for (var i = 0; i < queue.length; i++)
+		{
+			UrlFetchApp.fetch(queue[i].webhook, {
+				method: 'post',
+				contentType: 'application/json',
+				payload: JSON.stringify({ content: queue[i].content }),
+				muteHttpExceptions: true
+			});
+		}
+	}
+	catch (err)
+	{
+		console.error('Webhook queue flush failed: ' + err);
+	}
 }
 
 function adjustmentExistsForRequest(rowNumber)
@@ -1809,8 +2130,293 @@ function onOpen()
 		.addItem('Refresh board view', 'refreshAllViews')
 		.addItem('Approve selected request(s)', 'approveSelectedRequests')
 		.addItem('Deny selected request(s)', 'denySelectedRequests')
+		.addItem('Apply pasted board update', 'applyBoardUpdate')
+		.addItem('Reset a tile\'s progress...', 'resetTilePrompt')
 		.addItem('Reset store data...', 'resetStoreData')
 		.addToUi();
+}
+
+/**
+ * Menu action: applies a freshly pasted board code right now, without waiting for the
+ * next client poll - the same reconciliation, just on demand, with a report.
+ */
+function applyBoardUpdate()
+{
+	var code = readBoardCode();
+	SpreadsheetApp.getUi().alert(reconcileBoardCode(code, code ? sha256Hex(code) : null));
+}
+
+/**
+ * Runs whenever the pasted board code changed: cross-references the new tiles against
+ * the previous code and wipes every member's stored progress on tiles that now TRACK
+ * something else - the store-wide twin of the plugin's per-tile signature reset, so a
+ * host editing a live board never leaves stale counts leaking into new goals. Tiles
+ * that only changed labels, points or targets keep their progress.
+ */
+function reconcileBoardCode(canonicalCode, canonicalHash)
+{
+	if (!canonicalHash)
+	{
+		return 'No board code pasted on the Board code tab.';
+	}
+	var props = PropertiesService.getScriptProperties();
+	if (props.getProperty('boardSigHash') === canonicalHash)
+	{
+		return 'Board code unchanged since the last check - nothing to do.';
+	}
+	var parsed = parseJson(canonicalCode, null);
+	if (!parsed || !parsed.tiles)
+	{
+		return 'The pasted board code does not parse - re-export it from Bingo Forge.';
+	}
+	var sigs = [];
+	for (var t = 0; t < parsed.tiles.length; t++)
+	{
+		sigs.push(tileTrackingSignature(parsed.tiles[t]));
+	}
+	// The plugin's id normalization, so only THIS board's rows are ever touched.
+	var id = String(parsed.id == null ? '' : parsed.id)
+		.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+	var previous = parseJson(props.getProperty('boardSigs') || 'null', null);
+	props.setProperty('boardSigHash', canonicalHash);
+	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs }));
+	if (!previous || !previous.sigs || !id || previous.id !== id)
+	{
+		// First sighting, or a different board: its progress lives under other keys.
+		return 'Board recorded. Nothing reset - a new (or first-seen) board starts fresh anyway.';
+	}
+	var changed = [];
+	var names = [];
+	for (var i = 0; i < sigs.length && i < previous.sigs.length; i++)
+	{
+		if (sigs[i] !== previous.sigs[i])
+		{
+			changed.push(i);
+			names.push((i + 1) + ' - ' + (parsed.tiles[i].label || ''));
+		}
+	}
+	if (!changed.length)
+	{
+		return 'Board updated. No tile changed what it tracks, so all progress is kept.';
+	}
+	var rowsTouched = wipeTilesForBoardId(id, changed);
+	return 'Board updated. Reset ' + changed.length + ' re-tracked tile(s) on '
+		+ rowsTouched + ' member row(s):\n' + names.join('\n');
+}
+
+/** What a tile TRACKS (types and matchers, not targets or labels); plugin's twin. */
+function tileTrackingSignature(tile)
+{
+	var goals = (tile && tile.goals && tile.goals.length) ? tile.goals : [{ type: 'MANUAL' }];
+	var parts = [];
+	for (var g = 0; g < goals.length; g++)
+	{
+		var goal = goals[g] || {};
+		parts.push([
+			String(goal.type || '').toUpperCase(),
+			sigList(goal.items), sigList(goal.itemIds), sigList(goal.sources),
+			sigList(goal.loot), goal.distinct ? 'distinct' : '',
+			sigList(goal.raids), sigList(goal.npcs), sigList(goal.pets),
+			String(goal.skill || '').toUpperCase(), String(goal.course || '').toUpperCase(),
+			String(goal.pattern || ''), sigList(goal.regions)
+		].join('|'));
+	}
+	return parts.join(';');
+}
+
+/** Sorted, so reordering a list (same meaning) never looks like a different goal. */
+function sigList(values)
+{
+	if (!values || !values.length)
+	{
+		return '';
+	}
+	var cleaned = [];
+	for (var i = 0; i < values.length; i++)
+	{
+		var value = String(values[i] == null ? '' : values[i]).trim().toLowerCase();
+		if (value)
+		{
+			cleaned.push(value);
+		}
+	}
+	cleaned.sort();
+	return cleaned.join(',');
+}
+
+/** Empties the given tiles in every team scope of the board, resurrection-proof. */
+function wipeTilesForBoardId(id, tileIndexes)
+{
+	var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
+	var rows = readRows(sheet);
+	var prefix = 'id_' + id + '_';
+	var stamp = Date.now();
+	var wiped = 0;
+	for (var key in rows)
+	{
+		var row = rows[key];
+		if (row.board.indexOf(prefix) !== 0)
+		{
+			continue;
+		}
+		var tiles = parseJson(row.data, {});
+		for (var i = 0; i < tileIndexes.length; i++)
+		{
+			// A fresh timestamp wins the last-write merge against every cached copy.
+			tiles[String(tileIndexes[i])] = { goals: [], manual: false, ts: stamp };
+		}
+		sheet.getRange(row.rowIndex, 4, 1, 2)
+			.setValues([[new Date().toISOString(), JSON.stringify(tiles)]]);
+		wiped++;
+	}
+	console.log('Board update reset ' + tileIndexes.length + ' tile(s) on ' + wiped + ' member row(s)');
+	return wiped;
+}
+
+/**
+ * Menu action: resets the selected tile's progress. Select the tile on a Board <team>
+ * tab first - a grid cell or any of its goal-table rows; run from any other tab and it
+ * falls back to asking for the team code and tile number.
+ */
+function resetTilePrompt()
+{
+	var ui = SpreadsheetApp.getUi();
+	var picked = selectedBoardTile();
+	if (picked && picked.error)
+	{
+		ui.alert(picked.error);
+		return;
+	}
+	if (picked)
+	{
+		if (ui.alert('Reset a tile\'s progress',
+			'Reset "' + picked.label + '" for team "' + picked.team + '"?',
+			ui.ButtonSet.YES_NO) !== ui.Button.YES)
+		{
+			return;
+		}
+		ui.alert(resetStoreTileProgress(picked.team, picked.tileNumber));
+		return;
+	}
+	var answer = ui.prompt('Reset a tile\'s progress',
+		'Team code and tile number, separated by a space (e.g. "red 3").\n'
+			+ 'Tip: select the tile on its Board tab instead and run this again.',
+		ui.ButtonSet.OK_CANCEL);
+	if (answer.getSelectedButton() !== ui.Button.OK)
+	{
+		return;
+	}
+	var parts = String(answer.getResponseText() || '').trim().toLowerCase().split(/\s+/);
+	var team = parts[0] || '';
+	var tileNumber = parseInt(parts[1], 10);
+	if (!team || isNaN(tileNumber) || tileNumber < 1)
+	{
+		ui.alert('Could not read that - type the team code, a space, and the tile number.');
+		return;
+	}
+	ui.alert(resetStoreTileProgress(team, tileNumber));
+}
+
+/**
+ * The tile currently selected on a Board view tab: { team, tileNumber, label }, an
+ * { error } when the selection isn't a tile, or null when another tab is active.
+ * Works for the grid (rows 4..4+size-1) and the goal table (tile number in column 1).
+ */
+function selectedBoardTile()
+{
+	var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+	var name = sheet.getName();
+	var team;
+	if (name === BOARD_SHEET)
+	{
+		team = 'solo';
+	}
+	else if (name.indexOf(BOARD_SHEET + ' ') === 0)
+	{
+		team = name.substring((BOARD_SHEET + ' ').length);
+	}
+	else
+	{
+		return null;
+	}
+	var scope = latestBoardForTeam(team);
+	if (!scope)
+	{
+		return { error: 'No board found for team "' + team + '".' };
+	}
+	var cell = SpreadsheetApp.getActiveSpreadsheet().getActiveRange();
+	if (!cell)
+	{
+		return { error: 'Select the tile\'s cell first.' };
+	}
+	var size = scope.meta.size || Math.round(Math.sqrt(scope.meta.tiles.length));
+	var row = cell.getRow();
+	var col = cell.getColumn();
+	var tileNumber = 0;
+	if (row >= 4 && row < 4 + size && col >= 1 && col <= size)
+	{
+		tileNumber = (row - 4) * size + col;
+	}
+	else if (row > 4 + size + 2)
+	{
+		// The goal table: every row carries its tile number in the first column.
+		tileNumber = parseInt(sheet.getRange(row, 1).getValue(), 10);
+	}
+	if (isNaN(tileNumber) || tileNumber < 1 || tileNumber > scope.meta.tiles.length)
+	{
+		return { error: 'Select a tile in the grid (or one of its goal-table rows) first.' };
+	}
+	return { team: team, tileNumber: tileNumber,
+		label: scope.meta.tiles[tileNumber - 1].label || ('tile ' + tileNumber) };
+}
+
+/**
+ * Wipes one tile's stored progress for every member of a team. Each member's tile is
+ * replaced by an EMPTY state with a fresh timestamp, so the wipe wins the last-write
+ * merge against every cached copy - plain deletion would resurrect from teammates.
+ * Adjustments rows are the admins' own ledger and are left alone.
+ *
+ * @return a human-readable summary for the menu alert
+ */
+function resetStoreTileProgress(team, tileNumber)
+{
+	var scope = latestBoardForTeam(team);
+	if (!scope)
+	{
+		return 'No board found for team "' + team + '" - check the Teams tab code.';
+	}
+	if (tileNumber > scope.meta.tiles.length)
+	{
+		return 'Tile ' + tileNumber + ' does not exist (board has ' + scope.meta.tiles.length + ' tiles).';
+	}
+	var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
+	var rows = readRows(sheet);
+	var stamp = Date.now();
+	var wiped = 0;
+	for (var key in rows)
+	{
+		var row = rows[key];
+		if (row.board !== scope.board)
+		{
+			continue;
+		}
+		var tiles = parseJson(row.data, {});
+		tiles[String(tileNumber - 1)] = { goals: [], manual: false, ts: stamp };
+		sheet.getRange(row.rowIndex, 4, 1, 2)
+			.setValues([[new Date().toISOString(), JSON.stringify(tiles)]]);
+		wiped++;
+	}
+	try
+	{
+		refreshBoardView(scope.board, scope.meta);
+	}
+	catch (err)
+	{
+		console.error('Board view refresh after tile reset failed: ' + err);
+	}
+	var label = scope.meta.tiles[tileNumber - 1].label || ('tile ' + tileNumber);
+	return 'Reset "' + label + '" for ' + wiped + ' member(s) of team "' + team + '".\n'
+		+ 'Any Adjustments rows for this tile still count - delete them there if they should not.';
 }
 
 /**

@@ -23,7 +23,9 @@ Click a tile to see its goals, who contributed what, and its actions.
 
 The tracker can miss progress, for example drops on mobile or kills from before you
 imported the board. Use **Request admin credit** on the tile and link a screenshot as
-proof. An admin reviews it, and approved credit counts for the whole team. The store URL
+proof. With a Discord webhook set, tick the screenshot option instead and the plugin
+posts the proof for you and attaches its link. An admin reviews it, and approved credit
+counts for the whole team. The store URL
 opened in a browser is the player portal. It shows the live board and all requests, and
 mobile players can file requests there.
 
@@ -60,9 +62,9 @@ the board code and a team code instead. Everything else works over live party sy
 | Tab | What it's for |
 |---|---|
 | **Board code** | The official board. Players import it from here. Clients running a different board are rejected. |
-| **Teams** | Code + display name per team. Fill this first. Only listed codes may sync, and it fills the Choose team picker. |
+| **Teams** | Code + display name per team. Fill this first. Only listed codes may sync, and it fills the Choose team picker. Optional Webhook column: a Discord webhook that announces approved credit requests to the team. |
 | **Adjustments** | Credit progress by hand. Rows add up. A negative row corrects a mistake. |
-| **Requests** | Player credit requests. Set Status to `Done` (writes the ledger row for you) or `Rejected`. |
+| **Requests** | Player credit requests. Set Status to `Done` (writes the ledger row for you) or `Rejected`. Rejecting an approved request takes the credit back. |
 | **Board \<team\>** | Read-only view per team: the grid, per-goal progress, who contributed what, and when each member last synced. |
 | **Removed** | Who stopped counting. Auto-filled when someone leaves a team. Their progress is parked and returns if they rejoin. Add a row to evict by hand. |
 | **Settings** | Portal URL, and `Poll interval (seconds)` to tune how often clients sync. |
@@ -73,7 +75,17 @@ logout. One call both uploads and downloads. Tune it with `Poll interval (second
 one. Completions always sync immediately.
 
 Menu: **Irons Pub Bingo → Open player portal · Refresh board view · Approve/Deny selected
-request(s) · Reset store data**.
+request(s) · Apply pasted board update · Reset a tile's progress · Reset store data**.
+For the tile reset, select the tile on its Board tab first (a grid cell or its
+goal-table row). Apply pasted board update runs the re-tracked-tile reset right away
+instead of on the next player sync, and reports what it reset.
+
+Approving a request announces it on the team's webhook, proof links included. If the
+approval finishes the tile, the announcement is the completion post. This needs one
+extra Google permission ("connect to an external service"): after deploying, run the
+menu's Approve action once and accept the prompt. Approvals made through the Status
+dropdown can't reach Discord directly (a Google limit on edit triggers); their
+announcements go out with the next player sync, within a couple of minutes.
 
 ### Board format
 
@@ -86,10 +98,12 @@ request(s) · Reset store data**.
 
 A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goals": []}`
 
-- `id`: keep it stable. Same id lets you edit a live board without resetting progress,
-  even what a tile tracks. Edit tiles in place, never insert, remove or reorder them.
-  Bump `version` so players see they need the new code. A new id is a new board with
-  fresh progress.
+- `id`: keep it stable. Same id lets you edit a live board without resetting progress.
+  Edit tiles in place, never insert, remove or reorder them. Bump `version` so players
+  see they need the new code. A new id is a new board with fresh progress. Changing what
+  a tile tracks resets that one tile's progress; relabeling it or tuning its target
+  keeps it. The store runs the same per-tile reset on its stored progress the moment an
+  updated code is pasted.
 - `start`/`end`: outside the window automatic tracking doesn't count, manual ticks do.
 - `diagonals`: set `false` and only rows and columns count as lines.
 - `icon`: an item name, or a numeric item id for untradeables.

@@ -452,7 +452,11 @@ class BingoTileDetail extends JPanel
 		{
 			// Screenshot first, so its Discord link rides along as a proof link. A failed
 			// screenshot never blocks the request itself.
-			plugin.postProofScreenshot(tile.label, (link, shotError) -> SwingUtilities.invokeLater(() ->
+			String what = complete.isSelected() ? "tile complete" : "+" + addFinal;
+			String goalPart = goalIndex == null ? ""
+				: " on goal " + (goalIndex + 1) + " (" + tile.goals.get(goalIndex).shortDescribe() + ")";
+			String detail = tile.label + " (" + what + goalPart + ")";
+			plugin.postProofScreenshot(detail, (link, shotError) -> SwingUtilities.invokeLater(() ->
 				sendRequest(tileIndex, goalIndex, addFinal, complete.isSelected(), noteText,
 					link == null ? manualLinks : manualLinks.isEmpty() ? link : manualLinks + " " + link,
 					shotError)));

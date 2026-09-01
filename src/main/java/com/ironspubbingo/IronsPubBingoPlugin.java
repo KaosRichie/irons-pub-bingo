@@ -469,6 +469,11 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<String, Object> meta = new HashMap<>();
 		meta.put("name", board.getName());
 		meta.put("size", board.getSize());
+		// Board geometry and bonus values, so the store's own announcements (admin
+		// verified completions) can mirror the plugin's line/blackout messages.
+		meta.put("diagonals", board.diagonalsCount());
+		meta.put("linePoints", board.linePointsValue());
+		meta.put("blackoutPoints", board.blackoutPointsValue());
 		List<Object> tiles = new ArrayList<>();
 		for (BingoTile tile : board.getTiles())
 		{
@@ -687,6 +692,62 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		loadRemovedMembers();
 		enforceTeamOwnership();
+		reconcileTileSignatures();
+	}
+
+	private static final Type STRING_LIST = new TypeToken<List<String>>()
+	{
+	}.getType();
+
+	/**
+	 * Resets tiles whose tracking definition changed since this profile last saw the
+	 * board. Board edits keep the id (and so the progress); when a tile starts tracking
+	 * something ELSE - a drop counter becomes a manual tile - its old numbers describe
+	 * nothing and would leak into the new goals. Targets are not part of the signature,
+	 * so tuning a count keeps progress. Runs on login and on every import.
+	 */
+	private void reconcileTileSignatures()
+	{
+		if (board == null || configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		List<String> current = new ArrayList<>();
+		for (BingoTile tile : board.getTiles())
+		{
+			current.add(tile.trackingSignature());
+		}
+		List<String> saved = readJsonConfig("sigs3_" + boardKey, STRING_LIST);
+		if (saved != null)
+		{
+			Set<Integer> resetTiles = new HashSet<>();
+			long now = System.currentTimeMillis();
+			for (int i = 0; i < current.size() && i < saved.size(); i++)
+			{
+				if (!current.get(i).equals(saved.get(i)) && progress.containsKey(i))
+				{
+					// Fresh timestamp: the empty state must WIN the LWW merge, or
+					// teammates' caches would push the stale numbers right back.
+					progress.remove(i);
+					progressFor(i).ts = now;
+					resetTiles.add(i);
+				}
+			}
+			if (!resetTiles.isEmpty())
+			{
+				// Teammates' cached copies of OTHER members stay; each member's own
+				// client wipes its side the same way when they import the new board.
+				log.debug("Tracking changed on {} tile(s); resetting their progress", resetTiles.size());
+				broadcastOwnTiles(resetTiles);
+				syncStore(true);
+				saveProgress(true);
+			}
+		}
+		if (!current.equals(saved))
+		{
+			configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+				"sigs3_" + boardKey, gson.toJson(current));
+		}
 	}
 
 	private <T> T readJsonConfig(String key, Type type)
@@ -1472,6 +1533,9 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		announceToTeam();
 		syncStore(true);
+		// A manual sync restarts the poll clock: the next automatic sync comes one
+		// full interval from now, not moments after this one.
+		schedulePoll();
 	}
 
 	void resetTeamData()
@@ -1662,9 +1726,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/** Posts a proof screenshot for a credit request; callback gets (link, error). */
-	void postProofScreenshot(String tileLabel, java.util.function.BiConsumer<String, String> callback)
+	void postProofScreenshot(String requestDetail, java.util.function.BiConsumer<String, String> callback)
 	{
-		discordNotifier.postProofScreenshot(localPlayerName(), tileLabel, callback);
+		discordNotifier.postProofScreenshot(localPlayerName(), requestDetail, teamDisplayName(), callback);
 	}
 
 	String teamStatusText()
@@ -2039,6 +2103,8 @@ public class IronsPubBingoPlugin extends Plugin
 			notifier.notify(config.completionNotification(), bonus);
 			sendHighlightedMessage(bonus);
 		}
+		// No Discord post here on purpose: every teammate's client sees this same merge,
+		// and admin-verified completions are announced by the STORE at approval time.
 		saveProgress(!after.equals(before));
 		refreshPanel();
 	}
@@ -3061,21 +3127,26 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return null;
 		}
+		// A blackout finishes lines too - announce both, lines first.
 		StringBuilder text = new StringBuilder();
-		if (blackout)
-		{
-			text.append("BLACKOUT! Every tile complete");
-			if (board.blackoutPointsValue() > 0)
-			{
-				text.append(" (+").append(board.blackoutPointsValue()).append(" pts)");
-			}
-		}
-		else
+		if (linesGained > 0)
 		{
 			text.append("Bingo! ").append(linesGained == 1 ? "Line complete" : linesGained + " lines complete");
 			if (board.linePointsValue() > 0)
 			{
 				text.append(" (+").append(linesGained * board.linePointsValue()).append(" pts)");
+			}
+		}
+		if (blackout)
+		{
+			if (text.length() > 0)
+			{
+				text.append(" - ");
+			}
+			text.append("BLACKOUT! Every tile complete");
+			if (board.blackoutPointsValue() > 0)
+			{
+				text.append(" (+").append(board.blackoutPointsValue()).append(" pts)");
 			}
 		}
 		return text.toString();
@@ -3175,7 +3246,7 @@ public class IronsPubBingoPlugin extends Plugin
 				// When this very change completes the tile, the completion post below
 				// carries the screenshot instead of doubling up.
 				discordNotifier.postGoalProgress(localPlayerName(), tile.label,
-					goal.shortDescribe(), merged, goal.target());
+					goal.shortDescribe(), merged, goal.target(), teamDisplayName());
 			}
 		}
 
@@ -3194,7 +3265,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			discordNotifier.postCompletion(localPlayerName(),
 				board.getName(), discordLabels, completedAfter.size(), board.getTiles().size(), bonus,
-				completionLoot.isEmpty() ? null : String.join("; ", completionLoot));
+				completionLoot.isEmpty() ? null : String.join("; ", completionLoot), teamDisplayName());
 		}
 
 		// XP-only changes arrive every xp drop; batch their team broadcasts.
