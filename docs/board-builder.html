@@ -749,12 +749,12 @@ function renderEditor() {
   editor.appendChild(toolRow);
 
   editor.appendChild(field("Label (shown on the board)",
-    textInput(tile.label, v => tile.label = v, "5x Ancient Pages from Mith Drags")));
+    textInput(tile.label, v => tile.label = v, "Uncut Onyx from Zulrah")));
   editor.appendChild(field("Rules text (optional)",
     textInput(tile.description, v => tile.description = v, "Screenshot with team code required")));
   const iconRow = document.createElement("div");
   iconRow.className = "row";
-  const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Ancient page 1  |  12621");
+  const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Uncut onyx  |  6571");
   const iconField = field("Icon (optional)", iconInput,
     "Item name or numeric id (untradeables need the id).");
   attachItemSuggest(iconInput, (input, entry, id) => {
@@ -881,19 +881,19 @@ function renderGoal(tile, goal, gi) {
     return check;
   }
   if (goal.type === "DROP") {
-    const itemsInput = listInput(goal.items, v => goal.items = v, "Ancient page*");
+    const itemsInput = listInput(goal.items, v => goal.items = v, "Uncut onyx");
     box.appendChild(field("Items", itemsInput, commaHint));
     attachItemSuggest(itemsInput, (input, entry, id) => {
       const tokens = input.value.split(",").slice(0, -1).map(t => t.trim()).filter(Boolean);
       tokens.push(entry.name);
       input.value = tokens.join(", ");
     });
-    const idsInput = listInput((goal.itemIds || []).map(String), v => goal.itemIds = v.map(x => parseInt(x, 10)).filter(x => x > 0), "12621, 12622");
+    const idsInput = listInput((goal.itemIds || []).map(String), v => goal.itemIds = v.map(x => parseInt(x, 10)).filter(x => x > 0), "6571");
     box.appendChild(field("Item ids (optional)", idsInput,
       "Exact ids for items that share a name with something else."));
 
     attachItemSuggest(idsInput, pickIntoIdList);
-    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Mithril dragon"), "Leave empty for any monster/chest."));
+    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Zulrah"), "Leave empty for any monster/chest."));
     box.appendChild(lootMaskField(goal, gi));
     box.appendChild(checkbox("distinct" + gi, "Distinct, each different item counts once", !!goal.distinct, v => goal.distinct = v));
   }
