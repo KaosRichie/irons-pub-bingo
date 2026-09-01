@@ -232,25 +232,25 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 <details class="cheatsheet">
   <summary>Goal type cheat sheet</summary>
   <div class="sheet">
-    <p>Item, source, NPC and pet names are case-insensitive and <code>*</code> matches anything — <code>Ancient page*</code> matches all four pages. Every goal has a <b>count</b> (how many times it must happen).</p>
-    <p><b>Drop</b> and <b>Loot value</b> goals see exactly what RuneLite's Loot Tracker sees: if loot doesn't show up there, it can't count here either. Kills, pickpockets, clue caskets and the big reward chests are all tracked, but some containers aren't — most thieving chests, for example. Check the Loot Tracker first when planning an unusual tile; a <b>Chat message</b> goal (with map regions) often covers what it misses.</p>
+    <p>Item, source, NPC and pet names are case-insensitive and <code>*</code> matches anything. <code>Ancient page*</code> matches all four pages. Every goal has a <b>count</b> (how many times it must happen).</p>
+    <p><b>Drop</b> and <b>Loot value</b> goals see exactly what RuneLite's Loot Tracker sees: if loot doesn't show up there, it can't count here either. Kills, pickpockets, clue caskets and the big reward chests are all tracked. Some containers aren't, like most thieving chests. Check the Loot Tracker first when planning an unusual tile. A <b>Chat message</b> goal (with map regions) often covers what it misses.</p>
     <div class="tablewrap"><table>
-      <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list". Pickpocketed loot counts too, with the NPC as its source — untick <i>loot from</i> kinds to count only kills, only pickpockets, or exclude chest loot. For items that share a name with something else (the moon key halves vs the crystal ones), list exact <i>item ids</i>.</td></tr>
+      <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list". Pickpocketed loot counts too, with the NPC as its source. Untick <i>loot from</i> kinds to count only kills, only pickpockets, or exclude chest loot. For items that share a name with something else (the moon key halves vs the crystal ones), list exact <i>item ids</i>.</td></tr>
       <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples"). Tick <i>distinct</i> to count different uniques once each ("3 different ToB uniques").</td></tr>
       <tr><th>Boss kill count</th><td>Kill count gained since the player imported the board, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Kills the player had before importing don't count.</td></tr>
-      <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage — ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones); the rare monsters with empty drop tables can't be counted.</td></tr>
+      <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage, ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones); the rare monsters with empty drop tables can't be counted.</td></tr>
       <tr><th>Pet</th><td>Any pet, or specific pets (players need the collection log chat notification enabled for specific pets).</td></tr>
       <tr><th>XP</th><td>XP gained in a skill, counted from the moment the player imports the board.</td></tr>
-      <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source — but note they're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so either run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
+      <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source. They're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
       <tr><th>Loot value</th><td>A single loot pile worth at least X gp at GE prices ("a 4m+ drop").</td></tr>
-      <tr><th>Chat message</th><td>A game message matching a regex — speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places - the moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
+      <tr><th>Chat message</th><td>A game message matching a regex: speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places - the moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
       <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players tick the tile off by hand.</td></tr>
     </table></div>
     <p>A tile with several goals completes when <b>all</b> of them are done, or switch it to <b>any</b> for "X or Y" tiles.</p>
-    <p><b>Board ID &amp; version:</b> the ID ties progress to the board — keep it the same when fixing a live board and players keep everything (edit tiles in place; don't insert, remove or reorder them). Bump the version so players can see they have the latest. Changing the ID (or having none) makes edits reset progress.</p>
-    <p><b>Event window:</b> set start/end times (entered in your timezone, stored as UTC) and the plugin only counts progress inside them — players can import the board early without pre-event drops, XP or kills leaking in.</p>
-    <p><b>Points:</b> give tiles point values and the plugin shows the team's running total. <b>Line pts</b> pay per completed row/column/diagonal and <b>blackout pts</b> for finishing the whole board — both count toward the team total. For per-player contribution details, the team store's board view and portal list who contributed what to every goal.</p>
-    <p><b>Teams:</b> players who connect with the same team code combine progress — counts add up across members ("2 uniques" can be one each from two people), "distinct" item lists count each different item once per team, and XP/kill counts sum. Give each team its own code and (optionally) its own Discord webhook for completion screenshots.</p>
+    <p><b>Board ID &amp; version:</b> the ID ties progress to the board. Keep it the same when fixing a live board and players keep everything (edit tiles in place, don't insert, remove or reorder them). Bump the version so players can see they have the latest. Changing the ID (or having none) makes edits reset progress. Changing what a tile tracks resets that one tile.</p>
+    <p><b>Event window:</b> set start/end times (entered in your timezone, stored as UTC) and the plugin only counts progress inside them. Players can import the board early without pre-event drops, XP or kills leaking in.</p>
+    <p><b>Points:</b> give tiles point values and the plugin shows the team's running total. <b>Line pts</b> pay per completed row/column/diagonal and <b>blackout pts</b> for finishing the whole board. Both count toward the team total. For per-player contribution details, the team store's board view and portal list who contributed what to every goal.</p>
+    <p><b>Teams:</b> players who connect with the same team code combine progress. Counts add up across members ("2 uniques" can be one each from two people), "distinct" item lists count each different item once per team, and XP/kill counts sum. Give each team its own code and (optionally) its own Discord webhook for completion screenshots.</p>
   </div>
 </details>
 
@@ -557,7 +557,7 @@ function renderGrid() {
   const maxLines = 2 * board.size + (board.diagonals === false ? 0 : 2);
   const totalPoints = tilePoints + (board.linePoints > 0 ? board.linePoints * maxLines : 0)
     + (board.blackoutPoints > 0 ? Math.round(board.blackoutPoints) : 0);
-  $("boardHeader").textContent = totalPoints > 0 ? "Board — " + totalPoints + " pts total" : "Board";
+  $("boardHeader").textContent = totalPoints > 0 ? "Board · " + totalPoints + " pts total" : "Board";
   $("reorderHint").style.display = (board.id || "").trim() ? "" : "none";
   const grid = $("grid");
   grid.style.gridTemplateColumns = "repeat(" + board.size + ", 1fr)";
@@ -807,7 +807,7 @@ function renderEditor() {
   if (!tile.goals.length) {
     const p = document.createElement("p");
     p.className = "hint";
-    p.textContent = "No goals: this is a manual tile — players tick it off by hand.";
+    p.textContent = "No goals: this is a manual tile, players tick it off by hand.";
     editor.appendChild(p);
   }
 
@@ -895,7 +895,7 @@ function renderGoal(tile, goal, gi) {
     attachItemSuggest(idsInput, pickIntoIdList);
     box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Mithril dragon"), "Leave empty for any monster/chest."));
     box.appendChild(lootMaskField(goal, gi));
-    box.appendChild(checkbox("distinct" + gi, "Distinct — each different item counts once", !!goal.distinct, v => goal.distinct = v));
+    box.appendChild(checkbox("distinct" + gi, "Distinct, each different item counts once", !!goal.distinct, v => goal.distinct = v));
   }
   if (goal.type === "RAID_PURPLE") {
     const raids = document.createElement("div");
@@ -916,10 +916,10 @@ function renderGoal(tile, goal, gi) {
       raids.appendChild(wrap);
     });
     box.appendChild(field("Raids", raids));
-    box.appendChild(checkbox("raiddistinct" + gi, "Distinct — each different unique counts once", !!goal.distinct, v => goal.distinct = v));
+    box.appendChild(checkbox("raiddistinct" + gi, "Distinct, each different unique counts once", !!goal.distinct, v => goal.distinct = v));
   }
   if (goal.type === "KC") {
-    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), "Read from kill count chat messages — for regular monsters use NPC kills instead."));
+    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), "Read from kill count chat messages. For regular monsters use NPC kills instead."));
   }
   if (goal.type === "KILL") {
     box.appendChild(field("NPCs", listInput(goal.npcs, v => goal.npcs = v, "Man, Woman"), "A kill counts for whoever the game awards the loot to, so shared kills count once."));
@@ -973,7 +973,7 @@ function renderGoal(tile, goal, gi) {
         const hint = document.createElement("span");
         const link = document.createElement("a");
         link.href = "region-map.html"; link.target = "_blank"; link.textContent = "region map";
-        hint.append("Only count the message in these regions — find ids on the ", link,
+        hint.append("Only count the message in these regions. Find ids on the ", link,
           ", or paste x y tile coordinates.");
         return hint;
       })()));
@@ -1041,7 +1041,7 @@ function openDialog(mode) {
     if (warnings.length) {
       setDialogNotes("Worth a second look: " + warnings.join(" · "), "var(--gold)");
     }
-    $("dialogTitle").textContent = "Board code — share this with participants";
+    $("dialogTitle").textContent = "Share this board code with participants";
     $("dialogText").value = exportBoard();
     $("btnDialogApply").style.display = "none";
     $("btnDialogCopy").style.display = "";
