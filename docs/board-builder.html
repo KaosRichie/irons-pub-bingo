@@ -754,7 +754,7 @@ function renderEditor() {
     textInput(tile.description, v => tile.description = v, "Screenshot with team code required")));
   const iconRow = document.createElement("div");
   iconRow.className = "row";
-  const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Twisted bow  |  20997");
+  const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Ancient page 1  |  12621");
   const iconField = field("Icon (optional)", iconInput,
     "Item name or numeric id (untradeables need the id).");
   attachItemSuggest(iconInput, (input, entry, id) => {
@@ -881,14 +881,14 @@ function renderGoal(tile, goal, gi) {
     return check;
   }
   if (goal.type === "DROP") {
-    const itemsInput = listInput(goal.items, v => goal.items = v, "Zenyte shard, Venator shard");
+    const itemsInput = listInput(goal.items, v => goal.items = v, "Ancient page*");
     box.appendChild(field("Items", itemsInput, commaHint));
     attachItemSuggest(itemsInput, (input, entry, id) => {
       const tokens = input.value.split(",").slice(0, -1).map(t => t.trim()).filter(Boolean);
       tokens.push(entry.name);
       input.value = tokens.join(", ");
     });
-    const idsInput = listInput((goal.itemIds || []).map(String), v => goal.itemIds = v.map(x => parseInt(x, 10)).filter(x => x > 0), "30107");
+    const idsInput = listInput((goal.itemIds || []).map(String), v => goal.itemIds = v.map(x => parseInt(x, 10)).filter(x => x > 0), "12621, 12622");
     box.appendChild(field("Item ids (optional)", idsInput,
       "Exact ids for items that share a name with something else."));
 
