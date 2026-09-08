@@ -202,6 +202,16 @@ public class IronsPubBingoPlugin extends Plugin
 	private boolean revertingTeamCode;
 	/** Store requests in flight; the panel shows a syncing indicator while > 0. */
 	private int storeRequestsInFlight;
+	/**
+	 * Per completed tile, the contributions as they stood when it completed. Tracking
+	 * keeps counting underneath (the numbers still sync, and decide completion if a
+	 * member leaves), but a finished tile shouldn't keep reshuffling who did what.
+	 */
+	// Read from the panel's Swing thread as well as the client thread.
+	private final Map<Integer, Map<String, TileProgress>> frozenContributions = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final Type FROZEN_TYPE = new TypeToken<Map<Integer, Map<String, TileProgress>>>()
+	{
+	}.getType();
 	/** A forced sync asked for while another was in flight; runs once that one returns. */
 	private boolean storeSyncQueued;
 	/**
@@ -695,9 +705,20 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			teamProgress.putAll(team);
 		}
+		frozenContributions.clear();
+		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(), FROZEN_TYPE);
+		if (frozen != null)
+		{
+			frozenContributions.putAll(frozen);
+		}
 		loadRemovedMembers();
 		enforceTeamOwnership();
 		reconcileTileSignatures();
+	}
+
+	private String frozenKey()
+	{
+		return "frozen_" + boardKey + "_" + (normalizedTeamCode() == null ? "solo" : normalizedTeamCode());
 	}
 
 	private static final Type STRING_LIST = new TypeToken<List<String>>()
@@ -788,6 +809,8 @@ public class IronsPubBingoPlugin extends Plugin
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP, "progress_" + boardKey, gson.toJson(progress));
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
 			teamCacheKey(normalizedTeamCode()), gson.toJson(teamProgress));
+		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP, frozenKey(),
+			gson.toJson(frozenContributions));
 		lastSaveMs = now;
 		dirty = false;
 	}
@@ -861,6 +884,45 @@ public class IronsPubBingoPlugin extends Plugin
 	 * showing who contributed what in the tile detail view.
 	 */
 	Map<String, TileProgress> memberProgressFor(int tileIndex)
+	{
+		Map<String, TileProgress> live = liveMemberProgressFor(tileIndex);
+		if (!isTileComplete(tileIndex))
+		{
+			// Not (or no longer) complete - a member left, a credit was withdrawn: the
+			// live numbers decide again and the old snapshot is stale.
+			frozenContributions.remove(tileIndex);
+			return live;
+		}
+		Map<String, TileProgress> frozen = frozenContributions.get(tileIndex);
+		if (frozen != null && live.keySet().containsAll(frozen.keySet()))
+		{
+			return frozen;
+		}
+		// First look since completion, or someone in the snapshot has left: freeze now.
+		frozen = new java.util.LinkedHashMap<>();
+		int goalCount = board.getTiles().get(tileIndex).goals.size();
+		for (Map.Entry<String, TileProgress> entry : live.entrySet())
+		{
+			frozen.put(entry.getKey(), entry.getValue().toShare(goalCount));
+		}
+		frozenContributions.put(tileIndex, frozen);
+		saveProgress(false);
+		return frozen;
+	}
+
+	/** Snapshots the contributions of tiles that just completed, before more comes in. */
+	private void freezeContributions(Set<Integer> before, Set<Integer> after)
+	{
+		for (Integer idx : after)
+		{
+			if (!before.contains(idx))
+			{
+				memberProgressFor(idx);
+			}
+		}
+	}
+
+	private Map<String, TileProgress> liveMemberProgressFor(int tileIndex)
 	{
 		Map<String, TileProgress> result = new java.util.LinkedHashMap<>();
 		String ownName = localPlayerName();
@@ -2093,6 +2155,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		Set<Integer> after = completedTiles();
+		freezeContributions(before, after);
 		String by = changedMembers == 1 && lastChangedName != null ? " (by " + lastChangedName + ")" : " (team)";
 		for (Integer idx : after)
 		{
@@ -3284,6 +3347,7 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 		}
 
+		freezeContributions(completedBefore, completedAfter);
 		String bonus = bonusAnnouncement(completedBefore, completedAfter);
 		for (String label : newlyCompleted)
 		{
