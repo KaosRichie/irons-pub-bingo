@@ -3240,11 +3240,12 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				sendHighlightedMessage("Bingo progress - " + tile.label + ": " + merged + "/" + goal.target());
 			}
-			if (goal.wantsScreenshot() && !newlyCompletedIdx.contains(t))
+			if (goal.wantsScreenshot() && !newlyCompletedIdx.contains(t) && merged <= goal.target())
 			{
 				// The host flagged this goal for proof-as-you-go (rare drops, mostly).
 				// When this very change completes the tile, the completion post below
-				// carries the screenshot instead of doubling up.
+				// carries the screenshot instead of doubling up. Past the target (the
+				// other half of an OR tile is still open) nothing is proof anymore.
 				discordNotifier.postGoalProgress(localPlayerName(), tile.label,
 					goal.shortDescribe(), merged, goal.target(), teamDisplayName());
 			}
