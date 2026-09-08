@@ -268,9 +268,27 @@ class BingoTileDetail extends JPanel
 			BingoGoal goal = tile.goals.get(g);
 			GoalProgress p = merged.goal(g, tile.goals.size());
 			String description = goal.hasExtraDetail() ? goal.describe() : null;
-			String received = goal.usesMatchedSet() && p.matched != null && !p.matched.isEmpty()
-				? "Received: " + String.join(", ", sortedNames(p.matched))
-				: null;
+			String received = null;
+			if (goal.usesMatchedSet() && p.matched != null && !p.matched.isEmpty())
+			{
+				received = "Received: " + String.join(", ", sortedNames(p.matched));
+			}
+			else if (p.got != null && !p.got.isEmpty())
+			{
+				// Counted drops: "Uncut onyx x2, Zulrah's scales x300", biggest first.
+				List<Map.Entry<String, Long>> entries = new ArrayList<>(p.got.entrySet());
+				entries.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+				StringBuilder list = new StringBuilder("Received: ");
+				for (int i = 0; i < entries.size(); i++)
+				{
+					list.append(i > 0 ? ", " : "").append(entries.get(i).getKey());
+					if (entries.get(i).getValue() > 1)
+					{
+						list.append(" x").append(formatCount(entries.get(i).getValue()));
+					}
+				}
+				received = list.toString();
+			}
 			if (description != null || received != null)
 			{
 				extraInfo.add(new String[]{description, received});

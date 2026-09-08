@@ -39,6 +39,10 @@ public class TileProgress
 			{
 				copy.matched = new HashSet<>(own.matched);
 			}
+			if (own.got != null && !own.got.isEmpty())
+			{
+				copy.got = new java.util.LinkedHashMap<>(own.got);
+			}
 		}
 		return share;
 	}
@@ -64,6 +68,13 @@ public class TileProgress
 					for (String name : from.matched)
 					{
 						into.addName(name);
+					}
+				}
+				if (from.got != null)
+				{
+					for (java.util.Map.Entry<String, Long> entry : from.got.entrySet())
+					{
+						into.addGot(entry.getKey(), entry.getValue() == null ? 0 : entry.getValue());
 					}
 				}
 			}

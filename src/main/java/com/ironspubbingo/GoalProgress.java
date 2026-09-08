@@ -14,6 +14,11 @@ public class GoalProgress
 	long n;
 	/** Distinct item names received (lowercase), for distinct DROP goals. */
 	Set<String> matched;
+	/**
+	 * Item name -> quantity received, for counted (non-distinct) DROP goals, so the tile
+	 * can say what the number is made of. Capped; a goal on stackable junk stays small.
+	 */
+	Map<String, Long> got;
 	/** XP goals: last XP seen for the skill; gains between sightings are accumulated into n. */
 	Long baseline;
 	/**
@@ -69,6 +74,33 @@ public class GoalProgress
 		return !candidate.isEmpty() && Character.isUpperCase(candidate.charAt(0))
 			&& (existing.isEmpty() || !Character.isUpperCase(existing.charAt(0)));
 	}
+
+	/** Records a counted drop under its name (case-insensitive), most names capped. */
+	void addGot(String name, long quantity)
+	{
+		if (name == null || name.isEmpty() || quantity <= 0)
+		{
+			return;
+		}
+		if (got == null)
+		{
+			got = new java.util.LinkedHashMap<>();
+		}
+		for (Map.Entry<String, Long> entry : got.entrySet())
+		{
+			if (entry.getKey().equalsIgnoreCase(name))
+			{
+				entry.setValue(entry.getValue() + quantity);
+				return;
+			}
+		}
+		if (got.size() < MAX_GOT_NAMES)
+		{
+			got.put(name, quantity);
+		}
+	}
+
+	private static final int MAX_GOT_NAMES = 40;
 
 	Map<String, long[]> kcMap()
 	{

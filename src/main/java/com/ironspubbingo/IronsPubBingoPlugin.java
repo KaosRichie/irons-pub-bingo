@@ -2924,9 +2924,16 @@ public class IronsPubBingoPlugin extends Plugin
 					{
 						if (goal.matchesItem(names[idx], ids[idx]))
 						{
-							any |= goal.isDistinct()
-								? addMatched(p, names[idx])
-								: bump(p, quantities[idx]);
+							if (goal.isDistinct())
+							{
+								any |= addMatched(p, names[idx]);
+							}
+							else if (bump(p, quantities[idx]))
+							{
+								// Counted goals remember what made up the number too.
+								p.addGot(names[idx], quantities[idx]);
+								any = true;
+							}
 							got.append(got.length() > 0 ? ", " : "").append(names[idx]);
 							if (quantities[idx] > 1)
 							{
