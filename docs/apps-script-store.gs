@@ -2204,8 +2204,7 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 		sigs.push(tileTrackingSignature(parsed.tiles[t]));
 	}
 	// The plugin's id normalization, so only THIS board's rows are ever touched.
-	var id = String(parsed.id == null ? '' : parsed.id)
-		.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+	var id = normalizedBoardId(parsed);
 	var previous = parseJson(props.getProperty('boardSigs') || 'null', null);
 	// Every code hash seen for this id, newest last, so the sync gate can tell an
 	// outdated client from a tampered one whatever version it reports.
@@ -2217,6 +2216,9 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	hashes = hashes.slice(-30);
 	props.setProperty('boardSigHash', canonicalHash);
 	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs, hashes: hashes }));
+	// The portal and Board tabs show the pasted board right away, not after the
+	// first client that runs it happens to sync.
+	seedMetaFromBoard(parsed, id);
 	if (!previous || !previous.sigs || !id || previous.id !== id)
 	{
 		// First sighting, or a different board: its progress lives under other keys.
@@ -2252,6 +2254,274 @@ function isEarlierBoardCode(hash)
 	var hashes = record && record.hashes ? record.hashes : [];
 	var at = hashes.indexOf(hash);
 	return at >= 0 && at < hashes.length - 1;
+}
+
+/** The plugin's board id normalization; '' when the board has no id. */
+function normalizedBoardId(parsed)
+{
+	return String(parsed.id == null ? '' : parsed.id).trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+}
+
+/**
+ * Writes the board's Meta row for every listed team, straight from the pasted code -
+ * the same summary a client sends on its first sync (names, targets, goal labels), so
+ * the portal and Board tabs follow a board update the moment the host pastes it. Only
+ * boards with an id have derivable scope keys; id-less boards wait for a client.
+ */
+function seedMetaFromBoard(parsed, id)
+{
+	if (!id || !parsed || !parsed.tiles)
+	{
+		return;
+	}
+	var meta = metaFromBoard(parsed);
+	var teams = readTeamRows();
+	for (var i = 0; i < teams.length; i++)
+	{
+		saveMeta('id_' + id + '_' + teams[i].code, meta);
+	}
+}
+
+/** The store-side twin of the plugin's board summary (buildBoardMeta). */
+function metaFromBoard(board)
+{
+	var tiles = board.tiles || [];
+	var size = Number(board.size) > 0 ? Number(board.size) : Math.round(Math.sqrt(tiles.length));
+	var meta = {
+		name: board.name || '',
+		size: size,
+		diagonals: board.diagonals == null ? true : !!board.diagonals,
+		linePoints: Math.max(0, Number(board.linePoints) || 0),
+		blackoutPoints: Math.max(0, Number(board.blackoutPoints) || 0),
+		tiles: []
+	};
+	for (var t = 0; t < tiles.length; t++)
+	{
+		var tile = tiles[t] || {};
+		var goals = tile.goals && tile.goals.length ? tile.goals : [{ type: 'MANUAL' }];
+		var goalMetas = [];
+		for (var g = 0; g < goals.length; g++)
+		{
+			var goal = goals[g] || {};
+			var type = String(goal.type || 'MANUAL').toUpperCase();
+			goalMetas.push({
+				label: goalShortLabel(goal, type),
+				target: goalTarget(goal, type),
+				distinct: goalUsesNames(goal, type),
+				manual: type === 'MANUAL'
+			});
+		}
+		meta.tiles.push({
+			label: tile.label || ('Tile ' + (t + 1)),
+			mode: String(tile.mode || 'ALL').toUpperCase() === 'ANY' ? 'ANY' : 'ALL',
+			goals: goalMetas
+		});
+	}
+	return meta;
+}
+
+function goalTarget(goal, type)
+{
+	if (type === 'XP')
+	{
+		return Number(goal.amount) || 0;
+	}
+	if (type === 'MANUAL')
+	{
+		return 1;
+	}
+	return goal.count == null ? 1 : Number(goal.count) || 1;
+}
+
+function goalUsesNames(goal, type)
+{
+	return ((type === 'DROP' || type === 'RAID_PURPLE') && !!goal.distinct)
+		|| (type === 'PET' && !!(goal.pets && goal.pets.length));
+}
+
+// The label rules below mirror BingoGoal.describe()/shortDescribe() in the plugin.
+var MAX_GOAL_LABEL = 46;
+
+function goalShortLabel(goal, type)
+{
+	if (goal.name && String(goal.name).trim())
+	{
+		return String(goal.name).trim();
+	}
+	var full = goalDescribe(goal, type);
+	if (full.length <= MAX_GOAL_LABEL)
+	{
+		return full;
+	}
+	var npcs = goal.npcs || [];
+	var pets = goal.pets || [];
+	switch (type)
+	{
+		case 'DROP':
+			return (goal.distinct ? 'Distinct ' + dropNoun(goal).toLowerCase() : dropNoun(goal)) + fromSources(goal);
+		case 'RAID_PURPLE':
+			return 'Raid purples (' + raidList(goal) + ')';
+		case 'KC':
+		case 'KILL':
+			return npcs.length === 1 ? 'Kills: ' + prettyGlob(npcs[0]) : 'Kills (' + npcs.length + ' targets)';
+		case 'PET':
+			return !pets.length ? 'Any pet'
+				: pets.length === 1 ? 'Pet: ' + prettyGlob(pets[0]) : 'Pets (' + pets.length + ')';
+		case 'XP':
+			return skillName(goal.skill) + ' XP';
+		case 'LAP':
+			return courseName(goal.course) + ' laps';
+		case 'VALUE':
+			return 'Big drop' + fromSources(goal);
+		case 'CHAT':
+			return 'Game message';
+		default:
+			return 'Manual tile';
+	}
+}
+
+function goalDescribe(goal, type)
+{
+	var sources = goal.sources || [];
+	switch (type)
+	{
+		case 'DROP':
+			var matched = prettyJoin(goal.items);
+			if (!matched && goal.itemIds && goal.itemIds.length)
+			{
+				matched = goal.itemIds.length === 1 ? 'item ' + goal.itemIds[0] : goal.itemIds.length + ' item ids';
+			}
+			return (goal.distinct ? 'Distinct ' + dropNoun(goal).toLowerCase() : dropNoun(goal)) + ': ' + matched
+				+ (sources.length ? ' from ' + prettyJoin(sources) : '');
+		case 'RAID_PURPLE':
+			return 'Raid purples (' + raidList(goal) + ')';
+		case 'KC':
+		case 'KILL':
+			return 'Kills: ' + prettyJoin(goal.npcs);
+		case 'PET':
+			return goal.pets && goal.pets.length ? 'Pets: ' + prettyJoin(goal.pets) : 'Any pet';
+		case 'XP':
+			return withCommas(Number(goal.amount) || 0) + ' ' + skillName(goal.skill) + ' XP';
+		case 'LAP':
+			return courseName(goal.course) + ' course laps';
+		case 'VALUE':
+			return 'Drop worth ' + withCommas(Number(goal.amount) || 0) + '+ gp'
+				+ (sources.length ? ' from ' + prettyJoin(sources) : '');
+		case 'CHAT':
+			return readablePattern(String(goal.pattern || '')) || 'Game message';
+		default:
+			return 'Manual (tick off by hand)';
+	}
+}
+
+function dropNoun(goal)
+{
+	var loot = sigList(goal.loot);
+	if (loot === 'pickpocket')
+	{
+		return 'Pickpocket loot';
+	}
+	if (loot === 'kill')
+	{
+		return 'Kill drops';
+	}
+	return 'Drops';
+}
+
+function fromSources(goal)
+{
+	var sources = goal.sources || [];
+	if (!sources.length)
+	{
+		return '';
+	}
+	return sources.length === 1 ? ' from ' + prettyGlob(sources[0]) : ' from ' + sources.length + ' sources';
+}
+
+function raidList(goal)
+{
+	var all = ['COX', 'TOB', 'TOA'];
+	var wanted = [];
+	var raids = goal.raids || [];
+	for (var i = 0; i < all.length; i++)
+	{
+		for (var r = 0; r < raids.length; r++)
+		{
+			if (String(raids[r]).toUpperCase() === all[i])
+			{
+				wanted.push(all[i]);
+				break;
+			}
+		}
+	}
+	return (wanted.length ? wanted : all).join(', ');
+}
+
+/** The plugin's course display names, keyed the way it resolves them (BingoCourse). */
+var COURSE_NAMES = {
+	gnome: 'Gnome Stronghold', gnomestronghold: 'Gnome Stronghold',
+	shayzienbasic: 'Shayzien Basic', draynor: 'Draynor Village', draynorvillage: 'Draynor Village',
+	alkharid: 'Al Kharid', pyramid: 'Agility Pyramid', agilitypyramid: 'Agility Pyramid',
+	varrock: 'Varrock', penguin: 'Penguin', barbarian: 'Barbarian Outpost',
+	barbarianoutpost: 'Barbarian Outpost', canifis: 'Canifis', apeatoll: 'Ape Atoll',
+	shayzienadvanced: 'Shayzien Advanced', falador: 'Falador', wilderness: 'Wilderness',
+	werewolf: 'Werewolf', seers: "Seers' Village", seersvillage: "Seers' Village",
+	pollnivneach: 'Pollnivneach', rellekka: 'Rellekka', relleka: 'Rellekka',
+	prifddinas: 'Prifddinas', prif: 'Prifddinas', ardougne: 'Ardougne'
+};
+
+function courseName(course)
+{
+	var key = String(course || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+	return COURSE_NAMES[key] || String(course || 'Agility');
+}
+
+/** "HITPOINTS" -> "Hitpoints", matching RuneLite's skill display names. */
+function skillName(skill)
+{
+	var raw = String(skill || '').trim();
+	return raw ? raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() : 'Skill';
+}
+
+function prettyGlob(glob)
+{
+	return String(glob == null ? '' : glob).replace(/\*/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function prettyJoin(values)
+{
+	var cleaned = [];
+	for (var i = 0; values && i < values.length; i++)
+	{
+		var clean = prettyGlob(values[i]);
+		if (clean)
+		{
+			cleaned.push(clean);
+		}
+	}
+	return cleaned.join(', ');
+}
+
+function withCommas(n)
+{
+	return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** The literal words of a regex, so "Corrupted challenge duration: [0-6]:..." reads. */
+function readablePattern(regex)
+{
+	var parts = regex.split(/\[[^\]]*\][*+?]?|\([^)]*\)[*+?]?|\\[a-zA-Z]|\{\d+(?:,\d+)?\}|[.*+?^$|]/);
+	var literals = [];
+	for (var i = 0; i < parts.length; i++)
+	{
+		var cleaned = parts[i].replace(/\\(.)/g, '$1').replace(/\s+/g, ' ')
+			.replace(/^[\s:;,\-]+|[\s:;,\-]+$/g, '');
+		if (cleaned.length >= 4)
+		{
+			literals.push(cleaned);
+		}
+	}
+	return literals.length ? literals.join(' ... ') : null;
 }
 
 /** What a tile TRACKS (types and matchers, not targets or labels); plugin's twin. */
@@ -2550,11 +2820,19 @@ function openPortal()
 /** Menu action: refresh every board this sheet holds. */
 function refreshAllViews()
 {
+	// The pasted board code is the truth; a stale Meta row (an earlier revision, or a
+	// team nobody has synced for yet) is rebuilt from it before rendering.
+	var code = readBoardCode();
+	var parsed = code ? parseJson(code, null) : null;
+	if (parsed && parsed.tiles)
+	{
+		seedMetaFromBoard(parsed, normalizedBoardId(parsed));
+	}
 	var sheet = getSheet(META_SHEET, META_HEADERS);
 	var values = sheet.getDataRange().getValues();
 	if (values.length < 2)
 	{
-		SpreadsheetApp.getUi().alert('No board yet — a player needs to sync once with the team store enabled.');
+		SpreadsheetApp.getUi().alert('No board yet. Paste the board code on the Board code tab, or have a player sync once.');
 		return;
 	}
 	for (var i = 1; i < values.length; i++)

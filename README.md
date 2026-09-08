@@ -78,7 +78,9 @@ Menu: **Irons Pub Bingo → Open player portal · Refresh board view · Approve/
 request(s) · Apply pasted board update · Reset a tile's progress · Reset store data**.
 For the tile reset, select the tile on its Board tab first (a grid cell or its
 goal-table row). Apply pasted board update runs the re-tracked-tile reset right away
-instead of on the next player sync, and reports what it reset.
+instead of on the next player sync, and reports what it reset. The portal and the Board
+tabs follow the pasted code as soon as any client syncs, or right away with Refresh
+board view.
 
 Approving a request announces it on the team's webhook, proof links included. If the
 approval finishes the tile, the announcement is the completion post. This needs one
