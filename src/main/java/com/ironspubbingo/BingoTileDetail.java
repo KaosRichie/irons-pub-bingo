@@ -40,9 +40,8 @@ class BingoTileDetail extends JPanel
 	private int selectedTile = -1;
 	private boolean detailsExpanded;
 	private boolean actionsExpanded;
-	private boolean teammatesExpanded;
-	/** Rebuild-scoped: the Contributors toggle renders once, above the first goal that has bars. */
-	private boolean teammatesToggleAdded;
+	/** Goals whose contributor rows are unfolded (click the goal's bar to toggle). */
+	private final java.util.Set<Integer> expandedGoals = new java.util.HashSet<>();
 	/** A credit request is on its way to the store; the button says so meanwhile. */
 	private boolean requestInFlight;
 
@@ -67,7 +66,6 @@ class BingoTileDetail extends JPanel
 	 */
 	boolean rebuild()
 	{
-		teammatesToggleAdded = false;
 		removeAll();
 		BingoBoard board = plugin.getBoard();
 		boolean show = board != null && selectedTile >= 0 && selectedTile < board.getTiles().size();
@@ -171,25 +169,27 @@ class BingoTileDetail extends JPanel
 			long target = goal.target();
 			long tracked = Math.min(goal.progressOf(p), target);
 			long value = ticked ? target : tracked;
-			ProgressBar bar = progressBar(value, target, 18);
 			// Keep the real numbers visible on an overridden bar.
-			bar.setCenterLabel(ticked && tracked < target
+			String centerLabel = ticked && tracked < target
 				? "Ticked  (" + formatCount(tracked) + " / " + formatCount(target) + ")"
-				: formatCount(value) + " / " + formatCount(target));
-			if (goal.hasExtraDetail())
-			{
-				bar.setToolTipText(goal.describe());
-			}
-			add(bar);
+				: formatCount(value) + " / " + formatCount(target);
 
+			// Who contributed what, largest share first. The goal bar is painted in one
+			// segment per contributor and unfolds their rows when clicked, so the
+			// contributions live on the bar itself instead of behind a separate toggle.
+			List<MemberBar> bars = new ArrayList<>();
+			List<GoalBar.Segment> segments = new ArrayList<>();
 			if (teamView)
 			{
-				// Per-member bars fold away by default: on a big team they dwarf the
-				// tile's own information. One toggle drives every goal's bars.
-				List<MemberBar> bars = new ArrayList<>();
-				for (Map.Entry<String, TileProgress> entry : members.entrySet())
+				final int goalIndex = g;
+				final int goalCount = tile.goals.size();
+				List<Map.Entry<String, TileProgress>> ordered = new ArrayList<>(members.entrySet());
+				ordered.sort((a, b) -> Long.compare(
+					goal.progressOf(b.getValue().goal(goalIndex, goalCount)),
+					goal.progressOf(a.getValue().goal(goalIndex, goalCount))));
+				for (Map.Entry<String, TileProgress> entry : ordered)
 				{
-					long share = goal.progressOf(entry.getValue().goal(g, tile.goals.size()));
+					long share = goal.progressOf(entry.getValue().goal(goalIndex, goalCount));
 					if (share <= 0)
 					{
 						continue;
@@ -203,6 +203,7 @@ class BingoTileDetail extends JPanel
 						memberName = memberName.substring(0,
 							memberName.length() - VERIFIED_SUFFIX.length()) + verifiedMark();
 					}
+					segments.add(new GoalBar.Segment(memberName, share));
 					// Hand-painted: RuneLite's ProgressBar gives its left label only a
 					// third of the width, truncating names long before space runs out.
 					MemberBar memberBar = new MemberBar(memberName, formatCount(share),
@@ -213,28 +214,36 @@ class BingoTileDetail extends JPanel
 					}
 					bars.add(memberBar);
 				}
-				if (!bars.isEmpty() && !teammatesToggleAdded)
+			}
+			final int goalIdx = g;
+			boolean expanded = expandedGoals.contains(goalIdx);
+			GoalBar bar = new GoalBar(value, target, centerLabel, ticked ? new ArrayList<>() : segments,
+				bars.isEmpty() ? null : expanded, widthBasis);
+			bar.setToolTipText(barTooltip(goal, segments));
+			if (!bars.isEmpty())
+			{
+				bar.addMouseListener(new java.awt.event.MouseAdapter()
 				{
-					teammatesToggleAdded = true;
-					JButton contributors = smallButton("Contributors  " + (teammatesExpanded ? "▾" : "▸"));
-					contributors.setHorizontalAlignment(SwingConstants.LEFT);
-					contributors.addActionListener(e ->
+					@Override
+					public void mouseClicked(java.awt.event.MouseEvent e)
 					{
-						teammatesExpanded = !teammatesExpanded;
+						if (!expandedGoals.remove(goalIdx))
+						{
+							expandedGoals.add(goalIdx);
+						}
 						rebuild();
 						revalidate();
 						repaint();
-					});
-					add(Box.createVerticalStrut(2));
-					add(contributors);
-				}
-				if (teammatesExpanded)
-				{
-					for (MemberBar memberRow : bars)
-					{
-						add(Box.createVerticalStrut(2));
-						add(memberRow);
 					}
+				});
+			}
+			add(bar);
+			if (expanded)
+			{
+				for (MemberBar memberRow : bars)
+				{
+					add(Box.createVerticalStrut(2));
+					add(memberRow);
 				}
 			}
 		}
@@ -561,6 +570,119 @@ class BingoTileDetail extends JPanel
 			g.setColor(Color.WHITE);
 			g.drawString(shownName, 4, baseline);
 			g.drawString(count, w - countWidth - 4, baseline);
+		}
+	}
+
+	/** Tooltip for a goal bar: the full goal text (when it says more) and the contributors. */
+	private static String barTooltip(BingoGoal goal, List<GoalBar.Segment> segments)
+	{
+		StringBuilder tip = new StringBuilder("<html>");
+		if (goal.hasExtraDetail())
+		{
+			tip.append(goal.describe());
+		}
+		if (!segments.isEmpty())
+		{
+			tip.append(tip.length() > 6 ? "<br>" : "").append("Click to show contributors");
+			for (GoalBar.Segment segment : segments)
+			{
+				tip.append("<br>").append(segment.name).append(": ").append(formatCount(segment.amount));
+			}
+		}
+		return tip.length() > 6 ? tip.append("</html>").toString() : null;
+	}
+
+	/**
+	 * A goal's progress bar, painted in one segment per contributor (alternating shades,
+	 * largest first) with the count centered and, when it can unfold contributor rows,
+	 * a small arrow on the right.
+	 */
+	private static class GoalBar extends JPanel
+	{
+		static class Segment
+		{
+			final String name;
+			final long amount;
+
+			Segment(String name, long amount)
+			{
+				this.name = name;
+				this.amount = amount;
+			}
+		}
+
+		private final long value;
+		private final long target;
+		private final String label;
+		private final List<Segment> segments;
+		/** null: nothing to unfold; otherwise whether the rows are currently shown. */
+		private final Boolean expanded;
+
+		GoalBar(long value, long target, String label, List<Segment> segments, Boolean expanded, int widthBasis)
+		{
+			this.value = value;
+			this.target = Math.max(1, target);
+			this.label = label;
+			this.segments = segments;
+			this.expanded = expanded;
+			setPreferredSize(new Dimension(widthBasis, 18));
+			setMaximumSize(new Dimension(Integer.MAX_VALUE, 18));
+			setMinimumSize(new Dimension(40, 18));
+			setAlignmentX(LEFT_ALIGNMENT);
+			setFont(FontManager.getRunescapeSmallFont());
+			if (expanded != null)
+			{
+				setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			}
+		}
+
+		@Override
+		protected void paintComponent(java.awt.Graphics g)
+		{
+			super.paintComponent(g);
+			int w = getWidth();
+			int h = getHeight();
+			g.setColor(ColorScheme.DARK_GRAY_COLOR);
+			g.fillRect(0, 0, w, h);
+			Color base = value >= target ? BingoUi.COLOR_COMPLETE : BingoUi.COLOR_PARTIAL;
+			if (segments.isEmpty())
+			{
+				g.setColor(base);
+				g.fillRect(0, 0, Math.round(w * Math.min(1f, value / (float) target)), h);
+			}
+			else
+			{
+				// Segments in proportion to the target; past it, the bar is simply full.
+				int x = 0;
+				long shown = 0;
+				for (int i = 0; i < segments.size() && shown < target; i++)
+				{
+					long amount = Math.min(segments.get(i).amount, target - shown);
+					shown += amount;
+					int end = Math.round(w * Math.min(1f, shown / (float) target));
+					g.setColor(i % 2 == 0 ? base : base.darker());
+					g.fillRect(x, 0, end - x, h);
+					x = end;
+				}
+			}
+
+			java.awt.FontMetrics metrics = g.getFontMetrics(getFont());
+			int baseline = (h + metrics.getAscent() - metrics.getDescent()) / 2;
+			int textX = (w - metrics.stringWidth(label)) / 2;
+			g.setFont(getFont());
+			g.setColor(Color.BLACK);
+			g.drawString(label, textX + 1, baseline + 1);
+			g.setColor(Color.WHITE);
+			g.drawString(label, textX, baseline);
+			if (expanded != null)
+			{
+				String arrow = expanded ? "▾" : "▸";
+				int arrowX = w - metrics.stringWidth(arrow) - 4;
+				g.setColor(Color.BLACK);
+				g.drawString(arrow, arrowX + 1, baseline + 1);
+				g.setColor(Color.WHITE);
+				g.drawString(arrow, arrowX, baseline);
+			}
 		}
 	}
 
