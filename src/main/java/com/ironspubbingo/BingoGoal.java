@@ -280,7 +280,9 @@ public class BingoGoal
 	{
 		if (usesMatchedSet())
 		{
-			return p.matched == null ? 0 : p.matched.size();
+			// Tracking only ever fills the name set; the counter on a distinct goal is
+			// admin credit from the store ("add 2"), which has no names to contribute.
+			return (p.matched == null ? 0 : p.matched.size()) + p.n;
 		}
 		return p.n;
 	}
