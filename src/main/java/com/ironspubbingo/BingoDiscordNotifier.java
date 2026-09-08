@@ -196,8 +196,7 @@ class BingoDiscordNotifier
 		String message = ":camera_with_flash: **" + (player == null ? "Someone" : player)
 			+ "** - " + tileLabel + ": " + goalLabel
 			+ " (" + progress + '/' + target + ')' + teamSuffix(team)
-			+ (lootDetail == null ? "" : "
-:package: " + lootDetail);
+			+ (lootDetail == null ? "" : "\n:package: " + lootDetail);
 		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
 	}
 
