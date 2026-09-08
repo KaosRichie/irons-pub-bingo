@@ -630,9 +630,12 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return null;
 		}
+		// The store can flag an update the host pasted without bumping the version.
+		String what = board != null && board.version != null && newerBoardVersion <= board.version
+			? "The board changed" : "Board v" + newerBoardVersion + " is out";
 		return newerBoardFromStore
-			? "Board v" + newerBoardVersion + " is out - reimport it: Setup, Import board, Import from store"
-			: "Board v" + newerBoardVersion + " is out - ask your host for the new board code";
+			? what + " - reimport it: Setup, Import board, Import from store"
+			: what + " - ask your host for the new board code";
 	}
 
 	/** Board name plus revision, e.g. "Summer Bingo (v2)". */
@@ -2228,7 +2231,7 @@ public class IronsPubBingoPlugin extends Plugin
 				// The store rejected us for running an outdated board: surface it via
 				// the same notice a teammate's newer revision would trigger.
 				if (payload != null && payload.newerVersion != null && board != null
-					&& (board.version == null || payload.newerVersion > board.version)
+					&& (board.version == null || payload.newerVersion >= board.version)
 					&& (newerBoardVersion == null || payload.newerVersion > newerBoardVersion))
 				{
 					newerBoardVersion = payload.newerVersion;

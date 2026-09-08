@@ -209,9 +209,13 @@ function doPost(e)
 			// A client behind on versions gets told about the update; any other
 			// mismatch is a locally edited board. The error stays short (it sits on
 			// the plugin's store button); newerVersion carries the guidance instead.
+			// The store also remembers every code it has seen for this board id, so a
+			// client on ANY earlier paste (or one too old to send a version) is
+			// recognised as outdated instead of accused of editing the board.
 			var canonicalVersion = Number((parseJson(canonicalCode, {}) || {}).version || 0);
 			var clientVersion = Number(body.boardVersion || 0);
-			var outdated = canonicalVersion && clientVersion && clientVersion < canonicalVersion;
+			var outdated = (canonicalVersion && clientVersion && clientVersion < canonicalVersion)
+				|| isEarlierBoardCode(String(body.boardHash || ''));
 			return ContentService.createTextOutput(JSON.stringify({ board: board,
 				error: outdated ? 'Board updated' : 'Wrong board - use Import board, then Import from store',
 				newerVersion: outdated ? canonicalVersion : undefined }))
@@ -2186,8 +2190,16 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	var id = String(parsed.id == null ? '' : parsed.id)
 		.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
 	var previous = parseJson(props.getProperty('boardSigs') || 'null', null);
+	// Every code hash seen for this id, newest last, so the sync gate can tell an
+	// outdated client from a tampered one whatever version it reports.
+	var hashes = previous && previous.id === id && previous.hashes ? previous.hashes : [];
+	if (hashes.indexOf(canonicalHash) < 0)
+	{
+		hashes.push(canonicalHash);
+	}
+	hashes = hashes.slice(-30);
 	props.setProperty('boardSigHash', canonicalHash);
-	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs }));
+	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs, hashes: hashes }));
 	if (!previous || !previous.sigs || !id || previous.id !== id)
 	{
 		// First sighting, or a different board: its progress lives under other keys.
@@ -2210,6 +2222,19 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	var rowsTouched = wipeTilesForBoardId(id, changed);
 	return 'Board updated. Reset ' + changed.length + ' re-tracked tile(s) on '
 		+ rowsTouched + ' member row(s):\n' + names.join('\n');
+}
+
+/** Whether the hash belongs to an earlier paste of the current board (same id). */
+function isEarlierBoardCode(hash)
+{
+	if (!hash)
+	{
+		return false;
+	}
+	var record = parseJson(PropertiesService.getScriptProperties().getProperty('boardSigs') || 'null', null);
+	var hashes = record && record.hashes ? record.hashes : [];
+	var at = hashes.indexOf(hash);
+	return at >= 0 && at < hashes.length - 1;
 }
 
 /** What a tile TRACKS (types and matchers, not targets or labels); plugin's twin. */
