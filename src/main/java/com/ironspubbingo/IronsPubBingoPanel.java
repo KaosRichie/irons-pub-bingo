@@ -870,22 +870,30 @@ class IronsPubBingoPanel extends PluginPanel
 			for (int i = 0; i < teams.size(); i++)
 			{
 				BingoTeamStore.TeamInfo team = teams.get(i);
-				labels[i] = team.name == null || team.name.isEmpty()
-					? team.code : team.name + "  (" + team.code + ")";
+				int count = team.members == null ? 0 : team.members.size();
+				labels[i] = (team.name == null || team.name.isEmpty()
+					? team.code : team.name + "  (" + team.code + ")")
+					+ "  -  " + (count == 1 ? "1 member" : count + " members");
 			}
 			JComboBox<String> box = new JComboBox<>(labels);
 			// Who is already on the selected team, so players can find their mates.
 			BingoWrappedLabel membersList = new BingoWrappedLabel("", 280);
 			membersList.setWrapWidth(280);
+			JPanel picker = new JPanel(new java.awt.BorderLayout(0, 6));
 			Runnable showMembers = () ->
 			{
 				java.util.List<String> names = teams.get(box.getSelectedIndex()).members;
 				membersList.setText(names == null || names.isEmpty()
 					? "No members yet" : "Members: " + String.join(", ", names));
+				// A longer list needs more lines; grow the dialog rather than clip them.
+				java.awt.Window dialog = SwingUtilities.getWindowAncestor(picker);
+				if (dialog != null)
+				{
+					dialog.pack();
+				}
 			};
 			showMembers.run();
 			box.addActionListener(ev -> showMembers.run());
-			JPanel picker = new JPanel(new java.awt.BorderLayout(0, 6));
 			picker.add(box, java.awt.BorderLayout.NORTH);
 			picker.add(membersList, java.awt.BorderLayout.CENTER);
 			int answer = JOptionPane.showConfirmDialog(this, picker, "Choose your team",
