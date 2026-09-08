@@ -180,8 +180,9 @@ class BingoDiscordNotifier
 	 * as it happens instead of one screenshot at tile completion. Rides the completion
 	 * toggle and webhook - nothing extra to configure.
 	 */
+	// lootDetail: the drop that made this progress ("Uncut onyx from Zulrah"), or null.
 	void postGoalProgress(String player, String tileLabel, String goalLabel, long progress, long target,
-		String team)
+		String lootDetail, String team)
 	{
 		if (!config.postCompletions())
 		{
@@ -194,7 +195,9 @@ class BingoDiscordNotifier
 		}
 		String message = ":camera_with_flash: **" + (player == null ? "Someone" : player)
 			+ "** - " + tileLabel + ": " + goalLabel
-			+ " (" + progress + '/' + target + ')' + teamSuffix(team);
+			+ " (" + progress + '/' + target + ')' + teamSuffix(team)
+			+ (lootDetail == null ? "" : "
+:package: " + lootDetail);
 		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
 	}
 

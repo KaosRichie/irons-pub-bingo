@@ -3247,7 +3247,8 @@ public class IronsPubBingoPlugin extends Plugin
 				// carries the screenshot instead of doubling up. Past the target (the
 				// other half of an OR tile is still open) nothing is proof anymore.
 				discordNotifier.postGoalProgress(localPlayerName(), tile.label,
-					goal.shortDescribe(), merged, goal.target(), teamDisplayName());
+					goal.shortDescribe(), merged, goal.target(),
+					lootDetails == null ? null : lootDetails.get(goal), teamDisplayName());
 			}
 		}
 
