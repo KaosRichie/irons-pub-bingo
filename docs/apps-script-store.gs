@@ -1878,6 +1878,14 @@ function storeEpoch()
 
 function maybeRefreshViews(board, force)
 {
+	// Only host-listed teams get a Board tab. A client still carrying last event's team
+	// code is rejected by the sync gate, but side paths (a departure mark, Refresh board
+	// view over old Meta rows) reach here too and must not spawn tabs for junk codes.
+	var team = teamOf(board);
+	if (team && team !== 'solo' && !hasTeam(readTeamRows(), team))
+	{
+		return;
+	}
 	var props = PropertiesService.getScriptProperties();
 	var last = Number(props.getProperty('lastRefresh_' + board) || 0);
 	if (!force && Date.now() - last < REFRESH_THROTTLE_MS)
