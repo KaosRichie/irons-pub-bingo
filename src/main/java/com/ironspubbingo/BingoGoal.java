@@ -429,7 +429,13 @@ public class BingoGoal
 		switch (goalType)
 		{
 			case DROP:
-				return (isDistinct() ? "Distinct " + dropNoun().toLowerCase(Locale.ROOT) : dropNoun()) + ": " + prettyJoin(items)
+				// A goal may match by id alone, with no names to print.
+				String matched = prettyJoin(items);
+				if (matched.isEmpty() && itemIds != null && !itemIds.isEmpty())
+				{
+					matched = itemIds.size() == 1 ? "item " + itemIds.get(0) : itemIds.size() + " item ids";
+				}
+				return (isDistinct() ? "Distinct " + dropNoun().toLowerCase(Locale.ROOT) : dropNoun()) + ": " + matched
 					+ (sources == null || sources.isEmpty() ? "" : " from " + prettyJoin(sources));
 			case RAID_PURPLE:
 				return "Raid purples (" + raidSet.toString().replaceAll("[\\[\\]]", "") + ")";
@@ -463,6 +469,10 @@ public class BingoGoal
 	private static String prettyJoin(List<String> values)
 	{
 		List<String> cleaned = new ArrayList<>();
+		if (values == null)
+		{
+			return "";
+		}
 		for (String value : values)
 		{
 			String clean = pretty(value);
