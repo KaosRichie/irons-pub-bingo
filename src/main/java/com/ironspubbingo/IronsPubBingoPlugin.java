@@ -202,6 +202,8 @@ public class IronsPubBingoPlugin extends Plugin
 	private boolean revertingTeamCode;
 	/** Store requests in flight; the panel shows a syncing indicator while > 0. */
 	private int storeRequestsInFlight;
+	/** A forced sync asked for while another was in flight; runs once that one returns. */
+	private boolean storeSyncQueued;
 	/**
 	 * Session-level store pause (panel button): stop store traffic without leaving the
 	 * team - like being offline, not like switching teams, so no reset. Not persisted.
@@ -1441,6 +1443,7 @@ public class IronsPubBingoPlugin extends Plugin
 	private void applyStoreToggle(boolean wasOn)
 	{
 		storeRequestsInFlight = 0; // toggling modes invalidates any in-flight accounting
+		storeSyncQueued = false;
 		storePushed.clear();
 		storeStandings.clear();
 		if (wasOn)
@@ -2132,6 +2135,14 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
+		if (storeRequestsInFlight > 0)
+		{
+			// Login, party join and the first poll can all ask within seconds. Parallel
+			// calls only queue behind each other on the store's write lock (and time
+			// out as "Unreachable"), so one follow-up call covers every request.
+			storeSyncQueued |= force;
+			return;
+		}
 		lastStorePostMs = now;
 		flushPendingEvictions();
 
@@ -2203,6 +2214,11 @@ public class IronsPubBingoPlugin extends Plugin
 			(payload, error) -> clientThread.invokeLater(() ->
 		{
 			storeRequestsInFlight = Math.max(0, storeRequestsInFlight - 1);
+			if (storeSyncQueued && storeRequestsInFlight == 0)
+			{
+				storeSyncQueued = false;
+				clientThread.invokeLater(() -> syncStore(true));
+			}
 			if (payload != null)
 			{
 				cacheStoreTeams(payload.teams);

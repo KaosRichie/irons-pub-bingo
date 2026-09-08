@@ -35,9 +35,10 @@ class BingoTeamStore
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	/**
 	 * Generous timeout: an Apps Script deployment that has not been used for a while has to
-	 * cold start, which regularly takes longer than the client's default timeouts.
+	 * cold start, and a busy store makes a request wait up to 25 seconds for its write
+	 * lock before it even starts; both regularly outlast the client's default timeouts.
 	 */
-	private static final long TIMEOUT_SECONDS = 30;
+	private static final long TIMEOUT_SECONDS = 45;
 
 	@Inject
 	private OkHttpClient okHttpClient;
@@ -298,7 +299,10 @@ class BingoTeamStore
 			public void onFailure(Call call, IOException e)
 			{
 				log.debug("Team store request failed", e);
-				callback.accept(null, "Unreachable");
+				// A timeout is the store being slow or busy, not gone; say so.
+				callback.accept(null, e instanceof java.net.SocketTimeoutException
+					|| (e instanceof java.io.InterruptedIOException && "timeout".equals(e.getMessage()))
+					? "Timed out" : "Unreachable");
 			}
 
 			@Override

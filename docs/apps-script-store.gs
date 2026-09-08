@@ -107,7 +107,7 @@ var STATUS_COLORS = { Pending: '#fff2cc', Done: '#d9ead3', Rejected: '#f4cccc' }
 // spreadsheet itself should only ever be shared with admins).
 var HIDDEN_SHEETS = [STORE_SHEET, META_SHEET, REMOVED_SHEET, SCORES_SHEET];
 
-var REFRESH_THROTTLE_MS = 60000;
+var REFRESH_THROTTLE_MS = 120000;
 // Client clocks drift; anything further ahead than this is clamped on write. An
 // unclamped future stamp would out-rank every later write - including the owner's
 // own reset - forever.
@@ -116,6 +116,23 @@ var MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 // ---------------------------------------------------------------- web endpoints
 
 function doPost(e)
+{
+	// The Board tab render is the slowest thing a sync does, and it only READS the
+	// store, so it runs after the write lock is released: clients queued behind this
+	// request get their turn seconds earlier.
+	var refreshAfter = null;
+	var output = handlePost(e, function (board, force)
+	{
+		refreshAfter = { board: board, force: force };
+	});
+	if (refreshAfter)
+	{
+		maybeRefreshViews(refreshAfter.board, refreshAfter.force);
+	}
+	return output;
+}
+
+function handlePost(e, deferRefresh)
 {
 	var body;
 	try
@@ -318,7 +335,7 @@ function doPost(e)
 		}
 
 		var response = respond(board, rows, removed, teams, scores);
-		maybeRefreshViews(board, metaChanged);
+		deferRefresh(board, metaChanged);
 		return response;
 	}
 	catch (err)
