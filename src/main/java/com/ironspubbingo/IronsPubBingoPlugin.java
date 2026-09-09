@@ -2729,17 +2729,11 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		ChatMessageType type = event.getType();
-		// NPC dialogue counts for CHAT goals only: "You've completed 12 rumours" is said
-		// by the Guild Hunter, not printed as a game message. It arrives as "Name|text".
-		final boolean dialogue = type == ChatMessageType.DIALOG;
-		if (!dialogue && type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM
-			&& type != ChatMessageType.MESBOX)
+		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM && type != ChatMessageType.MESBOX)
 		{
 			return;
 		}
-		String raw = Text.removeTags(event.getMessage());
-		int bar = dialogue ? raw.indexOf('|') : -1;
-		final String message = bar < 0 ? raw : raw.substring(bar + 1);
+		String message = Text.removeTags(event.getMessage());
 		String lower = message.toLowerCase(Locale.ROOT);
 		if (lower.startsWith("you pick ") && lower.contains(" pocket"))
 		{
@@ -2758,8 +2752,8 @@ public class IronsPubBingoPlugin extends Plugin
 		final int chatWorldRegion = worldRegion;
 		final int chatInstanceRegion = instanceRegion;
 
-		Matcher kcMatcher = dialogue ? null : KC_MESSAGE.matcher(message);
-		String kcBoss = kcMatcher != null && kcMatcher.find() ? kcMatcher.group(1) : null;
+		Matcher kcMatcher = KC_MESSAGE.matcher(message);
+		String kcBoss = kcMatcher.find() ? kcMatcher.group(1) : null;
 		long kcReported = kcBoss != null ? Long.parseLong(kcMatcher.group(2).replace(",", "")) : 0;
 		if (!active && kcBoss == null)
 		{
@@ -2769,11 +2763,11 @@ public class IronsPubBingoPlugin extends Plugin
 		boolean petReceived = false;
 		for (String petMessage : PET_MESSAGES)
 		{
-			petReceived |= !dialogue && lower.contains(petMessage);
+			petReceived |= lower.contains(petMessage);
 		}
 		final boolean anyPet = petReceived;
 
-		String collectionLogItem = !dialogue && lower.startsWith(COLLECTION_LOG_PREFIX)
+		String collectionLogItem = lower.startsWith(COLLECTION_LOG_PREFIX)
 			? message.substring(COLLECTION_LOG_PREFIX.length()).trim()
 			: null;
 

@@ -124,7 +124,7 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 | `XP` | XP since import | `skill`, `amount` |
 | `LAP` | agility course laps | `course`, `count` |
 | `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `loot`?, `count` |
-| `CHAT` | a game message or NPC dialogue line matching a regex | `pattern`, `regions`?, `count` |
+| `CHAT` | a game message matching a regex | `pattern`, `regions`?, `count` |
 | `MANUAL` | nothing, players tick it by hand | none |
 
 Item and NPC names are case-insensitive globs (`Ancient page*`). Add `name` to a goal to
