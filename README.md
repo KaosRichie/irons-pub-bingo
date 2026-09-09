@@ -129,7 +129,9 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 
 Item and NPC names are case-insensitive globs (`Ancient page*`). Add `name` to a goal to
 label its progress bar. `itemIds` matches exact ids, for items that share a name with
-something else. `regions` limits a chat goal to certain map regions. `loot` lists which
+something else. `regions` limits a chat goal to certain map regions. Lines other plugins
+print into the chat count for chat goals too, only for players running that plugin.
+`loot` lists which
 loot kinds a drop or loot value goal counts, any subset of `"KILL"`, `"PICKPOCKET"` and
 `"OTHER"` (chests, caskets, events). Omitted, everything counts.
 
