@@ -2729,21 +2729,13 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		ChatMessageType type = event.getType();
-		// CONSOLE is what other plugins print into the chat ("You've completed 12
-		// rumours"); it counts for CHAT goals only, and never our own announcements.
-		final boolean fromPlugin = type == ChatMessageType.CONSOLE;
-		if (!fromPlugin && type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM
-			&& type != ChatMessageType.MESBOX)
+		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM && type != ChatMessageType.MESBOX)
 		{
 			return;
 		}
 		String message = Text.removeTags(event.getMessage());
-		if (fromPlugin && ownChatMessages.remove(message))
-		{
-			return;
-		}
 		String lower = message.toLowerCase(Locale.ROOT);
-		if (!fromPlugin && lower.startsWith("you pick ") && lower.contains(" pocket"))
+		if (lower.startsWith("you pick ") && lower.contains(" pocket"))
 		{
 			pickpocketTick = client.getTickCount();
 		}
@@ -2760,8 +2752,8 @@ public class IronsPubBingoPlugin extends Plugin
 		final int chatWorldRegion = worldRegion;
 		final int chatInstanceRegion = instanceRegion;
 
-		Matcher kcMatcher = fromPlugin ? null : KC_MESSAGE.matcher(message);
-		String kcBoss = kcMatcher != null && kcMatcher.find() ? kcMatcher.group(1) : null;
+		Matcher kcMatcher = KC_MESSAGE.matcher(message);
+		String kcBoss = kcMatcher.find() ? kcMatcher.group(1) : null;
 		long kcReported = kcBoss != null ? Long.parseLong(kcMatcher.group(2).replace(",", "")) : 0;
 		if (!active && kcBoss == null)
 		{
@@ -2771,11 +2763,11 @@ public class IronsPubBingoPlugin extends Plugin
 		boolean petReceived = false;
 		for (String petMessage : PET_MESSAGES)
 		{
-			petReceived |= !fromPlugin && lower.contains(petMessage);
+			petReceived |= lower.contains(petMessage);
 		}
 		final boolean anyPet = petReceived;
 
-		String collectionLogItem = !fromPlugin && lower.startsWith(COLLECTION_LOG_PREFIX)
+		String collectionLogItem = lower.startsWith(COLLECTION_LOG_PREFIX)
 			? message.substring(COLLECTION_LOG_PREFIX.length()).trim()
 			: null;
 
@@ -3386,16 +3378,8 @@ public class IronsPubBingoPlugin extends Plugin
 		refreshPanel();
 	}
 
-	/** Our own queued chat lines, so they never count as another plugin's message. */
-	private final Set<String> ownChatMessages = new HashSet<>();
-
 	private void sendHighlightedMessage(String message)
 	{
-		if (ownChatMessages.size() > 50)
-		{
-			ownChatMessages.clear(); // a line that never echoed back must not pile up
-		}
-		ownChatMessages.add(message);
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(new ChatMessageBuilder()
