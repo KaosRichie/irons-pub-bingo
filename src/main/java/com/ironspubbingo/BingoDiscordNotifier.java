@@ -15,6 +15,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
@@ -135,14 +136,19 @@ class BingoDiscordNotifier
 	 * inventory, so the picture shows what it is proof of. And after a login the
 	 * welcome screen is skipped: XP caught up from mobile completes tiles the moment the
 	 * client logs in, when the next frame is the "Welcome to Gielinor" banner. Both
-	 * checks retry frame by frame, at most a minute, then capture regardless.
+	 * checks retry frame by frame for as long as the player is in the game. If they log
+	 * out first there is nothing to photograph, and the post goes out without a picture.
 	 */
 	private void captureFrame(java.util.function.Consumer<Image> onFrame)
 	{
-		long deadline = System.currentTimeMillis() + 60_000;
 		int[] startTick = {-1};
 		clientThread.invokeLater(() ->
 		{
+			if (client.getGameState() != GameState.LOGGED_IN)
+			{
+				executor.execute(() -> onFrame.accept(null));
+				return true;
+			}
 			if (startTick[0] < 0)
 			{
 				startTick[0] = client.getTickCount();
@@ -150,7 +156,7 @@ class BingoDiscordNotifier
 			Widget play = client.getWidget(InterfaceID.WelcomeScreen.PLAY);
 			boolean welcomeUp = play != null && !play.isHidden();
 			boolean tickPassed = client.getTickCount() > startTick[0];
-			if ((welcomeUp || !tickPassed) && System.currentTimeMillis() < deadline)
+			if (welcomeUp || !tickPassed)
 			{
 				return false; // try again next frame
 			}
@@ -317,8 +323,13 @@ class BingoDiscordNotifier
 		});
 	}
 
+	/** null when there was no frame to capture (the player had logged out). */
 	private static byte[] toPng(Image frame)
 	{
+		if (frame == null)
+		{
+			return null;
+		}
 		try
 		{
 			BufferedImage image = ImageUtil.bufferedImageFromImage(frame);
