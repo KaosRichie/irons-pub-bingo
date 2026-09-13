@@ -130,20 +130,29 @@ class BingoDiscordNotifier
 	}
 
 	/**
-	 * Grabs a rendered frame for a screenshot, once the login welcome screen is out of
-	 * the way: XP caught up from mobile completes tiles the moment the client logs in,
-	 * and the next frame then is the "Welcome to Gielinor" banner, not the game. Waits
-	 * frame by frame until the play button is gone, at most a minute, then captures.
+	 * Grabs a rendered frame for a screenshot, but not the very next one. One game tick
+	 * later the "Bingo tile complete" line is in the chatbox and the loot is in the
+	 * inventory, so the picture shows what it is proof of. And after a login the
+	 * welcome screen is skipped: XP caught up from mobile completes tiles the moment the
+	 * client logs in, when the next frame is the "Welcome to Gielinor" banner. Both
+	 * checks retry frame by frame, at most a minute, then capture regardless.
 	 */
 	private void captureFrame(java.util.function.Consumer<Image> onFrame)
 	{
 		long deadline = System.currentTimeMillis() + 60_000;
+		int[] startTick = {-1};
 		clientThread.invokeLater(() ->
 		{
-			Widget play = client.getWidget(InterfaceID.WelcomeScreen.PLAY);
-			if (play != null && !play.isHidden() && System.currentTimeMillis() < deadline)
+			if (startTick[0] < 0)
 			{
-				return false; // welcome screen still up: try again next frame
+				startTick[0] = client.getTickCount();
+			}
+			Widget play = client.getWidget(InterfaceID.WelcomeScreen.PLAY);
+			boolean welcomeUp = play != null && !play.isHidden();
+			boolean tickPassed = client.getTickCount() > startTick[0];
+			if ((welcomeUp || !tickPassed) && System.currentTimeMillis() < deadline)
+			{
+				return false; // try again next frame
 			}
 			drawManager.requestNextFrameListener(frame -> executor.execute(() -> onFrame.accept(frame)));
 			return true;
