@@ -14,6 +14,10 @@ import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.util.ImageUtil;
 import okhttp3.Call;
@@ -46,6 +50,12 @@ class BingoDiscordNotifier
 	private DrawManager drawManager;
 
 	@Inject
+	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
 	private ScheduledExecutorService executor;
 
 	@Inject
@@ -76,7 +86,7 @@ class BingoDiscordNotifier
 		}
 		String content = ":camera_with_flash: **" + (player == null ? "Someone" : player)
 			+ "** - credit request proof: " + requestDetail + teamSuffix(team);
-		drawManager.requestNextFrameListener(frame -> executor.execute(() ->
+		captureFrame(frame ->
 		{
 			Map<String, Object> payload = new HashMap<>();
 			payload.put("content", content);
@@ -116,7 +126,28 @@ class BingoDiscordNotifier
 					}
 				}
 			});
-		}));
+		});
+	}
+
+	/**
+	 * Grabs a rendered frame for a screenshot, once the login welcome screen is out of
+	 * the way: XP caught up from mobile completes tiles the moment the client logs in,
+	 * and the next frame then is the "Welcome to Gielinor" banner, not the game. Waits
+	 * frame by frame until the play button is gone, at most a minute, then captures.
+	 */
+	private void captureFrame(java.util.function.Consumer<Image> onFrame)
+	{
+		long deadline = System.currentTimeMillis() + 60_000;
+		clientThread.invokeLater(() ->
+		{
+			Widget play = client.getWidget(InterfaceID.WelcomeScreen.PLAY);
+			if (play != null && !play.isHidden() && System.currentTimeMillis() < deadline)
+			{
+				return false; // welcome screen still up: try again next frame
+			}
+			drawManager.requestNextFrameListener(frame -> executor.execute(() -> onFrame.accept(frame)));
+			return true;
+		});
 	}
 
 	/** Turns the webhook's reply into a permanent jump link, or the attachment URL. */
@@ -197,7 +228,7 @@ class BingoDiscordNotifier
 			+ "** - " + tileLabel + ": " + goalLabel
 			+ " (" + progress + '/' + target + ')' + teamSuffix(team)
 			+ (lootDetail == null ? "" : "\n:package: " + lootDetail);
-		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
+		captureFrame(frame -> post(url, message, frame));
 	}
 
 	/** lootDetail: the drop (or valued loot pile) that finished the tile, or null. */
@@ -228,8 +259,8 @@ class BingoDiscordNotifier
 		}
 		String message = content.toString();
 
-		// Grab the next rendered frame as proof, then build and send the request off the client thread.
-		drawManager.requestNextFrameListener(frame -> executor.execute(() -> post(url, message, frame)));
+		// Grab a rendered frame as proof, then build and send the request off the client thread.
+		captureFrame(frame -> post(url, message, frame));
 	}
 
 	/** " for team **X**"; the caller resolves the display name (sheet > config > code). */
