@@ -837,7 +837,15 @@ function recordRequest(board, request, fromForm)
 	var note = String(request.note || '').slice(0, 300);
 	var links = cleanProofLinks(request.links);
 	if ((!fromForm && !/^[0-9a-f]{16}$/.test(member)) || !player || isNaN(tile) || tile < 1
-		|| (add === '' && !complete) || (add !== '' && isNaN(add)))
+		|| (add === '' && !complete) || (add !== '' && !(isFinite(add) && add > 0))
+		|| (goal !== '' && (isNaN(goal) || goal < 1)))
+	{
+		return 0;
+	}
+	// The tile and goal must exist on the board, or the approval would land nowhere.
+	var meta = cachedMeta(board);
+	if (meta && meta.tiles && (tile > meta.tiles.length
+		|| (goal !== '' && goal > (meta.tiles[tile - 1].goals || []).length)))
 	{
 		return 0;
 	}
@@ -845,7 +853,6 @@ function recordRequest(board, request, fromForm)
 	// The Tile cell carries the label too ("3 - Manual me baby"): admins reviewing the
 	// tab shouldn't need the board open. Every reader parseInt()s the leading number.
 	var tileCell = String(tile);
-	var meta = cachedMeta(board);
 	if (meta && meta.tiles && meta.tiles[tile - 1] && meta.tiles[tile - 1].label)
 	{
 		tileCell = tile + ' - ' + meta.tiles[tile - 1].label;
