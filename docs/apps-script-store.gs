@@ -111,6 +111,10 @@ var STATUS_COLORS = { Pending: '#fff2cc', Done: '#d9ead3', Rejected: '#f4cccc' }
 var HIDDEN_SHEETS = [STORE_SHEET, META_SHEET, REMOVED_SHEET, SCORES_SHEET];
 
 var REFRESH_THROTTLE_MS = 120000;
+// Teams, the board code, the poll interval and the store generation change rarely but
+// were read on every sync. They are cached this long; editing those tabs by hand clears
+// the cache at once (onEdit), so a host's change still applies on the next sync.
+var CONFIG_CACHE_SECONDS = 60;
 // Client clocks drift; anything further ahead than this is clamped on write. An
 // unclamped future stamp would out-rank every later write - including the owner's
 // own reset - forever.
@@ -123,14 +127,14 @@ function doPost(e)
 	// The Board tab render is the slowest thing a sync does, and it only READS the
 	// store, so it runs after the write lock is released: clients queued behind this
 	// request get their turn seconds earlier.
-	var refreshAfter = null;
+	var refreshAfter = {};
 	var output = handlePost(e, function (board, force)
 	{
-		refreshAfter = { board: board, force: force };
+		refreshAfter[board] = refreshAfter[board] || !!force;
 	});
-	if (refreshAfter)
+	for (var board in refreshAfter)
 	{
-		maybeRefreshViews(refreshAfter.board, refreshAfter.force);
+		maybeRefreshViews(board, refreshAfter[board]);
 	}
 	// Web requests run fully authorized, so they deliver any announcements the Status
 	// dropdown's limited trigger context had to park. Outside the sync lock: Discord
@@ -193,6 +197,13 @@ function handlePost(e, deferRefresh)
 		// so a write for a member must carry that member's key (derived from their
 		// account on their own client). Rows claimed by a key accept only that key.
 		var keyHash = memberKeyHash(body.memberKey);
+		// The Removed tab, read at most once and only when needed.
+		var departures = null;
+		var readOnce = function ()
+		{
+			departures = departures || readDepartures();
+			return departures;
+		};
 		var self = /^[0-9a-f]{16}$/.test(String(body.rejoin || '')) ? String(body.rejoin) : null;
 		if (self && !ownsMember(rows, self, keyHash))
 		{
@@ -213,7 +224,7 @@ function handlePost(e, deferRefresh)
 					leaving.push(String(body.remove[li]));
 				}
 			}
-			removeMembers(board, leaving);
+			removeMembers(board, leaving, leaving.length ? readOnce() : null, deferRefresh);
 		}
 
 		// The Teams tab is the allow-list: only codes the host listed may write. An empty
@@ -272,9 +283,9 @@ function handlePost(e, deferRefresh)
 			// A member syncing here by choice clears any "left" tombstone they carry in
 			// this scope, so switching back to a team you left heals itself. Hand-added
 			// tombstones (no "left" reason) are admin evictions and stay.
-			clearLeftTombstones(board, self);
+			departures = clearLeftTombstones(board, self, readOnce());
 			// ...and their arrival moves their row: one team per board per member.
-			moveMemberIfElsewhere(board, self);
+			moveMemberIfElsewhere(board, self, rows, departures, deferRefresh);
 		}
 
 		if (body.request && ownsMember(rows, String(body.request.member || ''), keyHash))
@@ -303,7 +314,7 @@ function handlePost(e, deferRefresh)
 		}
 
 		var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
-		var marks = allDepartures();
+		var marks = readOnce().marks;
 		var removed = removedFor(board, marks);
 
 		// One team per board per member: a member's tracked data lives where THEIR OWN
@@ -684,6 +695,11 @@ function standingsFor(board, scores)
 /** Host-defined teams from the Teams tab, codes normalized like the plugin does. */
 function readTeamRows()
 {
+	return cachedConfig('teams', loadTeamRows);
+}
+
+function loadTeamRows()
+{
 	var values = getSheet(TEAMS_SHEET, TEAMS_HEADERS).getDataRange().getValues();
 	var teams = [];
 	for (var i = 1; i < values.length; i++)
@@ -754,18 +770,33 @@ function hasTeam(teams, code)
 /** Every departure mark in the sheet, keyed "board|member" - one read for all scopes. */
 function allDepartures()
 {
+	return readDepartures().marks;
+}
+
+/**
+ * The Removed tab in one read: marks ("board|member" -> true) and, for the "left"
+ * marks a rejoin may clear, their sheet row numbers.
+ */
+function readDepartures()
+{
 	var values = getSheet(REMOVED_SHEET, REMOVED_HEADERS).getDataRange().getValues();
 	var marks = {};
+	var leftRows = {};
 	for (var i = 1; i < values.length; i++)
 	{
 		var scope = String(values[i][0] || '');
 		var member = String(values[i][1] || '');
 		if (scope && member)
 		{
-			marks[scope + '|' + member] = true;
+			var key = scope + '|' + member;
+			marks[key] = true;
+			if (String(values[i][3] || '').trim() === 'left')
+			{
+				(leftRows[key] = leftRows[key] || []).push(i + 1);
+			}
 		}
 	}
-	return marks;
+	return { marks: marks, leftRows: leftRows };
 }
 
 /** Member ids that left this board scope; their data is kept but stops counting. */
@@ -1393,37 +1424,41 @@ function boardPrefix(board)
  * A member's own arrival on a team evicts them from any sibling team on the same board:
  * their row is deleted there and tombstoned "left", so stale relays can't restore it.
  */
-function moveMemberIfElsewhere(board, memberId)
+function moveMemberIfElsewhere(board, memberId, rows, departures, deferRefresh)
 {
 	var prefix = boardPrefix(board);
 	if (!prefix)
 	{
 		return;
 	}
-	var rows = readRows(getSheet(STORE_SHEET, STORE_HEADERS));
 	for (var key in rows)
 	{
 		var row = rows[key];
 		if (row.member === memberId && row.board !== board && row.board.indexOf(prefix) === 0)
 		{
-			removeMembers(row.board, [memberId]);
+			removeMembers(row.board, [memberId], departures, deferRefresh);
 		}
 	}
 }
 
-/** Clears "left" tombstones for a member rejoining this scope (admin rows untouched). */
-function clearLeftTombstones(board, memberId)
+/**
+ * Clears "left" tombstones for a member rejoining this scope (admin rows untouched).
+ * Nothing to clear is the usual case and costs no sheet call.
+ * @return the departures, re-read when rows were deleted
+ */
+function clearLeftTombstones(board, memberId, departures)
 {
-	var sheet = getSheet(REMOVED_SHEET, REMOVED_HEADERS);
-	var values = sheet.getDataRange().getValues();
-	for (var i = values.length - 1; i >= 1; i--)
+	var rowNumbers = departures.leftRows[board + '|' + memberId];
+	if (!rowNumbers || !rowNumbers.length)
 	{
-		if (String(values[i][0]) === board && String(values[i][1]) === memberId
-			&& String(values[i][3] || '').trim() === 'left')
-		{
-			sheet.deleteRow(i + 1);
-		}
+		return departures;
 	}
+	var sheet = getSheet(REMOVED_SHEET, REMOVED_HEADERS);
+	for (var i = rowNumbers.length - 1; i >= 0; i--)
+	{
+		sheet.deleteRow(rowNumbers[i]);
+	}
+	return readDepartures();
 }
 
 /** Deletes members' store rows for a board and tombstones the ids on the Removed tab. */
@@ -1433,10 +1468,15 @@ function clearLeftTombstones(board, memberId)
  * person comes back their progress on this team comes back with them - the rejoin clears
  * the mark. Nothing they do meanwhile is accepted into this scope.
  */
-function removeMembers(board, ids)
+function removeMembers(board, ids, departures, deferRefresh)
 {
+	if (!ids.length)
+	{
+		return;
+	}
+	departures = departures || readDepartures();
 	var removedSheet = getSheet(REMOVED_SHEET, REMOVED_HEADERS);
-	var existing = removedFor(board);
+	var existing = removedFor(board, departures.marks);
 	var marked = 0;
 	for (var i = 0; i < ids.length; i++)
 	{
@@ -1452,11 +1492,13 @@ function removeMembers(board, ids)
 		range.setNumberFormat('@');
 		range.setValues([[board, id, new Date().toISOString(), 'left']]);
 		existing[id] = true;
+		departures.marks[board + '|' + id] = true;
 		marked++;
 	}
-	if (marked)
+	if (marked && deferRefresh)
 	{
-		maybeRefreshViews(board, true);
+		// Rendered after the sync lock is released, like every other Board tab render.
+		deferRefresh(board, true);
 	}
 }
 
@@ -1965,9 +2007,14 @@ function zeros(n)
  */
 function saveMeta(board, meta)
 {
+	var json = JSON.stringify(meta);
+	var known = cachedMeta(board);
+	if (known && JSON.stringify(known) === json)
+	{
+		return false; // unchanged: the usual case once per client session
+	}
 	var sheet = getSheet(META_SHEET, META_HEADERS);
 	var values = sheet.getDataRange().getValues();
-	var json = JSON.stringify(meta);
 	try
 	{
 		CacheService.getScriptCache().put('meta_' + storeEpoch() + '_' + board, json, 21600);
@@ -2036,14 +2083,52 @@ function readMeta(board)
 /** This store's generation, starting at 1 and bumped by every Reset store data. */
 function storeEpoch()
 {
-	var props = PropertiesService.getScriptProperties();
-	var epoch = Number(props.getProperty(EPOCH_PROP) || 0);
-	if (!epoch)
+	return cachedConfig('epoch', function ()
 	{
-		epoch = 1;
-		props.setProperty(EPOCH_PROP, String(epoch));
+		var props = PropertiesService.getScriptProperties();
+		var epoch = Number(props.getProperty(EPOCH_PROP) || 0);
+		if (!epoch)
+		{
+			epoch = 1;
+			props.setProperty(EPOCH_PROP, String(epoch));
+		}
+		return epoch;
+	});
+}
+
+/** A rarely-changing value through the script cache (see CONFIG_CACHE_SECONDS). */
+function cachedConfig(name, load)
+{
+	if (CONFIG_CACHE_SECONDS <= 0)
+	{
+		return load();
 	}
-	return epoch;
+	var cache = CacheService.getScriptCache();
+	var hit = cache.get('cfg_' + name);
+	if (hit !== null)
+	{
+		return JSON.parse(hit);
+	}
+	var value = load();
+	try
+	{
+		cache.put('cfg_' + name, JSON.stringify(value), CONFIG_CACHE_SECONDS);
+	}
+	catch (err)
+	{
+		// Too big for the cache (a huge board code): read the sheet every time.
+	}
+	return value;
+}
+
+/** Drops the cached config, so the next read sees the sheet as it is now. */
+function clearConfigCache()
+{
+	var cache = CacheService.getScriptCache();
+	['teams', 'boardCode', 'poll', 'epoch', 'reconciled'].forEach(function (name)
+	{
+		cache.remove('cfg_' + name);
+	});
 }
 
 // ---------------------------------------------------------------- sheet plumbing
@@ -2053,18 +2138,20 @@ function maybeRefreshViews(board, force)
 	// Only host-listed teams get a Board tab. A client still carrying last event's team
 	// code is rejected by the sync gate, but side paths (a departure mark, Refresh board
 	// view over old Meta rows) reach here too and must not spawn tabs for junk codes.
+	// The throttle lives in the cache: Properties have a daily quota that a busy event's
+	// syncs would eat, and a lost throttle entry only costs one extra render.
+	var cache = CacheService.getScriptCache();
+	var last = Number(cache.get('lastRefresh_' + board) || 0);
+	if (!force && Date.now() - last < REFRESH_THROTTLE_MS)
+	{
+		return;
+	}
 	var team = teamOf(board);
 	if (team && team !== 'solo' && !hasTeam(readTeamRows(), team))
 	{
 		return;
 	}
-	var props = PropertiesService.getScriptProperties();
-	var last = Number(props.getProperty('lastRefresh_' + board) || 0);
-	if (!force && Date.now() - last < REFRESH_THROTTLE_MS)
-	{
-		return;
-	}
-	props.setProperty('lastRefresh_' + board, String(Date.now()));
+	cache.put('lastRefresh_' + board, String(Date.now()), 21600);
 	try
 	{
 		var meta = cachedMeta(board);
@@ -2132,6 +2219,11 @@ function getSheet(name, headers)
  */
 /** The board code the host pasted (rows rejoined, trimmed); '' when the tab is empty. */
 function readBoardCode()
+{
+	return cachedConfig('boardCode', loadBoardCode);
+}
+
+function loadBoardCode()
 {
 	var sheet = ensureBoardCodeSheet();
 	var values = sheet.getDataRange().getValues();
@@ -2223,6 +2315,11 @@ function readPortalUrl()
 }
 
 function readPollInterval()
+{
+	return cachedConfig('poll', loadPollInterval);
+}
+
+function loadPollInterval()
 {
 	var values = getSheet(SETTINGS_SHEET, SETTINGS_HEADERS).getDataRange().getValues();
 	for (var i = 1; i < values.length; i++)
@@ -2407,9 +2504,11 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	{
 		return 'No board code pasted on the Board code tab.';
 	}
+	var cache = CacheService.getScriptCache();
 	var props = PropertiesService.getScriptProperties();
-	if (props.getProperty('boardSigHash') === canonicalHash)
+	if (cache.get('cfg_reconciled') === canonicalHash || props.getProperty('boardSigHash') === canonicalHash)
 	{
+		cache.put('cfg_reconciled', canonicalHash, 21600);
 		return 'Board code unchanged since the last check - nothing to do.';
 	}
 	var parsed = parseJson(canonicalCode, null);
@@ -2434,6 +2533,7 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	hashes.push(canonicalHash);
 	hashes = hashes.slice(-30);
 	props.setProperty('boardSigHash', canonicalHash);
+	cache.put('cfg_reconciled', canonicalHash, 21600);
 	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs, hashes: hashes }));
 	// The portal and Board tabs show the pasted board right away, not after the
 	// first client that runs it happens to sync.
@@ -3023,6 +3123,7 @@ function resetStoreData()
 		var next = Number(props.getProperty(EPOCH_PROP) || 0) + 1;
 		props.deleteAllProperties();
 		props.setProperty(EPOCH_PROP, String(next));
+		clearConfigCache();
 	}
 	finally
 	{
@@ -3082,6 +3183,11 @@ function refreshAllViews()
 function onEdit(e)
 {
 	var sheet = e.range.getSheet();
+	if ([TEAMS_SHEET, BOARD_CODE_SHEET, SETTINGS_SHEET].indexOf(sheet.getName()) >= 0)
+	{
+		clearConfigCache();
+		return;
+	}
 	if (sheet.getName() === REQUESTS_SHEET)
 	{
 		// Admin picked a status from the Status dropdown: apply it - "Done" writes the
