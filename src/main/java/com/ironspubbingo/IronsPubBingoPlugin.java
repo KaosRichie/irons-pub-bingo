@@ -266,6 +266,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		running = true;
 		overlayManager.add(boardUpdateOverlay);
+		discordNotifier.setOutdatedNote(this::outdatedBoardNote);
 		wsClient.registerMessage(IronsPubBingoMemberState.class);
 		wsClient.registerMessage(IronsPubBingoSyncRequest.class);
 		wsClient.registerMessage(IronsPubBingoPing.class);
@@ -703,6 +704,23 @@ public class IronsPubBingoPlugin extends Plugin
 		return newerBoardFromStore
 			? what + " - reimport it: Setup, Import board, Import from store"
 			: what + " - ask your host for the new board code";
+	}
+
+	/** For Discord posts: says the post came from an outdated board, or null. */
+	private String outdatedBoardNote()
+	{
+		Integer newer = newerBoardVersion;
+		if (newer == null || board == null)
+		{
+			return null;
+		}
+		if (board.version == null)
+		{
+			return "Sent from an outdated board (v" + newer + " is out)";
+		}
+		return newer > board.version
+			? "Sent from an outdated board (v" + board.version + ", v" + newer + " is out)"
+			: "Sent from an outdated copy of this board";
 	}
 
 	/** Board name plus revision, e.g. "Summer Bingo (v2)". */

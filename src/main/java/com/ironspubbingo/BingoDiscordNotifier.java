@@ -62,6 +62,21 @@ class BingoDiscordNotifier
 	@Inject
 	private IronsPubBingoConfig config;
 
+	/** Supplies a note when this client runs an outdated board, else null. Client thread. */
+	private volatile java.util.function.Supplier<String> outdatedNote = () -> null;
+
+	void setOutdatedNote(java.util.function.Supplier<String> note)
+	{
+		outdatedNote = note;
+	}
+
+	/** "\n:warning: Sent from an outdated board (v1, v2 is out)", or "" when current. */
+	private String outdatedSuffix()
+	{
+		String note = outdatedNote.get();
+		return note == null ? "" : "\n:warning: " + note;
+	}
+
 	/** Whether a webhook URL is set, so callers can offer webhook-backed features. */
 	boolean webhookConfigured()
 	{
@@ -98,7 +113,7 @@ class BingoDiscordNotifier
 			return;
 		}
 		String content = ":camera_with_flash: **" + (player == null ? "Someone" : player)
-			+ "** - credit request proof: " + requestDetail + teamSuffix(team);
+			+ "** - credit request proof: " + requestDetail + teamSuffix(team) + outdatedSuffix();
 		captureFrame(frame ->
 		{
 			Map<String, Object> payload = new HashMap<>();
@@ -275,7 +290,7 @@ class BingoDiscordNotifier
 		String message = ":camera_with_flash: **" + (player == null ? "Someone" : player)
 			+ "** - " + tileLabel + ": " + goalLabel
 			+ " (" + progress + '/' + target + ')' + teamSuffix(team)
-			+ (lootDetail == null ? "" : "\n:package: " + lootDetail);
+			+ (lootDetail == null ? "" : "\n:package: " + lootDetail) + outdatedSuffix();
 		captureFrame(frame -> post(url, message, frame));
 	}
 
@@ -305,7 +320,7 @@ class BingoDiscordNotifier
 		{
 			content.append("\n:sparkles: ").append(bonus);
 		}
-		String message = content.toString();
+		String message = content.append(outdatedSuffix()).toString();
 
 		// Grab a rendered frame as proof, then build and send the request off the client thread.
 		captureFrame(frame -> post(url, message, frame));
