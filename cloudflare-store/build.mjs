@@ -4,7 +4,7 @@
 // build time: its top-level functions and settings become the body of loadStore(), the
 // Google services it uses arrive as parameters, and every function is returned. The script
 // itself stays the single source of truth for both backends.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,5 +25,11 @@ ${source}
 }
 `;
 mkdirSync(join(here, 'src', 'generated'), { recursive: true });
-writeFileSync(join(here, 'src', 'generated', 'store-script.js'), out);
+const target = join(here, 'src', 'generated', 'store-script.js');
+// Only write a real change: wrangler dev watches this file, and rewriting it unchanged
+// would trigger the build again, forever.
+if (!existsSync(target) || readFileSync(target, 'utf8') !== out)
+{
+	writeFileSync(target, out);
+}
 console.log('store-script.js: ' + functions.length + ' functions');

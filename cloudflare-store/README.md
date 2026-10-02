@@ -37,6 +37,12 @@ only. The buttons run the sheet's menu actions.
 `npm test` builds the module and runs the Worker under Node, with stand-ins for Cloudflare.
 The store logic itself is covered by `store-tests/run-tests.js`.
 
+To run it on Cloudflare's real runtime without an account, put `ADMIN_TOKEN=<anything>` in a
+`.dev.vars` file here and start `npx wrangler dev`. Then
+`node test/live-check.mjs http://127.0.0.1:8787 <that token>` runs a whole event against it:
+admin setup, the board code, 60 players syncing at once, the portal form and an approval.
+The same script works against a deployed Worker.
+
 ## Differences from the Google Sheet version
 
 - No spreadsheet. The admin page replaces it. A bridge that mirrors the data into a Google

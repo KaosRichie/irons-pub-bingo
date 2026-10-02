@@ -78,11 +78,13 @@ export class BingoEvent
 			}
 			if (rest === '/admin/api' && request.method === 'POST')
 			{
+				// Read the body first: the runtime complains about an unread one.
+				const text = await request.text();
 				if (!this.authorized(request))
 				{
 					return json(JSON.stringify({ error: 'Wrong admin token' }), 401);
 				}
-				return await this.admin(await request.json());
+				return await this.admin(JSON.parse(text || '{}'));
 			}
 			return new Response('Not found', { status: 404 });
 		}
