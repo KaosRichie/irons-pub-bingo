@@ -32,7 +32,8 @@ mobile players can file requests there.
 ## Good to know
 
 - Keep the built-in **Loot Tracker** enabled. Chest and raid loot comes from its events.
-- For specific pet tiles, enable **Collection log - New addition notification**.
+- For pet tiles, enable **Collection log - New addition notification**. Specific pet
+  tiles need it, and it names the pet on any-pet tiles.
 - XP and kill-count goals start counting when you import the board.
 - Each team keeps its own progress. Switching teams parks it, switching back restores it.
 - Optional: set a **Discord webhook** to post your completions with a screenshot.

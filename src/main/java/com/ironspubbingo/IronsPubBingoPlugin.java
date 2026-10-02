@@ -196,6 +196,11 @@ public class IronsPubBingoPlugin extends Plugin
 	private int lastMarkCount = -1;
 	/** Marks dropped while on a course; re-picking them up must not count again. */
 	private int markDropDebt;
+	/** A pet message arrived this tick; it is counted at the end of the tick. */
+	private boolean petDropPending;
+	/** The last collection log item and its tick: names the pet of a same-tick pet message. */
+	private String lastCollectionLogItem;
+	private int lastCollectionLogTick = -1;
 	/** A team-code change awaits the player's confirmation; store pushes pause meanwhile. */
 	private boolean teamSwitchPending;
 	/**
@@ -2991,6 +2996,20 @@ public class IronsPubBingoPlugin extends Plugin
 		String collectionLogItem = lower.startsWith(COLLECTION_LOG_PREFIX)
 			? message.substring(COLLECTION_LOG_PREFIX.length()).trim()
 			: null;
+		if (collectionLogItem != null)
+		{
+			lastCollectionLogItem = collectionLogItem;
+			lastCollectionLogTick = client.getTickCount();
+		}
+		if (anyPet && active && !petDropPending)
+		{
+			// The pet message has no name. The collection log line (when the player has
+			// that notification on) names it in the same tick, before or after this one,
+			// so the drop is counted once the tick is over.
+			petDropPending = true;
+			clientThread.invokeAtTickEnd(this::countPetDrop);
+		}
+		Map<BingoGoal, String> lootDetails = new HashMap<>();
 
 		Set<Integer> before = completedTiles();
 		Set<Long> changed = visitGoals((tile, goal, p) ->
@@ -3003,17 +3022,15 @@ public class IronsPubBingoPlugin extends Plugin
 					return kcBoss != null && Wildcards.anyMatch(goal.npcPatterns, kcBoss)
 						&& applyKillCount(p, kcBoss, kcReported, active);
 				case PET:
-					if (!active)
+					// "Any pet" goals count in countPetDrop, at the end of the tick.
+					if (!active || goal.petPatterns.isEmpty() || collectionLogItem == null
+						|| !Wildcards.anyMatch(goal.petPatterns, collectionLogItem)
+						|| !addMatched(p, collectionLogItem))
 					{
 						return false;
 					}
-					if (goal.petPatterns.isEmpty())
-					{
-						return anyPet && bump(p, 1);
-					}
-					return collectionLogItem != null
-						&& Wildcards.anyMatch(goal.petPatterns, collectionLogItem)
-						&& addMatched(p, collectionLogItem);
+					lootDetails.put(goal, "Pet: " + collectionLogItem);
+					return true;
 				case CHAT:
 					return active && goal.allowsRegion(chatWorldRegion, chatInstanceRegion)
 						&& goal.chatPattern.matcher(message).find() && bump(p, 1);
@@ -3023,11 +3040,38 @@ public class IronsPubBingoPlugin extends Plugin
 		});
 		if (!changed.isEmpty())
 		{
-			afterChange(before, tilesOf(changed), changed);
+			afterChange(before, tilesOf(changed), changed, lootDetails);
 		}
 		else if (!active && kcBoss != null)
 		{
 			saveProgress(false); // persist ridden kc baselines eventually
+		}
+	}
+
+	/** Counts a pet for "any pet" goals, named by a same-tick collection log line if any. */
+	private void countPetDrop()
+	{
+		petDropPending = false;
+		if (board == null)
+		{
+			return;
+		}
+		String name = lastCollectionLogTick == client.getTickCount() ? lastCollectionLogItem : null;
+		Map<BingoGoal, String> lootDetails = new HashMap<>();
+		Set<Integer> before = completedTiles();
+		Set<Long> changed = visitGoals((tile, goal, p) ->
+		{
+			if (goal.goalType != GoalType.PET || !goal.petPatterns.isEmpty() || !bump(p, 1))
+			{
+				return false;
+			}
+			p.addGot(name != null ? name : "Unnamed pet", 1);
+			lootDetails.put(goal, name != null ? "Pet: " + name : "A new pet");
+			return true;
+		});
+		if (!changed.isEmpty())
+		{
+			afterChange(before, tilesOf(changed), changed, lootDetails);
 		}
 	}
 
