@@ -196,6 +196,13 @@ public class IronsPubBingoPlugin extends Plugin
 	private int markDropDebt;
 	/** A team-code change awaits the player's confirmation; store pushes pause meanwhile. */
 	private boolean teamSwitchPending;
+	/**
+	 * The team scope whose teammates, departures and frozen contributions are in memory.
+	 * Saves always go here, never to whatever the config names right now: between a
+	 * team code edit and its confirmation the config already names the new team.
+	 */
+	private String loadedTeamCode;
+	private boolean loadedStoreMode;
 	/** SHA-256 of the exact board code this client imported; null without a board. */
 	private String boardCodeHash;
 	/** Swallows the ConfigChanged fired by our own revert of a cancelled team switch. */
@@ -697,7 +704,27 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			progress.putAll(own);
 		}
-		Map<String, TeamMemberState> team = readJsonConfig(teamCacheKey(normalizedTeamCode()),
+		loadTeamCaches(normalizedTeamCode(), config.teamStoreEnabled());
+		enforceTeamOwnership();
+		reconcileTileSignatures();
+	}
+
+	/**
+	 * Loads everything cached about one team scope: its members, its departures and its
+	 * frozen contributions, and remembers it as the scope saves go to.
+	 */
+	private void loadTeamCaches(String teamCode, boolean storeMode)
+	{
+		loadedTeamCode = teamCode;
+		loadedStoreMode = storeMode;
+		teamProgress.clear();
+		frozenContributions.clear();
+		if (boardKey == null || configManager.getRSProfileKey() == null)
+		{
+			removedMembers.clear();
+			return;
+		}
+		Map<String, TeamMemberState> team = readJsonConfig(teamCacheKey(teamCode, storeMode),
 			new TypeToken<Map<String, TeamMemberState>>()
 			{
 			}.getType());
@@ -705,20 +732,31 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			teamProgress.putAll(team);
 		}
-		frozenContributions.clear();
-		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(), FROZEN_TYPE);
+		if (!storeMode)
+		{
+			// Verified credit belongs to the store; a party-only team never shows it.
+			teamProgress.keySet().removeIf(IronsPubBingoPlugin::isAdminMember);
+		}
+		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(teamCode, storeMode), FROZEN_TYPE);
 		if (frozen != null)
 		{
 			frozenContributions.putAll(frozen);
 		}
 		loadRemovedMembers();
-		enforceTeamOwnership();
-		reconcileTileSignatures();
 	}
 
-	private String frozenKey()
+	/** Writes the loaded team scope's members and frozen contributions. */
+	private void saveTeamCaches()
 	{
-		return "frozen_" + boardKey + "_" + (normalizedTeamCode() == null ? "solo" : normalizedTeamCode());
+		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+			teamCacheKey(loadedTeamCode, loadedStoreMode), gson.toJson(teamProgress));
+		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+			frozenKey(loadedTeamCode, loadedStoreMode), gson.toJson(frozenContributions));
+	}
+
+	private String frozenKey(String teamCode, boolean storeMode)
+	{
+		return "frozen" + (storeMode ? "_" : "p_") + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
 	}
 
 	private static final Type STRING_LIST = new TypeToken<List<String>>()
@@ -807,10 +845,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP, "progress_" + boardKey, gson.toJson(progress));
-		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-			teamCacheKey(normalizedTeamCode()), gson.toJson(teamProgress));
-		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP, frozenKey(),
-			gson.toJson(frozenContributions));
+		saveTeamCaches();
 		lastSaveMs = now;
 		dirty = false;
 	}
@@ -917,6 +952,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			if (!before.contains(idx))
 			{
+				frozenContributions.remove(idx);
 				memberProgressFor(idx);
 			}
 		}
@@ -1121,9 +1157,10 @@ public class IronsPubBingoPlugin extends Plugin
 	 * on the same board must never carry the old team's members into the new team's store.
 	 * A switch deletes both sides of the key anyway (see {@link #dropCachedTeammates}).
 	 */
-	private String teamCacheKey(String teamCode)
+	private String teamCacheKey(String teamCode, boolean storeMode)
 	{
-		return "team3_" + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
+		// The store team and the party-only team of one code are different teams.
+		return (storeMode ? "team3_" : "team3p_") + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
 	}
 
 	private String expectedPassphrase()
@@ -1212,7 +1249,10 @@ public class IronsPubBingoPlugin extends Plugin
 						// Take nothing along and leave nothing behind: the store evicts
 						// this account from the old team's scope (tombstoned, so cached
 						// copies can't resurrect it) and the fresh state starts at zero.
-						enqueueEviction(scopeFor(oldCode));
+						if (config.teamStoreEnabled())
+						{
+							enqueueEviction(scopeFor(oldCode));
+						}
 						switchOwnProgress(oldCode, config.teamStoreEnabled(),
 							normalizedTeamCode(), config.teamStoreEnabled());
 						applyTeamSwitch(oldCode);
@@ -1261,7 +1301,8 @@ public class IronsPubBingoPlugin extends Plugin
 		storePushed.clear();
 		teamProgress.clear();
 		removedMembers.clear();
-		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, removedCacheKey(code));
+		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+			removedCacheKey(loadedTeamCode, loadedStoreMode));
 		saveProgress(true);
 	}
 
@@ -1330,9 +1371,9 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
-	private String removedCacheKey(String teamCode)
+	private String removedCacheKey(String teamCode, boolean storeMode)
 	{
-		return "removed3_" + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
+		return (storeMode ? "removed3_" : "removed3p_") + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
 	}
 
 	/** Loads the evicted-member tombstones for the current team scope and enforces them. */
@@ -1343,7 +1384,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
-		Set<String> cached = readJsonConfig(removedCacheKey(normalizedTeamCode()), STRING_SET);
+		Set<String> cached = readJsonConfig(removedCacheKey(loadedTeamCode, loadedStoreMode), STRING_SET);
 		if (cached != null)
 		{
 			removedMembers.addAll(cached);
@@ -1435,14 +1476,18 @@ public class IronsPubBingoPlugin extends Plugin
 		reseedXpBaselines();
 	}
 
+	private static String ownershipStamp(String teamCode, boolean storeMode)
+	{
+		return (teamCode == null ? "solo" : teamCode) + (storeMode ? "|store" : "|party");
+	}
+
 	/** Records which team this profile's progress for the current board belongs to. */
 	private void stampTeamOwnership()
 	{
 		if (boardKey != null && configManager.getRSProfileKey() != null)
 		{
-			String code = normalizedTeamCode();
 			configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-				"teamOf_" + boardKey, code == null ? "solo" : code);
+				"teamOf_" + boardKey, ownershipStamp(normalizedTeamCode(), config.teamStoreEnabled()));
 		}
 	}
 
@@ -1460,7 +1505,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		String code = normalizedTeamCode();
-		String current = code == null ? "solo" : code;
+		boolean storeMode = config.teamStoreEnabled();
 		String owner = configManager.getRSProfileConfiguration(IronsPubBingoConfig.GROUP, "teamOf_" + boardKey);
 		if (owner == null)
 		{
@@ -1468,11 +1513,25 @@ public class IronsPubBingoPlugin extends Plugin
 			stampTeamOwnership();
 			return;
 		}
-		if (!owner.equals(current))
+		// "code|store" was earned on a store team, "code|party" on a party-only one. Stamps
+		// from before the mode was recorded are read as the current mode, and rewritten.
+		boolean legacy = !owner.endsWith("|store") && !owner.endsWith("|party");
+		boolean ownerStore = legacy ? storeMode : owner.endsWith("|store");
+		String ownerCode = legacy ? owner : owner.substring(0, owner.length() - 6);
+		if (legacy && ownerCode.equals(code == null ? "solo" : code))
 		{
-			log.debug("Progress for {} belonged to team {} - parking it and loading {}", boardKey, owner, current);
-			enqueueEviction(boardKey + "_" + owner);
-			switchOwnProgress(owner, config.teamStoreEnabled(), code, config.teamStoreEnabled());
+			stampTeamOwnership();
+			return;
+		}
+		if (ownerStore != storeMode || !ownerCode.equals(code == null ? "solo" : code))
+		{
+			log.debug("Progress for {} belonged to {} - parking it and loading {}", boardKey, owner, code);
+			if (ownerStore)
+			{
+				enqueueEviction(boardKey + "_" + ownerCode);
+			}
+			switchOwnProgress("solo".equals(ownerCode) ? null : ownerCode, ownerStore, code, storeMode);
+			switchTeamCaches(code, storeMode);
 			stampTeamOwnership();
 			saveProgress(true);
 		}
@@ -1499,6 +1558,7 @@ public class IronsPubBingoPlugin extends Plugin
 			teamSwitchPending = false; // must lift before the toggle's own sync
 			switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), nowOn);
 			applyStoreToggle(wasOn);
+			stampTeamOwnership();
 			return;
 		}
 		teamSwitchPending = true;
@@ -1521,6 +1581,7 @@ public class IronsPubBingoPlugin extends Plugin
 				{
 					switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), !wasOn);
 					applyStoreToggle(wasOn);
+					stampTeamOwnership();
 					saveProgress(true);
 				}
 				else
@@ -1539,15 +1600,15 @@ public class IronsPubBingoPlugin extends Plugin
 		storeSyncQueued = false;
 		storePushed.clear();
 		storeStandings.clear();
+		// The store team and the party-only team keep their own teammates.
+		switchTeamCaches(normalizedTeamCode(), !wasOn);
 		if (wasOn)
 		{
-			// Leaving the store team: the departure notice tombstones this account there,
-			// and the verified members belong to the store - without one they're gone.
+			// Leaving the store team: the departure notice tombstones this account there.
 			if (boardKey != null)
 			{
 				enqueueEviction(scopeFor(normalizedTeamCode()));
 			}
-			teamProgress.keySet().removeIf(id -> isAdminMember(id));
 			storeError = null;
 		}
 		else
@@ -1585,24 +1646,10 @@ public class IronsPubBingoPlugin extends Plugin
 	private void applyTeamSwitch(String oldCode)
 	{
 		storePushed.clear();
-		teamProgress.clear();
-		if (boardKey != null && configManager.getRSProfileKey() != null)
-		{
-			// Park the old team's cached members under their own key, so coming back
-			// restores them, and start from whatever is cached for the new team. What
-			// each team shows is then filtered by that team's departures.
-			configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-				teamCacheKey(oldCode), gson.toJson(teamProgress));
-			Map<String, TeamMemberState> cached = readJsonConfig(teamCacheKey(normalizedTeamCode()),
-				new TypeToken<Map<String, TeamMemberState>>()
-				{
-				}.getType());
-			if (cached != null)
-			{
-				teamProgress.putAll(cached);
-			}
-			loadRemovedMembers();
-		}
+		// Park the old team's cached members under their own key, so coming back
+		// restores them, and start from whatever is cached for the new team. What
+		// each team shows is then filtered by that team's departures.
+		switchTeamCaches(normalizedTeamCode(), config.teamStoreEnabled());
 		// Follow the code into its party - but only if we were in the old team's party.
 		// Never pull the player out of an unrelated party (e.g. a raid).
 		String oldPassphrase = oldCode == null ? null : PARTY_PREFIX + oldCode;
@@ -1613,6 +1660,16 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		syncStore(true);
 		refreshPanel();
+	}
+
+	/** Saves the loaded team scope and loads another one in its place. */
+	private void switchTeamCaches(String teamCode, boolean storeMode)
+	{
+		if (boardKey != null && configManager.getRSProfileKey() != null)
+		{
+			saveTeamCaches();
+		}
+		loadTeamCaches(teamCode, storeMode);
 	}
 
 	void leaveTeam()
@@ -1642,7 +1699,8 @@ public class IronsPubBingoPlugin extends Plugin
 		teamProgress.clear();
 		if (boardKey != null && configManager.getRSProfileKey() != null)
 		{
-			configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, teamCacheKey(normalizedTeamCode()));
+			configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+				teamCacheKey(loadedTeamCode, loadedStoreMode));
 		}
 		refreshPanel();
 	}
@@ -2365,7 +2423,7 @@ public class IronsPubBingoPlugin extends Plugin
 					if (configManager.getRSProfileKey() != null)
 					{
 						configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-							removedCacheKey(normalizedTeamCode()), gson.toJson(removedMembers));
+							removedCacheKey(loadedTeamCode, loadedStoreMode), gson.toJson(removedMembers));
 					}
 					dropped = true;
 				}
