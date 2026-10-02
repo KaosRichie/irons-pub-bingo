@@ -754,8 +754,8 @@ public class IronsPubBingoPlugin extends Plugin
 				{
 					// Fresh timestamp: the empty state must WIN the LWW merge, or
 					// teammates' caches would push the stale numbers right back.
-					progress.remove(i);
-					progressFor(i).ts = now;
+					Long previous = progress.remove(i).ts;
+					progressFor(i).ts = nextTs(previous, now);
 					resetTiles.add(i);
 				}
 			}
@@ -1417,6 +1417,11 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void resetOwnProgress()
 	{
+		Map<Integer, Long> previous = new HashMap<>();
+		for (Map.Entry<Integer, TileProgress> entry : progress.entrySet())
+		{
+			previous.put(entry.getKey(), entry.getValue().ts);
+		}
 		progress.clear();
 		pendingBroadcast.clear();
 		if (board != null)
@@ -1424,7 +1429,7 @@ public class IronsPubBingoPlugin extends Plugin
 			long now = System.currentTimeMillis();
 			for (int i = 0; i < board.getTiles().size(); i++)
 			{
-				progressFor(i).ts = now;
+				progressFor(i).ts = nextTs(previous.get(i), now);
 			}
 		}
 		reseedXpBaselines();
@@ -2364,6 +2369,8 @@ public class IronsPubBingoPlugin extends Plugin
 					}
 					dropped = true;
 				}
+				// The store's copy of our own tiles wins when it is newer than ours.
+				dropped |= adoptOwnCopy(payload.members.get(localMemberId()));
 				applyMemberStates(payload.members);
 				if (dropped)
 				{
@@ -2649,8 +2656,8 @@ public class IronsPubBingoPlugin extends Plugin
 
 	void resetTileProgress(int tileIndex)
 	{
-		progress.remove(tileIndex);
-		progressFor(tileIndex).ts = System.currentTimeMillis();
+		TileProgress old = progress.remove(tileIndex);
+		progressFor(tileIndex).ts = nextTs(old == null ? null : old.ts, System.currentTimeMillis());
 		Set<Integer> tiles = new HashSet<>();
 		tiles.add(tileIndex);
 		broadcastOwnTiles(tiles);
@@ -3148,6 +3155,72 @@ public class IronsPubBingoPlugin extends Plugin
 	 *
 	 * @return whether progress changed
 	 */
+	/**
+	 * The timestamp for a change to a tile: now, but always past the tile's previous one,
+	 * so a change made after adopting a copy stamped ahead of this clock still wins.
+	 */
+	static long nextTs(Long previous, long now)
+	{
+		return previous == null ? now : Math.max(now, previous + 1);
+	}
+
+	/**
+	 * Takes the store's copy of our own tiles where it is newer than ours: an admin
+	 * reset the tile on the sheet, or this account played on another machine. A reset
+	 * arrives as an empty tile and clears ours outright. XP goals keep the local count,
+	 * because XP is tracked against this machine's own baseline and catches up by itself
+	 * on the next XP drop; adopting the number as well would count the gain twice.
+	 *
+	 * @return whether any tile changed
+	 */
+	private boolean adoptOwnCopy(TeamMemberState stored)
+	{
+		if (stored == null || stored.tiles == null || board == null)
+		{
+			return false;
+		}
+		boolean changed = false;
+		int tileCount = board.getTiles().size();
+		for (Map.Entry<Integer, TileProgress> entry : stored.tiles.entrySet())
+		{
+			Integer index = entry.getKey();
+			TileProgress theirs = entry.getValue();
+			if (index == null || index < 0 || index >= tileCount || theirs == null || theirs.ts == null)
+			{
+				continue;
+			}
+			TileProgress mine = progress.get(index);
+			if (mine != null && mine.ts != null && theirs.ts <= mine.ts)
+			{
+				continue;
+			}
+			changed = true;
+			if (!theirs.manual && (theirs.goals == null || theirs.goals.isEmpty()))
+			{
+				progress.remove(index);
+				progressFor(index).ts = theirs.ts;
+				continue;
+			}
+			BingoTile tile = board.getTiles().get(index);
+			TileProgress local = progressFor(index);
+			local.manual = theirs.manual;
+			for (int g = 0; g < tile.goals.size(); g++)
+			{
+				if (tile.goals.get(g).goalType == GoalType.XP)
+				{
+					continue;
+				}
+				GoalProgress from = theirs.goal(g, tile.goals.size());
+				GoalProgress into = local.goal(g, tile.goals.size());
+				into.n = from.n;
+				into.matched = from.matched == null ? null : new HashSet<>(from.matched);
+				into.got = from.got == null ? null : new LinkedHashMap<>(from.got);
+			}
+			local.ts = theirs.ts;
+		}
+		return changed;
+	}
+
 	static boolean applyKillCount(GoalProgress p, String boss, long reported, boolean countIt)
 	{
 		Map<String, long[]> kc = p.kcMap();
@@ -3295,7 +3368,8 @@ public class IronsPubBingoPlugin extends Plugin
 		long now = System.currentTimeMillis();
 		for (int tileIndex : changedTiles)
 		{
-			progressFor(tileIndex).ts = now;
+			TileProgress changed = progressFor(tileIndex);
+			changed.ts = nextTs(changed.ts, now);
 		}
 
 		Set<Integer> completedAfter = completedTiles();

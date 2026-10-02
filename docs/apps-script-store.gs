@@ -2783,13 +2783,23 @@ function sigList(values)
 	return cleaned.join(',');
 }
 
+/**
+ * The timestamp for an admin wipe: past anything a client may legitimately send (clocks
+ * up to MAX_CLOCK_SKEW_MS ahead are accepted), so no copy from before the wipe can win.
+ * The owner's client adopts the empty tile and stamps its next change after it.
+ */
+function wipeStamp()
+{
+	return Date.now() + MAX_CLOCK_SKEW_MS + 1;
+}
+
 /** Empties the given tiles in every team scope of the board, resurrection-proof. */
 function wipeTilesForBoardId(id, tileIndexes)
 {
 	var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
 	var rows = readRows(sheet);
 	var prefix = 'id_' + id + '_';
-	var stamp = Date.now();
+	var stamp = wipeStamp();
 	var wiped = 0;
 	for (var key in rows)
 	{
@@ -2936,7 +2946,7 @@ function resetStoreTileProgress(team, tileNumber)
 	}
 	var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
 	var rows = readRows(sheet);
-	var stamp = Date.now();
+	var stamp = wipeStamp();
 	var wiped = 0;
 	for (var key in rows)
 	{
