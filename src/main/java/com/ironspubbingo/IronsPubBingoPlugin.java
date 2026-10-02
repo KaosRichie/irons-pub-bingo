@@ -217,6 +217,8 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	private String loadedTeamCode;
 	private boolean loadedStoreMode;
+	/** When progress on each tile changed, for the loaded team scope (see BingoProgressHistory). */
+	private BingoProgressHistory history = new BingoProgressHistory();
 	/** SHA-256 of the exact board code this client imported; null without a board. */
 	private String boardCodeHash;
 	/** Swallows the ConfigChanged fired by our own revert of a cancelled team switch. */
@@ -799,6 +801,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		loadedTeamCode = teamCode;
 		loadedStoreMode = storeMode;
+		loadHistory();
 		teamProgress.clear();
 		frozenContributions.clear();
 		if (boardKey == null || configManager.getRSProfileKey() == null)
@@ -833,9 +836,83 @@ public class IronsPubBingoPlugin extends Plugin
 		loadRemovedMembers();
 	}
 
+	/** The history file of the loaded team scope, or null with no board or profile. */
+	private java.io.File historyFile()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (boardKey == null || profile == null)
+		{
+			return null;
+		}
+		String name = profile + "_" + boardKey + "_" + (loadedTeamCode == null ? "solo" : loadedTeamCode)
+			+ (loadedStoreMode ? "" : "_party");
+		return new java.io.File(new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "irons-pub-bingo"),
+			"history_" + name.replaceAll("[^A-Za-z0-9_-]", "_") + ".json");
+	}
+
+	/** Starts afresh and reads the scope's saved history off the client thread. */
+	private void loadHistory()
+	{
+		BingoProgressHistory fresh = new BingoProgressHistory();
+		history = fresh;
+		java.io.File file = historyFile();
+		if (file == null)
+		{
+			return;
+		}
+		executor.execute(() ->
+		{
+			if (!file.isFile())
+			{
+				return;
+			}
+			try
+			{
+				String json = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+				BingoProgressHistory saved = BingoProgressHistory.fromJson(gson, json);
+				clientThread.invoke(() ->
+				{
+					if (history == fresh)
+					{
+						fresh.absorb(saved);
+					}
+				});
+			}
+			catch (java.io.IOException e)
+			{
+				log.debug("Could not read the bingo progress history", e);
+			}
+		});
+	}
+
+	/** Writes the history if it changed, off the client thread. */
+	private void saveHistory()
+	{
+		java.io.File file = historyFile();
+		if (file == null || !history.dirty)
+		{
+			return;
+		}
+		history.dirty = false;
+		String json = gson.toJson(history);
+		executor.execute(() ->
+		{
+			try
+			{
+				file.getParentFile().mkdirs();
+				java.nio.file.Files.write(file.toPath(), json.getBytes(StandardCharsets.UTF_8));
+			}
+			catch (java.io.IOException e)
+			{
+				log.debug("Could not save the bingo progress history", e);
+			}
+		});
+	}
+
 	/** Writes the loaded team scope's members and frozen contributions. */
 	private void saveTeamCaches()
 	{
+		saveHistory();
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
 			teamCacheKey(loadedTeamCode, loadedStoreMode), gson.toJson(teamProgress));
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
@@ -1032,13 +1109,19 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return live;
 		}
-		// First look since completion, or someone in the snapshot has left while the
-		// tile stays complete: the snapshot is retaken at this moment.
-		frozen = new java.util.LinkedHashMap<>();
-		int goalCount = board.getTiles().get(tileIndex).goals.size();
-		for (Map.Entry<String, TileProgress> entry : live.entrySet())
+		// First look since completion, or someone in the snapshot has left while the tile
+		// stays complete: the snapshot is worked out again from the history, for the
+		// members on the team now, at the moment their progress completed the tile.
+		observeTile(tileIndex);
+		frozen = replaySnapshot(tileIndex, live);
+		if (frozen == null || !snapshotCompletes(tileIndex, frozen))
 		{
-			frozen.put(entry.getKey(), entry.getValue().toShare(goalCount));
+			frozen = new java.util.LinkedHashMap<>();
+			int goalCount = board.getTiles().get(tileIndex).goals.size();
+			for (Map.Entry<String, TileProgress> entry : live.entrySet())
+			{
+				frozen.put(entry.getKey(), entry.getValue().toShare(goalCount));
+			}
 		}
 		frozenContributions.put(tileIndex, frozen);
 		saveProgress(false);
@@ -1085,6 +1168,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
+		observeAllTiles();
 		for (int i = 0; i < board.getTiles().size(); i++)
 		{
 			memberProgressFor(i);
@@ -1107,25 +1191,128 @@ public class IronsPubBingoPlugin extends Plugin
 	private Map<String, TileProgress> liveMemberProgressFor(int tileIndex)
 	{
 		Map<String, TileProgress> result = new java.util.LinkedHashMap<>();
+		for (Map.Entry<String, String> entry : memberNamesFor(tileIndex).entrySet())
+		{
+			TeamMemberState member = OWN_MEMBER.equals(entry.getKey()) ? null : teamProgress.get(entry.getKey());
+			TileProgress tp = OWN_MEMBER.equals(entry.getKey()) ? progressFor(tileIndex)
+				: member == null ? null : member.tilesMap().get(tileIndex);
+			if (tp != null)
+			{
+				result.put(entry.getValue(), tp);
+			}
+		}
+		return result;
+	}
+
+	/** Key in memberNamesFor for this account, whose member id may not be known yet. */
+	private static final String OWN_MEMBER = "";
+
+	/**
+	 * Member id -> display name for everyone with progress on a tile, own account first
+	 * (keyed OWN_MEMBER). The names key the contribution rows and snapshots.
+	 */
+	private Map<String, String> memberNamesFor(int tileIndex)
+	{
+		Map<String, String> names = new java.util.LinkedHashMap<>();
+		Set<String> used = new HashSet<>();
 		// The saved name covers the first frames after login, before the game reports it:
 		// a different key would read as a member leaving and retake every snapshot.
 		String ownName = localPlayerName() != null ? localPlayerName() : lastKnownName;
-		result.put(ownName != null ? ownName : "You", progressFor(tileIndex));
-		for (TeamMemberState member : activeTeamProgress().values())
+		ownName = ownName != null ? ownName : "You";
+		names.put(OWN_MEMBER, ownName);
+		used.add(ownName);
+		for (Map.Entry<String, TeamMemberState> member : activeTeamProgress().entrySet())
 		{
-			TileProgress tp = member.tilesMap().get(tileIndex);
-			if (tp == null)
+			if (member.getValue().tilesMap().get(tileIndex) == null)
 			{
 				continue;
 			}
-			String name = member.name == null || member.name.isEmpty() ? "Unknown" : member.name;
-			while (result.containsKey(name))
+			String name = member.getValue().name == null || member.getValue().name.isEmpty()
+				? "Unknown" : member.getValue().name;
+			while (used.contains(name))
 			{
 				name += " *";
 			}
-			result.put(name, tp);
+			used.add(name);
+			names.put(member.getKey(), name);
 		}
-		return result;
+		return names;
+	}
+
+	/** Records everyone's current state of a tile in the progress history. Client thread. */
+	private void observeTile(int tileIndex)
+	{
+		String self = localMemberId();
+		if (board == null || self == null || tileIndex >= board.getTiles().size())
+		{
+			return;
+		}
+		int goalCount = board.getTiles().get(tileIndex).goals.size();
+		history.record(tileIndex, self, progressFor(tileIndex), goalCount);
+		for (Map.Entry<String, TeamMemberState> member : teamProgress.entrySet())
+		{
+			TileProgress tp = member.getValue().tilesMap().get(tileIndex);
+			if (tp != null && !member.getKey().equals(self))
+			{
+				history.record(tileIndex, member.getKey(), tp, goalCount);
+			}
+		}
+	}
+
+	private void observeAllTiles()
+	{
+		if (board != null)
+		{
+			for (int i = 0; i < board.getTiles().size(); i++)
+			{
+				observeTile(i);
+			}
+		}
+	}
+
+	/**
+	 * The tile's snapshot replayed from the history for the members on the team now,
+	 * keyed by display name, or null when the history can't place the completion.
+	 */
+	private Map<String, TileProgress> replaySnapshot(int tileIndex, Map<String, TileProgress> live)
+	{
+		String self = localMemberId();
+		if (self == null)
+		{
+			return null;
+		}
+		Map<String, String> names = memberNamesFor(tileIndex);
+		List<String> ids = new ArrayList<>();
+		for (String id : names.keySet())
+		{
+			ids.add(OWN_MEMBER.equals(id) ? self : id);
+		}
+		BingoTile tile = board.getTiles().get(tileIndex);
+		Map<String, TileProgress> replayed = history.snapshot(tileIndex, tile, ids);
+		if (replayed == null)
+		{
+			return null;
+		}
+		Map<String, TileProgress> snapshot = new java.util.LinkedHashMap<>();
+		for (Map.Entry<String, String> entry : names.entrySet())
+		{
+			TileProgress state = replayed.get(OWN_MEMBER.equals(entry.getKey()) ? self : entry.getKey());
+			TileProgress current = live.get(entry.getValue());
+			if (state != null && current != null && current.goals != null)
+			{
+				// The history keeps counts, not the received-items list: carry that over.
+				for (int g = 0; g < tile.goals.size(); g++)
+				{
+					GoalProgress now = current.goal(g, tile.goals.size());
+					if (now.got != null)
+					{
+						state.goal(g, tile.goals.size()).got = new LinkedHashMap<>(now.got);
+					}
+				}
+			}
+			snapshot.put(entry.getValue(), state != null ? state : new TileProgress());
+		}
+		return snapshot;
 	}
 
 	/**
@@ -2433,6 +2620,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
+		observeAllTiles();
 		Set<Integer> after = completedTiles();
 		freezeContributions(before, after);
 		String by = changedMembers == 1 && lastChangedName != null ? " (by " + lastChangedName + ")" : " (team)";
@@ -3733,6 +3921,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			TileProgress changed = progressFor(tileIndex);
 			changed.ts = nextTs(changed.ts, now);
+			observeTile(tileIndex);
 		}
 
 		Set<Integer> completedAfter = completedTiles();
