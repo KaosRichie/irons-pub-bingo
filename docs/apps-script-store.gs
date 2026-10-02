@@ -129,6 +129,10 @@ function doPost(e)
 	{
 		maybeRefreshViews(refreshAfter.board, refreshAfter.force);
 	}
+	// Web requests run fully authorized, so they deliver any announcements the Status
+	// dropdown's limited trigger context had to park. Outside the sync lock: Discord
+	// being slow must not hold every other player's sync.
+	flushWebhookQueue();
 	return output;
 }
 
@@ -171,10 +175,6 @@ function handlePost(e, deferRefresh)
 	}
 	try
 	{
-		// Web requests run fully authorized, so they deliver any announcements the
-		// Status dropdown's limited trigger context had to park.
-		flushWebhookQueue();
-
 		var board = String(body.board || '');
 		var members = body.members || {};
 
@@ -862,6 +862,29 @@ function cleanProofLinks(text)
 	return links.join('\n');
 }
 
+/**
+ * Runs an admin action under the same lock player syncs take, so neither overwrites
+ * the other's rows from a stale read. Returns null when the store stayed busy.
+ */
+function withStoreLock(waitMs, action)
+{
+	var lock = LockService.getScriptLock();
+	if (!lock.tryLock(waitMs))
+	{
+		return null;
+	}
+	try
+	{
+		return { value: action() };
+	}
+	finally
+	{
+		lock.releaseLock();
+	}
+}
+
+var STORE_BUSY_MESSAGE = 'The store is busy with player syncs. Try again in a few seconds.';
+
 /** Menu action: approve the request rows currently selected on the Requests tab. */
 function approveSelectedRequests()
 {
@@ -891,7 +914,13 @@ function resolveSelectedRequests(approve)
 			rows.push(r);
 		}
 	}
-	var done = resolveRequests(rows, approve);
+	var result = withStoreLock(30000, function () { return resolveRequests(rows, approve); });
+	if (!result)
+	{
+		SpreadsheetApp.getUi().alert(STORE_BUSY_MESSAGE);
+		return;
+	}
+	var done = result.value;
 	flushWebhookQueue();
 	SpreadsheetApp.getUi().alert(approve
 		? done + ' request(s) marked Done and written to the Adjustments tab.'
@@ -1219,45 +1248,75 @@ function noteAndProofLines(row)
  */
 function sendOrQueueWebhook(webhook, content)
 {
-	try
+	if (!postWebhook(webhook, content))
 	{
-		UrlFetchApp.fetch(webhook, {
-			method: 'post',
-			contentType: 'application/json',
-			payload: JSON.stringify({ content: content }),
-			muteHttpExceptions: true
-		});
-	}
-	catch (err)
-	{
-		var props = PropertiesService.getScriptProperties();
-		var queue = parseJson(props.getProperty('webhookQueue') || '[]', []);
-		queue.push({ webhook: webhook, content: content });
-		props.setProperty('webhookQueue', JSON.stringify(queue.slice(-20)));
+		// Callers hold the store lock (the Status dropdown, the menu), so this
+		// read-modify-write of the queue cannot interleave with another one.
+		enqueueWebhooks([{ webhook: webhook, content: content }]);
 	}
 }
 
-/** Delivers parked webhook messages. Call only from full-auth contexts. */
+/**
+ * Posts one message. Player text (names, notes) can never ping: mentions are off.
+ * @return true when Discord took it, or refused it for good (a broken webhook would
+ *     otherwise retry forever); false when it should be retried later
+ */
+function postWebhook(webhook, content)
+{
+	try
+	{
+		var code = UrlFetchApp.fetch(webhook, {
+			method: 'post',
+			contentType: 'application/json',
+			payload: JSON.stringify({ content: content, allowed_mentions: { parse: [] } }),
+			muteHttpExceptions: true
+		}).getResponseCode();
+		return code !== 429 && code < 500;
+	}
+	catch (err)
+	{
+		return false; // no external requests in this context, or Discord unreachable
+	}
+}
+
+function enqueueWebhooks(messages)
+{
+	var props = PropertiesService.getScriptProperties();
+	var queue = parseJson(props.getProperty('webhookQueue') || '[]', []);
+	props.setProperty('webhookQueue', JSON.stringify(queue.concat(messages).slice(-20)));
+}
+
+/**
+ * Delivers parked webhook messages. Call only from full-auth contexts, and never while
+ * holding the store lock: it takes the lock itself, only to move the queue, and posts
+ * outside it. Messages Discord did not take go back on the queue for the next flush.
+ */
 function flushWebhookQueue()
 {
 	try
 	{
-		var props = PropertiesService.getScriptProperties();
-		var raw = props.getProperty('webhookQueue');
-		if (!raw)
+		var taken = withStoreLock(5000, function ()
 		{
-			return;
-		}
-		var queue = parseJson(raw, []);
-		props.deleteProperty('webhookQueue');
+			var props = PropertiesService.getScriptProperties();
+			var raw = props.getProperty('webhookQueue');
+			if (raw)
+			{
+				props.deleteProperty('webhookQueue');
+			}
+			return parseJson(raw || '[]', []);
+		});
+		var queue = taken ? taken.value : [];
+		var failed = [];
 		for (var i = 0; i < queue.length; i++)
 		{
-			UrlFetchApp.fetch(queue[i].webhook, {
-				method: 'post',
-				contentType: 'application/json',
-				payload: JSON.stringify({ content: queue[i].content }),
-				muteHttpExceptions: true
-			});
+			if (!postWebhook(queue[i].webhook, queue[i].content))
+			{
+				failed.push(queue[i]);
+			}
+		}
+		if (failed.length)
+		{
+			withStoreLock(5000, function () { enqueueWebhooks(failed); });
 		}
 	}
 	catch (err)
@@ -2210,8 +2269,12 @@ function onOpen()
  */
 function applyBoardUpdate()
 {
-	var code = readBoardCode();
-	SpreadsheetApp.getUi().alert(reconcileBoardCode(code, code ? sha256Hex(code) : null));
+	var result = withStoreLock(30000, function ()
+	{
+		var code = readBoardCode();
+		return reconcileBoardCode(code, code ? sha256Hex(code) : null);
+	});
+	SpreadsheetApp.getUi().alert(result ? result.value : STORE_BUSY_MESSAGE);
 }
 
 /**
@@ -2654,7 +2717,7 @@ function resetTilePrompt()
 		{
 			return;
 		}
-		ui.alert(resetStoreTileProgress(picked.team, picked.tileNumber));
+		ui.alert(lockedTileReset(picked.team, picked.tileNumber));
 		return;
 	}
 	var answer = ui.prompt('Reset a tile\'s progress',
@@ -2673,7 +2736,7 @@ function resetTilePrompt()
 		ui.alert('Could not read that - type the team code, a space, and the tile number.');
 		return;
 	}
-	ui.alert(resetStoreTileProgress(team, tileNumber));
+	ui.alert(lockedTileReset(team, tileNumber));
 }
 
 /**
@@ -2737,6 +2800,12 @@ function selectedBoardTile()
  *
  * @return a human-readable summary for the menu alert
  */
+function lockedTileReset(team, tileNumber)
+{
+	var result = withStoreLock(30000, function () { return resetStoreTileProgress(team, tileNumber); });
+	return result ? result.value : STORE_BUSY_MESSAGE;
+}
+
 function resetStoreTileProgress(team, tileNumber)
 {
 	var scope = latestBoardForTeam(team);
@@ -2865,7 +2934,7 @@ function refreshAllViews()
 	var parsed = code ? parseJson(code, null) : null;
 	if (parsed && parsed.tiles)
 	{
-		seedMetaFromBoard(parsed, normalizedBoardId(parsed));
+		withStoreLock(30000, function () { seedMetaFromBoard(parsed, normalizedBoardId(parsed)); });
 	}
 	var sheet = getSheet(META_SHEET, META_HEADERS);
 	var values = sheet.getDataRange().getValues();
@@ -2887,10 +2956,28 @@ function onEdit(e)
 	if (sheet.getName() === REQUESTS_SHEET)
 	{
 		// Admin picked a status from the Status dropdown: apply it - "Done" writes the
-		// Adjustments ledger row (once), and the cell gets its status color.
-		if (e.range.getColumn() === 10 && e.range.getRow() >= 2 && e.range.getNumRows() === 1)
+		// Adjustments ledger row (once), and the cell gets its status color. A paste
+		// or drag-fill over several rows applies to each of them.
+		var first = e.range.getColumn();
+		if (first > 10 || first + e.range.getNumColumns() - 1 < 10)
 		{
-			setRequestStatus(e.range.getRow(), String(e.value || 'Pending'));
+			return;
+		}
+		var values = e.range.getValues();
+		var applied = withStoreLock(20000, function ()
+		{
+			for (var i = 0; i < values.length; i++)
+			{
+				var rowNumber = e.range.getRow() + i;
+				if (rowNumber >= 2)
+				{
+					setRequestStatus(rowNumber, String(values[i][10 - first] || 'Pending'));
+				}
+			}
+		});
+		if (!applied)
+		{
+			e.range.setNote(STORE_BUSY_MESSAGE + ' Set the status again to apply it.');
 		}
 		return;
 	}
