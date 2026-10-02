@@ -1798,7 +1798,10 @@ function tileTotals(board, meta, rows, removed)
 			{
 				var goalMeta = (meta.tiles[index].goals || [])[g] || {};
 				var matched = goals[g].matched;
-				var amount;
+				// The plain counter always adds up. On a distinct goal it carries admin
+				// credit, which has no item names - the plugin counts names + counter too.
+				var amount = Number(goals[g].n || 0);
+				into[index][g] += amount;
 				if (goalMeta.distinct && matched && matched.length)
 				{
 					// Distinct goals count different items once across the whole team.
@@ -1806,12 +1809,7 @@ function tileTotals(board, meta, rows, removed)
 					{
 						distinctSets[index][g][String(matched[m]).toLowerCase()] = true;
 					}
-					amount = matched.length;
-				}
-				else
-				{
-					amount = Number(goals[g].n || 0);
-					into[index][g] += amount;
+					amount += matched.length;
 				}
 				if (amount > 0)
 				{
@@ -1862,18 +1860,41 @@ function tileTotals(board, meta, rows, removed)
 			done.push(false);   // manual-only tile, not ticked
 			continue;
 		}
-		var anyMode = meta.tiles[t3].mode === 'ANY';
-		var complete = !anyMode;
-		for (var g3 = 0; g3 < goalsMeta.length; g3++)
-		{
-			var target = Number(goalsMeta[g3].target || 0);
-			var reached = target > 0 && (tracked[t3][g3] + verified[t3][g3]) >= target;
-			complete = anyMode ? (complete || reached) : (complete && reached);
-		}
-		done.push(complete);
+		done.push(tileReached(meta.tiles[t3], tracked[t3], verified[t3]));
 	}
 	return { tracked: tracked, verified: verified, done: done, verifiedManual: verifiedManual,
 		contrib: contrib, manualBy: manualBy };
+}
+
+/**
+ * The plugin's completion rule (BingoTile.isComplete), so the store, the portal and
+ * the announcements agree with the game: a manual goal never completes by count, an
+ * ALL tile with a manual goal needs the tick, and an ANY tile needs one counted goal.
+ */
+function tileReached(tileMeta, tracked, verified)
+{
+	var goalsMeta = tileMeta.goals || [];
+	var anyMode = tileMeta.mode === 'ANY';
+	var sawManual = false;
+	for (var g = 0; g < goalsMeta.length; g++)
+	{
+		if (goalsMeta[g].manual)
+		{
+			sawManual = true;
+			continue;
+		}
+		var target = Number(goalsMeta[g].target || 0);
+		var reached = target > 0 && (tracked[g] + verified[g]) >= target;
+		if (anyMode && reached)
+		{
+			return true;
+		}
+		if (!anyMode && !reached)
+		{
+			return false;
+		}
+	}
+	return !anyMode && !sawManual;
 }
 
 /** "Kaos: 40 · Rich: 12", largest contribution first. */
