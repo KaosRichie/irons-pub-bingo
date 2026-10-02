@@ -93,7 +93,10 @@ var SCORES_HEADERS = ['board', 'points', 'updated'];
 
 var ADJ_HEADERS = ['Team', 'Tile', 'Goal', 'Player', 'Add (+/-)', 'Complete', 'Note',
 	'Verified by', 'Added', '-> Tile label', '-> Running total', '-> Issues'];
-var STORE_HEADERS = ['board', 'member', 'name', 'updated', 'data'];
+var STORE_HEADERS = ['board', 'member', 'name', 'updated', 'data', 'key'];
+// Largest sync body accepted. A real one is a few kilobytes; anything near this is junk
+// that would otherwise hold the store lock while it is parsed and written.
+var MAX_BODY_CHARS = 200000;
 var META_HEADERS = ['board', 'updated', 'meta'];
 var TEAMS_HEADERS = ['Code', 'Name', 'Webhook'];
 var REMOVED_HEADERS = ['board', 'member', 'when', 'reason'];
@@ -141,6 +144,10 @@ function handlePost(e, deferRefresh)
 	var body;
 	try
 	{
+		if (String(e.postData.contents || '').length > MAX_BODY_CHARS)
+		{
+			return jsonError('Request too large');
+		}
 		body = JSON.parse(e.postData.contents);
 
 		// Read-only requests answer before the write lock is even attempted: a store
@@ -177,14 +184,36 @@ function handlePost(e, deferRefresh)
 	{
 		var board = String(body.board || '');
 		var members = body.members || {};
+		// Every sheet read is a slow RPC, so each tab is read ONCE per request and the
+		// results are threaded through (the write lock is held - nothing can change).
+		// (Not created here: a request the allow-list below rejects must leave no tabs.)
+		var existingStore = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(STORE_SHEET);
+		var rows = existingStore ? readRows(existingStore) : {};
+		// Proof of identity. The /exec URL is shared clan-wide and member ids are public,
+		// so a write for a member must carry that member's key (derived from their
+		// account on their own client). Rows claimed by a key accept only that key.
+		var keyHash = memberKeyHash(body.memberKey);
+		var self = /^[0-9a-f]{16}$/.test(String(body.rejoin || '')) ? String(body.rejoin) : null;
+		if (self && !ownsMember(rows, self, keyHash))
+		{
+			self = null;
+		}
 
 		if (body.remove && body.remove.length)
 		{
 			// A player who left this team scope: delete their row and tombstone the id,
 			// so teammates' cached copies can't push it back (see the Removed tab).
 			// Processed before the team allow-list so leaving a since-delisted team
-			// still cleans up.
-			removeMembers(board, body.remove);
+			// still cleans up. Only the member themselves can leave.
+			var leaving = [];
+			for (var li = 0; li < body.remove.length; li++)
+			{
+				if (ownsMember(rows, String(body.remove[li]), keyHash))
+				{
+					leaving.push(String(body.remove[li]));
+				}
+			}
+			removeMembers(board, leaving);
 		}
 
 		// The Teams tab is the allow-list: only codes the host listed may write. An empty
@@ -238,17 +267,17 @@ function handlePost(e, deferRefresh)
 				newerVersion: outdated ? canonicalVersion : undefined }))
 				.setMimeType(ContentService.MimeType.JSON);
 		}
-		if (body.rejoin && /^[0-9a-f]{16}$/.test(String(body.rejoin)))
+		if (self)
 		{
 			// A member syncing here by choice clears any "left" tombstone they carry in
 			// this scope, so switching back to a team you left heals itself. Hand-added
 			// tombstones (no "left" reason) are admin evictions and stay.
-			clearLeftTombstones(board, String(body.rejoin));
+			clearLeftTombstones(board, self);
 			// ...and their arrival moves their row: one team per board per member.
-			moveMemberIfElsewhere(board, String(body.rejoin));
+			moveMemberIfElsewhere(board, self);
 		}
 
-		if (body.request)
+		if (body.request && ownsMember(rows, String(body.request.member || ''), keyHash))
 		{
 			// A member asking an admin to credit something the tracker missed - lands on
 			// the Requests tab for review (Irons Pub Bingo menu -> approve/deny).
@@ -265,13 +294,15 @@ function handlePost(e, deferRefresh)
 		var metaChanged = false;
 		if (body.meta)
 		{
-			metaChanged = saveMeta(board, body.meta);
+			// The board summary admins and the portal read. With an official board code
+			// pasted it is built from that code, never taken from the client: a client
+			// could otherwise rename tiles or lower targets on the sheet.
+			var official = canonicalCode ? parseJson(canonicalCode, null) : null;
+			metaChanged = saveMeta(board, official && official.tiles
+				? metaFromBoard(official) : cleanClientMeta(body.meta));
 		}
 
-		// Every sheet read is a slow RPC, so each tab is read ONCE per request and the
-		// results are threaded through (the write lock is held - nothing can change).
 		var sheet = getSheet(STORE_SHEET, STORE_HEADERS);
-		var rows = readRows(sheet);
 		var marks = allDepartures();
 		var removed = removedFor(board, marks);
 
@@ -296,10 +327,11 @@ function handlePost(e, deferRefresh)
 
 		for (var memberId in members)
 		{
-			// Member keys are 16-hex derived account ids. Anything else - notably the
-			// "admin:" members this script generates - is never accepted from a client,
-			// so a leaked URL cannot forge verified credit and echoes cannot loop.
-			if (!/^[0-9a-f]{16}$/.test(memberId) || removed[memberId] || ownedElsewhere[memberId])
+			// A client writes only its own row, proven by its key: relayed copies of
+			// teammates are ignored, so nobody can overwrite (or wipe) someone else, and
+			// a player who never turned the store on is never uploaded by a teammate.
+			// The "admin:" members this script generates are never accepted either.
+			if (memberId !== self || removed[memberId] || ownedElsewhere[memberId])
 			{
 				continue;
 			}
@@ -327,10 +359,10 @@ function handlePost(e, deferRefresh)
 					changed = true;
 				}
 			}
-			var name = incoming.name || (row ? row.name : '');
-			if (!row || changed || name !== row.name)
+			var name = cleanPlayerName(incoming.name) || (row ? row.name : '');
+			if (!row || changed || name !== row.name || (keyHash && !row.key))
 			{
-				writeStoreRow(sheet, rows, key, board, memberId, name, current);
+				writeStoreRow(sheet, rows, key, board, memberId, name, current, keyHash);
 			}
 		}
 
@@ -766,7 +798,7 @@ function removedFor(board, marks)
 function recordRequest(board, request, fromForm)
 {
 	var member = fromForm ? 'form' : String(request.member || '');
-	var player = String(request.player || '').trim();
+	var player = cleanPlayerName(request.player);
 	var tile = parseInt(request.tile, 10);
 	var goal = request.goal == null || request.goal === '' ? '' : parseInt(request.goal, 10);
 	var add = request.add == null || request.add === '' ? '' : Number(request.add);
@@ -983,8 +1015,8 @@ function setRequestStatus(rowNumber, status)
 		var scope = latestBoardForTeam(String(row[1] || '').trim().toLowerCase());
 		var tileIndex = parseInt(row[3], 10) - 1;
 		var doneBefore = scope ? tileTotals(scope.board, scope.meta).done.slice() : null;
-		getSheet(ADJ_SHEET, ADJ_HEADERS).appendRow([row[1], row[3], row[4], row[2], row[5],
-			row[6], 'request ' + requestId + ': ' + row[7], 'approved request']);
+		getSheet(ADJ_SHEET, ADJ_HEADERS).appendRow([row[1], row[3], row[4], cleanCellText(row[2]),
+			row[5], row[6], 'request ' + requestId + ': ' + row[7], 'approved request']);
 		announceApproval(row, scope, tileIndex, doneBefore);
 	}
 	else if (status !== 'Done' && removeAdjustmentForRequest(requestId))
@@ -2222,26 +2254,90 @@ function readRows(sheet)
 			member: member,
 			name: String(values[i][2] || ''),
 			updated: String(values[i][3] || ''),
-			data: String(values[i][4] || '')
+			data: String(values[i][4] || ''),
+			key: String(values[i][5] || '')
 		};
 	}
 	return rows;
 }
 
-function writeStoreRow(sheet, rows, key, board, memberId, name, tiles)
+function writeStoreRow(sheet, rows, key, board, memberId, name, tiles, keyHash)
 {
 	var updated = new Date().toISOString();
 	var data = JSON.stringify(tiles);
 	var row = rows[key];
 	var rowIndex = row ? row.rowIndex : sheet.getLastRow() + 1;
-	var range = sheet.getRange(rowIndex, 1, 1, 5);
+	var memberKey = (row && row.key) || keyHash || '';
+	var range = sheet.getRange(rowIndex, 1, 1, 6);
 	// Force plain-text cells: account ids are long hex strings and Sheets would otherwise
 	// coerce anything numeric-looking, mangling the member key.
 	range.setNumberFormat('@');
-	range.setValues([[board, memberId, name, updated, data]]);
+	range.setValues([[board, memberId, name, updated, data, memberKey]]);
 	// Keep the in-memory map current: respond() reuses it instead of re-reading the tab.
 	rows[key] = { rowIndex: rowIndex, board: board, member: memberId,
-		name: name, updated: updated, data: data };
+		name: name, updated: updated, data: data, key: memberKey };
+}
+
+/** What the sheet keeps of a member key: a hash, so admins reading it can't sign as them. */
+function memberKeyHash(memberKey)
+{
+	var raw = String(memberKey || '');
+	return /^[0-9a-f]{64}$/.test(raw) ? sha256Hex('member-key:' + raw).slice(0, 32) : '';
+}
+
+/**
+ * Whether a request carrying this key hash may act for the member: every row of theirs
+ * that has a key must have this one. Rows from before keys existed have none; the
+ * member's first keyed sync claims them. Clearing a row's key cell (hidden Store tab)
+ * resets the claim, for a player who somehow got locked out.
+ */
+function ownsMember(rows, memberId, keyHash)
+{
+	if (!/^[0-9a-f]{16}$/.test(memberId))
+	{
+		return false;
+	}
+	for (var k in rows)
+	{
+		if (rows[k].member === memberId && rows[k].key && rows[k].key !== keyHash)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Text that ends up in sheet cells must never start a formula: a player name such as
+ * =IMPORTDATA(...) would run in the host's spreadsheet. Names are trimmed and capped.
+ */
+function cleanPlayerName(name)
+{
+	return String(name || '').replace(/^[\s=+\-@]+/, '').trim().slice(0, 40);
+}
+
+function cleanCellText(text)
+{
+	var value = String(text == null ? '' : text);
+	return /^[=+\-@]/.test(value) ? "'" + value : value;
+}
+
+/** A client's board summary (no official board code pasted), with its text made safe. */
+function cleanClientMeta(meta)
+{
+	var clean = JSON.parse(JSON.stringify(meta || {}));
+	clean.name = cleanCellText(clean.name);
+	var tiles = clean.tiles || [];
+	for (var t = 0; t < tiles.length; t++)
+	{
+		tiles[t].label = cleanCellText(tiles[t].label);
+		var goals = tiles[t].goals || [];
+		for (var g = 0; g < goals.length; g++)
+		{
+			goals[g].label = cleanCellText(goals[g].label);
+		}
+	}
+	return clean;
 }
 
 function parseJson(text, fallback)

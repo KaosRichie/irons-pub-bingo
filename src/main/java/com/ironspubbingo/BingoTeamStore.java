@@ -45,6 +45,9 @@ class BingoTeamStore
 
 	private OkHttpClient storeClient;
 
+	/** The logged-in account's member key, sent with every request (null logged out). */
+	private volatile String memberKey;
+
 	@Inject
 	private Gson gson;
 
@@ -124,6 +127,12 @@ class BingoTeamStore
 		String error;
 		/** Response beside a "Board updated" rejection: the version the host pasted. */
 		Integer newerVersion;
+		/**
+		 * Request: proof that the sender is the member it syncs as. Derived from the
+		 * account on this client, so it is the same on every machine the player uses,
+		 * and it cannot be computed from the public member id.
+		 */
+		String memberKey;
 
 		StorePayload(String board, Map<String, TeamMemberState> members, Object meta)
 		{
@@ -279,8 +288,14 @@ class BingoTeamStore
 		post(body, true, callback);
 	}
 
+	void setMemberKey(String key)
+	{
+		memberKey = key;
+	}
+
 	private void post(StorePayload body, boolean requireEnabled, BiConsumer<StorePayload, String> callback)
 	{
+		body.memberKey = memberKey;
 		HttpUrl url = HttpUrl.parse(config.teamSyncUrl().trim());
 		if ((requireEnabled && !config.teamStoreEnabled()) || url == null)
 		{

@@ -150,5 +150,9 @@ finish around Lumbridge in a few minutes.
 - Clients must run the host's exact board code. A locally edited board can't sync.
 - Progress belongs to the team it was earned on.
 - Credit requests count only once an admin approves them.
+- Each client proves which account it syncs for, so the store URL alone can't change
+  another player's progress. If a player is ever locked out, clear their key cell on
+  the hidden Store tab.
+- Players are only uploaded by their own client, never by a teammate.
 - A rebuilt client could still fake numbers. The sheet's per-player audit and your proof
   policy are the backstop.
