@@ -2428,10 +2428,10 @@ function reconcileBoardCode(canonicalCode, canonicalHash)
 	// Every code hash seen for this id, newest last, so the sync gate can tell an
 	// outdated client from a tampered one whatever version it reports.
 	var hashes = previous && previous.id === id && previous.hashes ? previous.hashes : [];
-	if (hashes.indexOf(canonicalHash) < 0)
-	{
-		hashes.push(canonicalHash);
-	}
+	// The current code always sits last: re-pasting an earlier code makes it current
+	// again, and the code it replaced becomes the outdated one.
+	hashes = hashes.filter(function (h) { return h !== canonicalHash; });
+	hashes.push(canonicalHash);
 	hashes = hashes.slice(-30);
 	props.setProperty('boardSigHash', canonicalHash);
 	props.setProperty('boardSigs', JSON.stringify({ id: id, sigs: sigs, hashes: hashes }));
@@ -2469,10 +2469,10 @@ function isEarlierBoardCode(hash)
 	{
 		return false;
 	}
-	var record = parseJson(PropertiesService.getScriptProperties().getProperty('boardSigs') || 'null', null);
+	var props = PropertiesService.getScriptProperties();
+	var record = parseJson(props.getProperty('boardSigs') || 'null', null);
 	var hashes = record && record.hashes ? record.hashes : [];
-	var at = hashes.indexOf(hash);
-	return at >= 0 && at < hashes.length - 1;
+	return hash !== props.getProperty('boardSigHash') && hashes.indexOf(hash) >= 0;
 }
 
 /** The plugin's board id normalization; '' when the board has no id. */
@@ -2804,7 +2804,9 @@ function wipeTilesForBoardId(id, tileIndexes)
 	for (var key in rows)
 	{
 		var row = rows[key];
-		if (row.board.indexOf(prefix) !== 0)
+		// Exactly this board: "id_spring_" must not also match board "spring_2"
+		// (a team code never contains an underscore, so the rest is one segment).
+		if (row.board.indexOf(prefix) !== 0 || row.board.substring(prefix.length).indexOf('_') >= 0)
 		{
 			continue;
 		}
