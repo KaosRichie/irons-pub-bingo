@@ -747,7 +747,8 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			own.forEach((tile, tp) ->
 			{
-				if (tile != null && tp != null)
+				// Tiles past the end exist when a board was resized under the same id.
+				if (tile != null && tp != null && (board == null || tile < board.getTiles().size()))
 				{
 					progress.put(tile, tp);
 				}
@@ -1516,12 +1517,13 @@ public class IronsPubBingoPlugin extends Plugin
 		pendingBroadcast.clear();
 		parked.forEach((tile, tp) ->
 		{
-			if (tile != null && tp != null)
+			if (tile != null && tp != null && (board == null || tile < board.getTiles().size()))
 			{
 				progress.put(tile, tp);
 			}
 		});
 		reseedXpBaselines();
+		rebaselineKillCounts();
 	}
 
 	private void resetOwnProgress()
@@ -3122,6 +3124,13 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		else if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
 		{
+			if (event.getGameState() == GameState.LOGIN_SCREEN)
+			{
+				// Marks banked or used on mobile before the next login must not read as
+				// a drop to pay back against real pickups.
+				lastMarkCount = -1;
+				markDropDebt = 0;
+			}
 			flushBroadcast();
 			if (dirty)
 			{
@@ -3413,11 +3422,52 @@ public class IronsPubBingoPlugin extends Plugin
 		return changed;
 	}
 
+	/**
+	 * Kill counts kept counting on the other team while this progress was parked, so
+	 * each entry keeps what it had counted and re-baselines at the next kill count
+	 * message: [counted, -1] until then.
+	 */
+	private void rebaselineKillCounts()
+	{
+		for (TileProgress tp : progress.values())
+		{
+			if (tp.goals == null)
+			{
+				continue;
+			}
+			for (GoalProgress p : tp.goals)
+			{
+				if (p == null || p.kc == null)
+				{
+					continue;
+				}
+				for (long[] entry : p.kc.values())
+				{
+					if (entry[1] >= 0)
+					{
+						entry[0] = entry[1] - entry[0];
+						entry[1] = -1;
+					}
+				}
+			}
+		}
+	}
+
 	static boolean applyKillCount(GoalProgress p, String boss, long reported, boolean countIt)
 	{
 		Map<String, long[]> kc = p.kcMap();
 		String key = boss.toLowerCase(Locale.ROOT);
 		long[] entry = kc.get(key);
+		if (entry != null && entry[1] < 0)
+		{
+			// Waiting to re-baseline (see rebaselineKillCounts): keep what was counted, as
+			// if the last sighting were just before this one, so the code below counts
+			// this message's kill exactly when it is inside the event window.
+			long counted = entry[0];
+			long previous = countIt ? reported - 1 : reported;
+			entry[0] = previous - counted;
+			entry[1] = previous;
+		}
 		if (!countIt)
 		{
 			// Ride the baseline: absorb kills outside the event window without counting.
@@ -3447,7 +3497,7 @@ public class IronsPubBingoPlugin extends Plugin
 		long total = 0;
 		for (long[] e : kc.values())
 		{
-			total += e[1] - e[0];
+			total += e[1] < 0 ? e[0] : e[1] - e[0];
 		}
 		if (total == p.n)
 		{

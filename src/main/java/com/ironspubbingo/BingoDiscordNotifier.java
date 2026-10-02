@@ -77,8 +77,20 @@ class BingoDiscordNotifier
 	 * The callback gets (link, error) on an arbitrary thread.
 	 */
 	void postProofScreenshot(String player, String requestDetail, String team,
-		java.util.function.BiConsumer<String, String> callback)
+		java.util.function.BiConsumer<String, String> rawCallback)
 	{
+		// Exactly one answer, whatever happens: the request dialog waits on it. A client
+		// that stops drawing frames (minimized) or a Discord reply that never parses
+		// would otherwise leave the request unsent for the rest of the session.
+		java.util.concurrent.atomic.AtomicBoolean answered = new java.util.concurrent.atomic.AtomicBoolean();
+		java.util.function.BiConsumer<String, String> callback = (link, error) ->
+		{
+			if (answered.compareAndSet(false, true))
+			{
+				rawCallback.accept(link, error);
+			}
+		};
+		executor.schedule(() -> callback.accept(null, "Screenshot timed out"), 60, java.util.concurrent.TimeUnit.SECONDS);
 		HttpUrl url = HttpUrl.parse(config.webhookUrl().trim());
 		if (url == null)
 		{
@@ -123,7 +135,21 @@ class BingoDiscordNotifier
 							callback.accept(null, "Discord webhook returned " + r.code());
 							return;
 						}
-						resolveMessageLink(url, gson.fromJson(r.body().string(), JsonObject.class), callback);
+						JsonObject message;
+						try
+						{
+							message = gson.fromJson(r.body().string(), JsonObject.class);
+						}
+						catch (RuntimeException e)
+						{
+							message = null;
+						}
+						if (message == null)
+						{
+							callback.accept(null, "Discord sent an unreadable reply");
+							return;
+						}
+						resolveMessageLink(url, message, callback);
 					}
 				}
 			});
@@ -199,8 +225,15 @@ class BingoDiscordNotifier
 					String guildId = null;
 					if (r.isSuccessful() && r.body() != null)
 					{
-						JsonObject info = gson.fromJson(r.body().string(), JsonObject.class);
-						guildId = info != null && info.has("guild_id") ? info.get("guild_id").getAsString() : null;
+						try
+						{
+							JsonObject info = gson.fromJson(r.body().string(), JsonObject.class);
+							guildId = info != null && info.has("guild_id") ? info.get("guild_id").getAsString() : null;
+						}
+						catch (RuntimeException e)
+						{
+							guildId = null; // fall back to the attachment link
+						}
 					}
 					finishWithLink(guildId == null ? fallback
 						: "https://discord.com/channels/" + guildId + "/" + channelId + "/" + messageId, callback);

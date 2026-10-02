@@ -455,7 +455,11 @@ class BingoTileDetail extends JPanel
 			}
 			catch (NumberFormatException e)
 			{
-				JOptionPane.showMessageDialog(this, "Amount must be a whole number.",
+				add = -1L;
+			}
+			if (add <= 0)
+			{
+				JOptionPane.showMessageDialog(this, "Amount must be a whole number above 0.",
 					"Irons Pub Bingo", JOptionPane.WARNING_MESSAGE);
 				return;
 			}
