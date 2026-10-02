@@ -1,0 +1,130 @@
+{
+  "name": "Example Irons Pub Bingo",
+  "size": 5,
+  "tiles": [
+    {
+      "label": "3x ToA Purples",
+      "goals": [{"type": "RAID_PURPLE", "raids": ["TOA"], "count": 3}]
+    },
+    {
+      "label": "5x Ancient Pages from Mith Drags",
+      "goals": [{"type": "DROP", "items": ["Ancient page*"], "sources": ["Mithril dragon"], "count": 5}]
+    },
+    {
+      "label": "3x Zenytes / 3x Venator shards",
+      "mode": "ANY",
+      "goals": [
+        {"type": "DROP", "items": ["Zenyte shard"], "count": 3},
+        {"type": "DROP", "items": ["Venator shard"], "count": 3}
+      ]
+    },
+    {
+      "label": "Any Nightmare unique",
+      "goals": [{"type": "DROP", "items": ["Inquisitor's*", "Nightmare staff", "Eldritch orb", "Harmonised orb", "Volatile orb"], "count": 1}]
+    },
+    {
+      "label": "2x Unsired",
+      "goals": [{"type": "DROP", "items": ["Unsired"], "sources": ["Abyssal Sire"], "count": 2}]
+    },
+    {
+      "label": "2 Unique Champion Scrolls",
+      "goals": [{"type": "DROP", "items": ["*champion scroll*"], "distinct": true, "count": 2}]
+    },
+    {
+      "label": "Any Wilderness Ring",
+      "goals": [{"type": "DROP", "items": ["Ring of the gods", "Tyrannical ring", "Treasonous ring"], "count": 1}]
+    },
+    {
+      "label": "5 Unique GWD Drops",
+      "goals": [{"type": "DROP", "distinct": true, "count": 5, "items": [
+        "Armadyl helmet", "Armadyl chestplate", "Armadyl chainskirt", "Armadyl hilt",
+        "Bandos chestplate", "Bandos tassets", "Bandos boots", "Bandos hilt",
+        "Armadyl crossbow", "Saradomin sword", "Saradomin's light", "Saradomin hilt",
+        "Staff of the dead", "Zamorakian spear", "Steam battlestaff", "Zamorak hilt"
+      ]}]
+    },
+    {
+      "label": "2x Any Pet",
+      "goals": [{"type": "PET", "count": 2}]
+    },
+    {
+      "label": "100 Zulrah Kills",
+      "goals": [{"type": "KC", "npcs": ["Zulrah"], "count": 100}]
+    },
+    {
+      "label": "3 Zulrah Uniques",
+      "goals": [{"type": "DROP", "items": ["Tanzanite fang", "Magic fang", "Serpentine visage", "Uncut onyx"], "sources": ["Zulrah"], "count": 3}]
+    },
+    {
+      "label": "Demon Slayer: Yama unique or 2x TD uniques",
+      "mode": "ANY",
+      "goals": [
+        {"type": "DROP", "items": ["Soulflame horn", "Oathplate helm", "Oathplate chest", "Oathplate legs"], "sources": ["Yama*"], "count": 1},
+        {"type": "DROP", "items": ["Tormented synapse", "Burning claw*"], "count": 2}
+      ]
+    },
+    {
+      "label": "5M Slayer XP",
+      "goals": [{"type": "XP", "skill": "SLAYER", "amount": 5000000}]
+    },
+    {
+      "label": "Single drop worth 4m+",
+      "goals": [{"type": "VALUE", "amount": 4000000, "count": 1}]
+    },
+    {
+      "label": "10 Clues from Sepulchre",
+      "goals": [{"type": "DROP", "items": ["Clue scroll*"], "sources": ["*Hallowed*", "Coffin*"], "count": 10}]
+    },
+    {
+      "label": "2 Long bones or a Curved bone from Mole",
+      "mode": "ANY",
+      "goals": [
+        {"type": "DROP", "items": ["Long bone"], "sources": ["Giant Mole"], "count": 2},
+        {"type": "DROP", "items": ["Curved bone"], "sources": ["Giant Mole"], "count": 1}
+      ]
+    },
+    {
+      "label": "4 pieces of Dragon armour",
+      "description": "Any dragon armour drops: med helm, chainbody, legs/skirt, sq shield, boots",
+      "goals": [{"type": "DROP", "distinct": true, "count": 4, "items": [
+        "Dragon med helm", "Dragon chainbody", "Dragon platelegs", "Dragon plateskirt", "Dragon sq shield", "Dragon boots"
+      ]}]
+    },
+    {
+      "label": "Kill TzKal-Zuk (Infernal)",
+      "goals": [{"type": "KC", "npcs": ["TzKal-Zuk"], "count": 1}]
+    },
+    {
+      "label": "Sub-7 Corrupted Gauntlet",
+      "goals": [{"type": "CHAT", "pattern": "Corrupted challenge duration: [0-6]:[0-5][0-9]", "count": 1}]
+    },
+    {
+      "label": "Kill an Awakened DT2 Boss",
+      "description": "Screenshot required for verification",
+      "goals": [{"type": "MANUAL"}]
+    },
+    {
+      "label": "Sepulchre Floor 5 POV",
+      "description": "Record a full floor 5 run and post it in Discord",
+      "goals": [{"type": "MANUAL"}]
+    },
+    {
+      "label": "3 Cerberus Crystals",
+      "goals": [{"type": "DROP", "items": ["Primordial crystal", "Pegasian crystal", "Eternal crystal"], "sources": ["Cerberus"], "count": 3}]
+    },
+    {
+      "label": "1x Dragon Limbs",
+      "goals": [{"type": "DROP", "items": ["Dragon limbs"], "count": 1}]
+    },
+    {
+      "label": "Any CoX or ToB Purple",
+      "goals": [{"type": "RAID_PURPLE", "raids": ["COX", "TOB"], "count": 1}]
+    },
+    {
+      "label": "2 Unique Barrows Pieces",
+      "goals": [{"type": "DROP", "distinct": true, "count": 2, "sources": ["Barrows"], "items": [
+        "Ahrim's*", "Dharok's*", "Guthan's*", "Karil's*", "Torag's*", "Verac's*"
+      ]}]
+    }
+  ]
+}
