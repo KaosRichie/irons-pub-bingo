@@ -35,6 +35,8 @@ mobile players can file requests there.
 - For pet tiles, enable **Collection log - New addition notification**. Specific pet
   tiles need it, and it names the pet on any-pet tiles.
 - XP and kill-count goals start counting when you import the board.
+- When your host publishes a newer board, an overlay in game says so. Reimport it from
+  the store. The **New board overlay** setting turns the overlay off.
 - Each team keeps its own progress. Switching teams parks it, switching back restores it.
 - Optional: set a **Discord webhook** to post your completions with a screenshot.
 

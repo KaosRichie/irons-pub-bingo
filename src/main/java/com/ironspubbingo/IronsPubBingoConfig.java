@@ -78,6 +78,18 @@ public interface IronsPubBingoConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "boardUpdateOverlay",
+		name = "New board overlay",
+		description = "Show an in-game overlay when a newer board is out.",
+		section = generalSection,
+		position = 17
+	)
+	default boolean boardUpdateOverlay()
+	{
+		return true;
+	}
+
 	@ConfigSection(
 		name = "Progress Messages",
 		description = "Which goal types show progress chat messages, while Progress chat messages is on",

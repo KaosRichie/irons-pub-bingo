@@ -67,6 +67,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ImageUtil;
@@ -103,6 +104,12 @@ public class IronsPubBingoPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private BingoBoardUpdateOverlay boardUpdateOverlay;
 
 	@Inject
 	private ClientThread clientThread;
@@ -258,6 +265,7 @@ public class IronsPubBingoPlugin extends Plugin
 	protected void startUp()
 	{
 		running = true;
+		overlayManager.add(boardUpdateOverlay);
 		wsClient.registerMessage(IronsPubBingoMemberState.class);
 		wsClient.registerMessage(IronsPubBingoSyncRequest.class);
 		wsClient.registerMessage(IronsPubBingoPing.class);
@@ -316,6 +324,7 @@ public class IronsPubBingoPlugin extends Plugin
 	protected void shutDown()
 	{
 		running = false;
+		overlayManager.remove(boardUpdateOverlay);
 		storeGeneration++;
 		if (storePollTask != null)
 		{
