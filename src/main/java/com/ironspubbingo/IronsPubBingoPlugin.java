@@ -3659,6 +3659,12 @@ public class IronsPubBingoPlugin extends Plugin
 				continue;
 			}
 			nonXpChange = true;
+			if (completedBefore.contains(t))
+			{
+				// The tile is already done for the team - by another goal, a teammate or
+				// an admin. Counting goes on quietly; announcing it reads as if it were not.
+				continue;
+			}
 			long merged = goal.progressOf(mergedProgressFor(t).goal(g, tile.goals.size()));
 			if (progressMessagesEnabled(goal.goalType)
 				&& merged <= goal.target() && shown++ < MAX_PROGRESS_MESSAGES_PER_EVENT)
