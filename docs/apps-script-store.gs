@@ -99,7 +99,7 @@ var TEAMS_HEADERS = ['Code', 'Name', 'Webhook'];
 var REMOVED_HEADERS = ['board', 'member', 'when', 'reason'];
 var REQUESTS_SHEET = 'Requests';
 var REQUESTS_HEADERS = ['When', 'Team', 'Player', 'Tile', 'Goal', 'Add', 'Complete', 'Note',
-	'Member', 'Status', 'Proof links'];
+	'Member', 'Status', 'Proof links', 'Id'];
 var REQUEST_STATUSES = ['Pending', 'Done', 'Rejected'];
 var STATUS_COLORS = { Pending: '#fff2cc', Done: '#d9ead3', Rejected: '#f4cccc' };
 // Machine-written tabs stay hidden so the admin view is just the tabs humans use
@@ -805,9 +805,46 @@ function recordRequest(board, request, fromForm)
 	var range = sheet.getRange(row, 1, 1, REQUESTS_HEADERS.length);
 	range.setNumberFormat('@');
 	range.setValues([[new Date().toISOString(), team, player, tileCell, goal, add, complete,
-		note, member, 'Pending', links]]);
+		note, member, 'Pending', links, newRequestId()]]);
+	ensureRequestIdHeader(sheet);
 	styleStatusCell(sheet, row, 'Pending');
 	return row;
+}
+
+/**
+ * A request's identity for its ledger rows. Row numbers are not identities: admins
+ * sort and delete rows, and the next request would inherit an old row's approval.
+ */
+function newRequestId()
+{
+	return 'r' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+}
+
+/** Sheets made before the Id column existed get its header the first time it is used. */
+function ensureRequestIdHeader(sheet)
+{
+	var header = sheet.getRange(1, 12);
+	if (!String(header.getValue() || ''))
+	{
+		header.setValue('Id').setFontWeight('bold');
+	}
+}
+
+/**
+ * The id of a request row, assigning one on first use. Rows from before ids existed
+ * get "#<row>", which is exactly the tag their approvals were written with.
+ */
+function requestIdOf(sheet, rowNumber, row)
+{
+	var id = String(row[11] || '').trim();
+	if (!id)
+	{
+		id = '#' + rowNumber;
+		ensureRequestIdHeader(sheet);
+		sheet.getRange(rowNumber, 12).setNumberFormat('@').setValue(id);
+		row[11] = id;
+	}
+	return id;
 }
 
 /** Keeps only things that look like http(s) URLs; at most 5, newline-separated. */
@@ -891,8 +928,9 @@ function isPending(status)
 
 /**
  * Applies a status to one request row - from the menu or the Status dropdown. "Done"
- * writes the Adjustments ledger row exactly once: a "request #row" tag in the note
- * guards against double-crediting when the dropdown is flipped back and forth.
+ * writes the Adjustments ledger row exactly once: a "request <id>" tag in the note
+ * guards against double-crediting when the dropdown is flipped back and forth. Any
+ * other status takes an existing approval back.
  *
  * @return whether the row was a real request and the status was applied
  */
@@ -908,7 +946,8 @@ function setRequestStatus(rowNumber, status)
 	{
 		return false;
 	}
-	if (status === 'Done' && !adjustmentExistsForRequest(rowNumber))
+	var requestId = requestIdOf(sheet, rowNumber, row);
+	if (status === 'Done' && !adjustmentExistsForRequest(requestId))
 	{
 		// The announcement's before/after diff around the ledger write tells whether
 		// this approval finished the tile, and which bingo lines it completed.
@@ -916,14 +955,14 @@ function setRequestStatus(rowNumber, status)
 		var tileIndex = parseInt(row[3], 10) - 1;
 		var doneBefore = scope ? tileTotals(scope.board, scope.meta).done.slice() : null;
 		getSheet(ADJ_SHEET, ADJ_HEADERS).appendRow([row[1], row[3], row[4], row[2], row[5],
-			row[6], 'request #' + rowNumber + ': ' + row[7], 'approved request']);
+			row[6], 'request ' + requestId + ': ' + row[7], 'approved request']);
 		announceApproval(row, scope, tileIndex, doneBefore);
 	}
-	else if (status === 'Rejected' && removeAdjustmentForRequest(rowNumber))
+	else if (status !== 'Done' && removeAdjustmentForRequest(requestId))
 	{
-		// An approval flipped to Rejected takes its credit back: the tagged ledger row
-		// is removed, and clients drop the credit on their next sync. Flipping back to
-		// Done re-credits (and re-announces) cleanly.
+		// An approval flipped to Rejected (or back to Pending) takes its credit back: the
+		// tagged ledger row is removed, and clients drop the credit on their next sync.
+		// Flipping back to Done re-credits (and re-announces) cleanly.
 		announceWithdrawal(row, latestBoardForTeam(String(row[1] || '').trim().toLowerCase()));
 	}
 	styleStatusCell(sheet, rowNumber, status);
@@ -931,11 +970,11 @@ function setRequestStatus(rowNumber, status)
 }
 
 /** Deletes the ledger row(s) a request's approval wrote. Returns whether any existed. */
-function removeAdjustmentForRequest(rowNumber)
+function removeAdjustmentForRequest(requestId)
 {
 	var sheet = getSheet(ADJ_SHEET, ADJ_HEADERS);
 	var values = sheet.getDataRange().getValues();
-	var tag = 'request #' + rowNumber + ':';
+	var tag = 'request ' + requestId + ':';
 	var removed = false;
 	for (var i = values.length - 1; i >= 1; i--)
 	{
@@ -1227,10 +1266,10 @@ function flushWebhookQueue()
 	}
 }
 
-function adjustmentExistsForRequest(rowNumber)
+function adjustmentExistsForRequest(requestId)
 {
 	var values = getSheet(ADJ_SHEET, ADJ_HEADERS).getDataRange().getValues();
-	var tag = 'request #' + rowNumber + ':';
+	var tag = 'request ' + requestId + ':';
 	for (var i = 1; i < values.length; i++)
 	{
 		if (String(values[i][6] || '').indexOf(tag) === 0)
