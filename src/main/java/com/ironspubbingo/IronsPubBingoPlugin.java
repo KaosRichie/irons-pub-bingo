@@ -224,6 +224,13 @@ public class IronsPubBingoPlugin extends Plugin
 	/** A forced sync asked for while another was in flight; runs once that one returns. */
 	private boolean storeSyncQueued;
 	/**
+	 * Bumped whenever the store context changes (team, mode, URL, shutdown). A reply to a
+	 * request sent under an older generation describes a team we are no longer on.
+	 */
+	private int storeGeneration;
+	/** False once shut down: late replies and queued work must not restart anything. */
+	private volatile boolean running;
+	/**
 	 * Session-level store pause (panel button): stop store traffic without leaving the
 	 * team - like being offline, not like switching teams, so no reset. Not persisted.
 	 */
@@ -245,6 +252,7 @@ public class IronsPubBingoPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		running = true;
 		wsClient.registerMessage(IronsPubBingoMemberState.class);
 		wsClient.registerMessage(IronsPubBingoSyncRequest.class);
 		wsClient.registerMessage(IronsPubBingoPing.class);
@@ -285,6 +293,10 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			storePollTask.cancel(false);
 		}
+		if (!running)
+		{
+			return;
+		}
 		storePollTask = executor.scheduleWithFixedDelay(
 			() -> clientThread.invokeLater(() ->
 			{
@@ -298,6 +310,8 @@ public class IronsPubBingoPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		running = false;
+		storeGeneration++;
 		if (storePollTask != null)
 		{
 			storePollTask.cancel(false);
@@ -383,7 +397,17 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if ("teamSyncUrl".equals(event.getKey()))
 		{
-			refreshPanel();
+			clientThread.invokeLater(() ->
+			{
+				// A different store (a redeploy, another event) has none of what we
+				// pushed to the old one: send everything again, including the board.
+				newStoreGeneration();
+				storePushed.clear();
+				metaSentForBoard = null;
+				storeError = null;
+				syncStore(true);
+				refreshPanel();
+			});
 			return;
 		}
 		// Display settings (line style, progress fill, ...) apply live.
@@ -1640,8 +1664,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void applyStoreToggle(boolean wasOn)
 	{
-		storeRequestsInFlight = 0; // toggling modes invalidates any in-flight accounting
-		storeSyncQueued = false;
+		newStoreGeneration(); // toggling modes invalidates any in-flight request
 		storePushed.clear();
 		storeStandings.clear();
 		// The store team and the party-only team keep their own teammates.
@@ -1689,6 +1712,7 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Swaps party membership and the per-team member cache over to the new team code. */
 	private void applyTeamSwitch(String oldCode)
 	{
+		newStoreGeneration();
 		storePushed.clear();
 		// Park the old team's cached members under their own key, so coming back
 		// restores them, and start from whatever is cached for the new team. What
@@ -1704,6 +1728,14 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		syncStore(true);
 		refreshPanel();
+	}
+
+	/** Drops every in-flight store request: their replies will be ignored. */
+	private void newStoreGeneration()
+	{
+		storeGeneration++;
+		storeRequestsInFlight = 0;
+		storeSyncQueued = false;
 	}
 
 	/** Saves the loaded team scope and loads another one in its place. */
@@ -2194,7 +2226,12 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 			for (Map.Entry<String, TeamMemberState> entry : activeTeamProgress().entrySet())
 			{
-				sendMemberState(entry.getKey(), entry.getValue().name, entry.getValue().tilesMap());
+				// Verified credit comes from the store only; a relayed copy could keep a
+				// withdrawn credit alive for teammates without the store.
+				if (!isAdminMember(entry.getKey()))
+				{
+					sendMemberState(entry.getKey(), entry.getValue().name, entry.getValue().tilesMap());
+				}
 			}
 		});
 	}
@@ -2281,6 +2318,12 @@ public class IronsPubBingoPlugin extends Plugin
 	private void applyMemberStates(Map<String, TeamMemberState> incoming)
 	{
 		String self = localMemberId();
+		if (self == null || configManager.getRSProfileKey() == null || board == null)
+		{
+			// Logged out: our own id is unknown, so our copy would merge as a teammate
+			// and every tile would look newly completed. The next login syncs again.
+			return;
+		}
 		Set<Integer> before = completedTiles();
 		boolean changed = false;
 		String lastChangedName = null;
@@ -2341,7 +2384,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		// While a team switch awaits confirmation, the config already names the new team -
 		// pushing now would leak pre-reset progress into its scope.
-		if (board == null || !teamStore.isConfigured() || teamSwitchPending || storePaused)
+		if (!running || board == null || !teamStore.isConfigured() || teamSwitchPending || storePaused)
 		{
 			return;
 		}
@@ -2418,10 +2461,15 @@ public class IronsPubBingoPlugin extends Plugin
 		Object meta = forBoard.equals(metaSentForBoard) ? null : buildBoardMeta();
 		storeRequestsInFlight++;
 		refreshPanel();
+		final int generation = storeGeneration;
 		teamStore.sync(forBoard, toSend, meta, self, earnedPoints(), boardCodeHash,
 			board == null ? null : board.version,
 			(payload, error) -> clientThread.invokeLater(() ->
 		{
+			if (!running || generation != storeGeneration)
+			{
+				return; // sent for a team, mode or URL we have since left
+			}
 			storeRequestsInFlight = Math.max(0, storeRequestsInFlight - 1);
 			if (storeSyncQueued && storeRequestsInFlight == 0)
 			{
@@ -2476,6 +2524,8 @@ public class IronsPubBingoPlugin extends Plugin
 				storeSyncedAt = new SimpleDateFormat("HH:mm").format(new Date());
 				metaSentForBoard = forBoard;
 				storePushed.putAll(sending);
+				// A row the store no longer has (an admin deleted it) is pushed again.
+				storePushed.keySet().removeIf(id -> !payload.members.containsKey(id));
 				applyStoreEpoch(payload.epoch);
 				// The store owns admin credit and evictions outright, so a credit or member
 				// removed there must disappear here too - merging alone would keep the

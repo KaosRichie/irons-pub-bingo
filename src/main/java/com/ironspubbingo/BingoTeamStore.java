@@ -223,9 +223,12 @@ class BingoTeamStore
 		// keep counting the player. No other traffic happens while the toggle is off.
 		post(payload, false, (reply, error) ->
 		{
-			if (error != null)
+			// "Busy" and other store errors arrive as replies too: only a clean reply
+			// means the departure landed, anything else is retried later.
+			String problem = error != null ? error : reply == null ? "no reply" : reply.error;
+			if (problem != null)
 			{
-				log.debug("Could not remove member from old team scope yet: {}", error);
+				log.debug("Could not remove member from old team scope yet: {}", problem);
 			}
 			else
 			{

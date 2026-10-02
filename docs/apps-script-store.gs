@@ -207,6 +207,12 @@ function handlePost(e, deferRefresh)
 		var self = /^[0-9a-f]{16}$/.test(String(body.rejoin || '')) ? String(body.rejoin) : null;
 		if (self && !ownsMember(rows, self, keyHash))
 		{
+			if (members[self])
+			{
+				// Say so, instead of silently dropping every sync this player sends.
+				return ContentService.createTextOutput(JSON.stringify({ board: board,
+					error: 'Key mismatch - ask your host' })).setMimeType(ContentService.MimeType.JSON);
+			}
 			self = null;
 		}
 
@@ -225,6 +231,13 @@ function handlePost(e, deferRefresh)
 				}
 			}
 			removeMembers(board, leaving, leaving.length ? readOnce() : null, deferRefresh);
+			if (!self && !body.request && !Object.keys(members).length)
+			{
+				// A pure departure notice is done here. It must succeed even when the
+				// team it leaves has since been taken off the Teams tab.
+				return ContentService.createTextOutput(JSON.stringify({ board: board, left: leaving }))
+					.setMimeType(ContentService.MimeType.JSON);
+			}
 		}
 
 		// The Teams tab is the allow-list: only codes the host listed may write. An empty
