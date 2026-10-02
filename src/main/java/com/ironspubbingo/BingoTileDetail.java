@@ -76,7 +76,8 @@ class BingoTileDetail extends JPanel
 		}
 
 		BingoTile tile = board.getTiles().get(selectedTile);
-		TileProgress merged = plugin.mergedProgressFor(selectedTile);
+		// A completed tile shows the snapshot from the moment it completed.
+		TileProgress merged = plugin.displayProgressFor(selectedTile);
 		TileProgress own = plugin.progressFor(selectedTile);
 		boolean teamView = plugin.hasTeamData();
 		Map<String, TileProgress> members = teamView ? plugin.memberProgressFor(selectedTile) : null;

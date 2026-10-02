@@ -1023,7 +1023,8 @@ public class IronsPubBingoPlugin extends Plugin
 			return live;
 		}
 		Map<String, TileProgress> frozen = frozenContributions.get(tileIndex);
-		if (frozen != null && live.keySet().containsAll(frozen.keySet()))
+		if (frozen != null && live.keySet().containsAll(frozen.keySet())
+			&& snapshotCompletes(tileIndex, frozen))
 		{
 			return frozen;
 		}
@@ -1031,7 +1032,8 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return live;
 		}
-		// First look since completion, or someone in the snapshot has left: freeze now.
+		// First look since completion, or someone in the snapshot has left while the
+		// tile stays complete: the snapshot is retaken at this moment.
 		frozen = new java.util.LinkedHashMap<>();
 		int goalCount = board.getTiles().get(tileIndex).goals.size();
 		for (Map.Entry<String, TileProgress> entry : live.entrySet())
@@ -1041,6 +1043,52 @@ public class IronsPubBingoPlugin extends Plugin
 		frozenContributions.put(tileIndex, frozen);
 		saveProgress(false);
 		return frozen;
+	}
+
+	private boolean snapshotCompletes(int tileIndex, Map<String, TileProgress> snapshot)
+	{
+		BingoTile tile = board.getTiles().get(tileIndex);
+		return tile.isComplete(TileProgress.merge(tile.goals.size(), snapshot.values()));
+	}
+
+	/**
+	 * What the panels show for a tile. A completed tile shows the team's progress as it
+	 * stood the moment it completed, so an ANY tile's other goals stop moving on screen.
+	 * Tracking goes on underneath: if the tile stops being complete (a teammate left, a
+	 * credit was withdrawn) it shows live progress again, and completing again takes a
+	 * new snapshot at that moment.
+	 */
+	TileProgress displayProgressFor(int tileIndex)
+	{
+		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
+		{
+			return new TileProgress();
+		}
+		Map<String, TileProgress> members = memberProgressFor(tileIndex);
+		if (members != frozenContributions.get(tileIndex))
+		{
+			return mergedProgressFor(tileIndex);
+		}
+		return TileProgress.merge(board.getTiles().get(tileIndex).goals.size(), members.values());
+	}
+
+	/**
+	 * Brings every tile's snapshot up to date: taken for tiles that are complete, dropped
+	 * for tiles that no longer are, retaken when someone in it left. Client thread, on
+	 * every panel refresh, so the panels (Swing thread) only ever read finished snapshots.
+	 */
+	private void updateSnapshots()
+	{
+		// Logged out, own progress is unloaded and every tile looks incomplete: touching
+		// the snapshots then would throw away the moment each tile completed.
+		if (board == null || localMemberId() == null)
+		{
+			return;
+		}
+		for (int i = 0; i < board.getTiles().size(); i++)
+		{
+			memberProgressFor(i);
+		}
 	}
 
 	/** Snapshots the contributions of tiles that just completed, before more comes in. */
@@ -1059,7 +1107,9 @@ public class IronsPubBingoPlugin extends Plugin
 	private Map<String, TileProgress> liveMemberProgressFor(int tileIndex)
 	{
 		Map<String, TileProgress> result = new java.util.LinkedHashMap<>();
-		String ownName = localPlayerName();
+		// The saved name covers the first frames after login, before the game reports it:
+		// a different key would read as a member leaving and retake every snapshot.
+		String ownName = localPlayerName() != null ? localPlayerName() : lastKnownName;
 		result.put(ownName != null ? ownName : "You", progressFor(tileIndex));
 		for (TeamMemberState member : activeTeamProgress().values())
 		{
@@ -3804,6 +3854,10 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void refreshPanel()
 	{
+		if (client.isClientThread())
+		{
+			updateSnapshots();
+		}
 		IronsPubBingoPanel p = panel;
 		BingoBoardWindow window = boardWindow;
 		SwingUtilities.invokeLater(() ->

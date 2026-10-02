@@ -291,7 +291,7 @@ class BingoBoardWindow extends JFrame
 
 	private boolean hasProgress(BingoTile tile, int tileIndex)
 	{
-		TileProgress tp = plugin.mergedProgressFor(tileIndex);
+		TileProgress tp = plugin.displayProgressFor(tileIndex);
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
 			if (tile.goals.get(g).progressOf(tp.goal(g, tile.goals.size())) > 0)
@@ -304,7 +304,7 @@ class BingoBoardWindow extends JFrame
 
 	private String summary(BingoTile tile, int tileIndex)
 	{
-		TileProgress tp = plugin.mergedProgressFor(tileIndex);
+		TileProgress tp = plugin.displayProgressFor(tileIndex);
 		StringBuilder sb = new StringBuilder();
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
