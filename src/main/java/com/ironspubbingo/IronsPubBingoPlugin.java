@@ -152,15 +152,17 @@ public class IronsPubBingoPlugin extends Plugin
 	private BingoBoard board;
 	private String boardKey;
 	/** This account's own progress. */
-	private final Map<Integer, TileProgress> progress = new HashMap<>();
+	// The panel reads these from the Swing thread while the client thread updates them,
+	// so they are concurrent collections: a read never fails mid-update.
+	private final Map<Integer, TileProgress> progress = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Last known progress per teammate, keyed by account hash, cached across sessions. */
-	private final Map<String, TeamMemberState> teamProgress = new HashMap<>();
+	private final Map<String, TeamMemberState> teamProgress = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Host-defined teams from the store's Teams tab (code -> display name), if any. */
-	private final Map<String, String> storeTeamNames = new LinkedHashMap<>();
+	private final Map<String, String> storeTeamNames = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Every team's points on this board, best first, from the store's Scores tab. */
-	private final List<BingoTeamStore.Standing> storeStandings = new ArrayList<>();
+	private final List<BingoTeamStore.Standing> storeStandings = new java.util.concurrent.CopyOnWriteArrayList<>();
 	/** Members evicted from the current team scope; ignored in every merge, never relayed. */
-	private final Set<String> removedMembers = new HashSet<>();
+	private final Set<String> removedMembers = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	/** Tiles with XP-only changes waiting for the next throttled team broadcast. */
 	private final Set<Integer> pendingBroadcast = new HashSet<>();
 	private long lastSaveMs;
@@ -423,7 +425,12 @@ public class IronsPubBingoPlugin extends Plugin
 	 *
 	 * @return an error message for the user, or null on success
 	 */
-	String loadBoardFromJson(String json)
+	/**
+	 * Imports a board code. Parsing happens right away; the board is applied on the
+	 * client thread, then onDone gets null on the Swing thread. A parse error goes to
+	 * onDone at once, on the calling thread.
+	 */
+	void loadBoardFromJson(String json, java.util.function.Consumer<String> onDone)
 	{
 		BingoBoard parsed;
 		try
@@ -432,21 +439,24 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		catch (IllegalArgumentException e)
 		{
-			return e.getMessage();
+			onDone.accept(e.getMessage());
+			return;
 		}
-		activateBoard(parsed);
-		boardCodeHash = boardFingerprint(json);
-		configManager.setConfiguration(IronsPubBingoConfig.GROUP, "board", json);
-		// An explicit import means "start counting from now": restored progress may carry
-		// baselines from an old session, and the login stat burst would otherwise credit
-		// everything trained since then as instant gain.
-		clientThread.invokeLater(() ->
+		clientThread.invoke(() ->
 		{
+			// The fingerprint first: activating syncs at once (for re-tracked tiles), and
+			// that sync must already carry the new board's hash.
+			boardCodeHash = boardFingerprint(json);
+			activateBoard(parsed);
+			configManager.setConfiguration(IronsPubBingoConfig.GROUP, "board", json);
+			// An explicit import means "start counting from now": restored progress may
+			// carry baselines from an old session, and the login stat burst would otherwise
+			// credit everything trained since then as instant gain.
 			reseedXpBaselines();
 			announceToTeam();
 			syncStore(true);
+			SwingUtilities.invokeLater(() -> onDone.accept(null));
 		});
-		return null;
 	}
 
 	/**
@@ -667,7 +677,16 @@ public class IronsPubBingoPlugin extends Plugin
 		return board.getName() + (board.version != null ? " (v" + board.version + ")" : "");
 	}
 
-	void clearBoard()
+	void clearBoard(Runnable onDone)
+	{
+		clientThread.invoke(() ->
+		{
+			clearBoardNow();
+			SwingUtilities.invokeLater(onDone);
+		});
+	}
+
+	private void clearBoardNow()
 	{
 		saveProgress(true);
 		newerBoardVersion = null;
@@ -702,7 +721,13 @@ public class IronsPubBingoPlugin extends Plugin
 			}.getType());
 		if (own != null)
 		{
-			progress.putAll(own);
+			own.forEach((tile, tp) ->
+			{
+				if (tile != null && tp != null)
+				{
+					progress.put(tile, tp);
+				}
+			});
 		}
 		loadTeamCaches(normalizedTeamCode(), config.teamStoreEnabled());
 		enforceTeamOwnership();
@@ -730,7 +755,13 @@ public class IronsPubBingoPlugin extends Plugin
 			}.getType());
 		if (team != null)
 		{
-			teamProgress.putAll(team);
+			team.forEach((member, state) ->
+			{
+				if (member != null && state != null)
+				{
+					teamProgress.put(member, state);
+				}
+			});
 		}
 		if (!storeMode)
 		{
@@ -921,17 +952,27 @@ public class IronsPubBingoPlugin extends Plugin
 	Map<String, TileProgress> memberProgressFor(int tileIndex)
 	{
 		Map<String, TileProgress> live = liveMemberProgressFor(tileIndex);
+		// The panel asks from the Swing thread; only the client thread changes the
+		// snapshot (and saves it). It freezes a tile the moment the tile completes.
+		boolean onClientThread = client.isClientThread();
 		if (!isTileComplete(tileIndex))
 		{
 			// Not (or no longer) complete - a member left, a credit was withdrawn: the
 			// live numbers decide again and the old snapshot is stale.
-			frozenContributions.remove(tileIndex);
+			if (onClientThread)
+			{
+				frozenContributions.remove(tileIndex);
+			}
 			return live;
 		}
 		Map<String, TileProgress> frozen = frozenContributions.get(tileIndex);
 		if (frozen != null && live.keySet().containsAll(frozen.keySet()))
 		{
 			return frozen;
+		}
+		if (!onClientThread)
+		{
+			return live;
 		}
 		// First look since completion, or someone in the snapshot has left: freeze now.
 		frozen = new java.util.LinkedHashMap<>();
@@ -1398,10 +1439,7 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	private Map<String, TeamMemberState> activeTeamProgress()
 	{
-		if (removedMembers.isEmpty())
-		{
-			return teamProgress;
-		}
+		// A copy: callers iterate it, sometimes from the Swing thread.
 		Map<String, TeamMemberState> active = new LinkedHashMap<>();
 		for (Map.Entry<String, TeamMemberState> entry : teamProgress.entrySet())
 		{
@@ -1452,7 +1490,13 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		progress.clear();
 		pendingBroadcast.clear();
-		progress.putAll(parked);
+		parked.forEach((tile, tp) ->
+		{
+			if (tile != null && tp != null)
+			{
+				progress.put(tile, tp);
+			}
+		});
 		reseedXpBaselines();
 	}
 
@@ -1674,35 +1718,44 @@ public class IronsPubBingoPlugin extends Plugin
 
 	void leaveTeam()
 	{
-		if (partyService.isInParty())
+		clientThread.invoke(() ->
 		{
-			partyService.changeParty(null);
-		}
+			if (partyService.isInParty())
+			{
+				partyService.changeParty(null);
+			}
+		});
 	}
 
 	/** The panel's "Sync team" button: exchange progress over party and team store. */
 	void requestTeamSync()
 	{
-		if (board == null)
+		clientThread.invoke(() ->
 		{
-			return;
-		}
-		announceToTeam();
-		syncStore(true);
-		// A manual sync restarts the poll clock: the next automatic sync comes one
-		// full interval from now, not moments after this one.
-		schedulePoll();
+			if (board == null)
+			{
+				return;
+			}
+			announceToTeam();
+			syncStore(true);
+			// A manual sync restarts the poll clock: the next automatic sync comes one
+			// full interval from now, not moments after this one.
+			schedulePoll();
+		});
 	}
 
 	void resetTeamData()
 	{
-		teamProgress.clear();
-		if (boardKey != null && configManager.getRSProfileKey() != null)
+		clientThread.invoke(() ->
 		{
-			configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-				teamCacheKey(loadedTeamCode, loadedStoreMode));
-		}
-		refreshPanel();
+			teamProgress.clear();
+			if (boardKey != null && configManager.getRSProfileKey() != null)
+			{
+				configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP,
+					teamCacheKey(loadedTeamCode, loadedStoreMode));
+			}
+			refreshPanel();
+		});
 	}
 
 	/** Replaces the cached host-defined team list; null (fetch failed) leaves it alone. */
@@ -1856,6 +1909,12 @@ public class IronsPubBingoPlugin extends Plugin
 	void submitCreditRequest(int tileIndex, Integer goalIndex, Long add, boolean complete,
 		String note, String links, java.util.function.BiConsumer<Boolean, String> callback)
 	{
+		clientThread.invoke(() -> submitCreditRequestNow(tileIndex, goalIndex, add, complete, note, links, callback));
+	}
+
+	private void submitCreditRequestNow(int tileIndex, Integer goalIndex, Long add, boolean complete,
+		String note, String links, java.util.function.BiConsumer<Boolean, String> callback)
+	{
 		String self = localMemberId();
 		String player = localPlayerName() != null ? localPlayerName() : lastKnownName;
 		if (board == null || self == null || player == null)
@@ -1885,7 +1944,8 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Posts a proof screenshot for a credit request; callback gets (link, error). */
 	void postProofScreenshot(String requestDetail, java.util.function.BiConsumer<String, String> callback)
 	{
-		discordNotifier.postProofScreenshot(localPlayerName(), requestDetail, teamDisplayName(), callback);
+		clientThread.invoke(() ->
+			discordNotifier.postProofScreenshot(localPlayerName(), requestDetail, teamDisplayName(), callback));
 	}
 
 	String teamStatusText()
@@ -1928,12 +1988,15 @@ public class IronsPubBingoPlugin extends Plugin
 	/** The panel's Pause/Resume store button; resuming catches up immediately. */
 	void setStorePaused(boolean paused)
 	{
-		storePaused = paused;
-		if (!paused)
+		clientThread.invoke(() ->
 		{
-			syncStore(true);
-		}
-		refreshPanel();
+			storePaused = paused;
+			if (!paused)
+			{
+				syncStore(true);
+			}
+			refreshPanel();
+		});
 	}
 
 	/**
@@ -2403,6 +2466,13 @@ public class IronsPubBingoPlugin extends Plugin
 			else
 			{
 				storeError = null;
+				if (newerBoardFromStore)
+				{
+					// The store accepts our board again: whatever update it reported, we
+					// are running it now.
+					newerBoardVersion = null;
+					newerBoardFromStore = false;
+				}
 				storeSyncedAt = new SimpleDateFormat("HH:mm").format(new Date());
 				metaSentForBoard = forBoard;
 				storePushed.putAll(sending);
@@ -2705,23 +2775,37 @@ public class IronsPubBingoPlugin extends Plugin
 
 	void setManualComplete(int tileIndex, boolean complete)
 	{
-		Set<Integer> before = completedTiles();
-		progressFor(tileIndex).manual = complete;
-		Set<Integer> changedTiles = new HashSet<>();
-		changedTiles.add(tileIndex);
-		afterChange(before, changedTiles, new LinkedHashSet<>());
+		clientThread.invoke(() ->
+		{
+			if (board == null || tileIndex >= board.getTiles().size())
+			{
+				return;
+			}
+			Set<Integer> before = completedTiles();
+			progressFor(tileIndex).manual = complete;
+			Set<Integer> changedTiles = new HashSet<>();
+			changedTiles.add(tileIndex);
+			afterChange(before, changedTiles, new LinkedHashSet<>());
+		});
 	}
 
 	void resetTileProgress(int tileIndex)
 	{
-		TileProgress old = progress.remove(tileIndex);
-		progressFor(tileIndex).ts = nextTs(old == null ? null : old.ts, System.currentTimeMillis());
-		Set<Integer> tiles = new HashSet<>();
-		tiles.add(tileIndex);
-		broadcastOwnTiles(tiles);
-		syncStore(true);
-		saveProgress(true);
-		refreshPanel();
+		clientThread.invoke(() ->
+		{
+			if (board == null || tileIndex >= board.getTiles().size())
+			{
+				return;
+			}
+			TileProgress old = progress.remove(tileIndex);
+			progressFor(tileIndex).ts = nextTs(old == null ? null : old.ts, System.currentTimeMillis());
+			Set<Integer> tiles = new HashSet<>();
+			tiles.add(tileIndex);
+			broadcastOwnTiles(tiles);
+			syncStore(true);
+			saveProgress(true);
+			refreshPanel();
+		});
 	}
 
 	// ---------------------------------------------------------------- event handlers
@@ -3547,13 +3631,22 @@ public class IronsPubBingoPlugin extends Plugin
 		BingoBoardWindow window = boardWindow;
 		SwingUtilities.invokeLater(() ->
 		{
-			if (p != null)
+			try
 			{
-				p.refresh();
+				if (p != null)
+				{
+					p.refresh();
+				}
+				if (window != null && window.isVisible())
+				{
+					window.refresh();
+				}
 			}
-			if (window != null && window.isVisible())
+			catch (java.util.ConcurrentModificationException e)
 			{
-				window.refresh();
+				// Progress changed on the client thread mid-render; draw it again.
+				log.debug("Panel refresh raced a progress update, redrawing", e);
+				clientThread.invokeLater(this::refreshPanel);
 			}
 		});
 	}

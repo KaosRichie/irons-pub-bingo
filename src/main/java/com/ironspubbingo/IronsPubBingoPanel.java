@@ -1075,7 +1075,12 @@ class IronsPubBingoPanel extends PluginPanel
 		{
 			return;
 		}
-		String error = plugin.loadBoardFromJson(json.trim());
+		plugin.loadBoardFromJson(json.trim(), this::afterBoardImport);
+	}
+
+	/** On the Swing thread once an import was applied (null) or refused (the reason). */
+	private void afterBoardImport(String error)
+	{
 		if (error != null)
 		{
 			JOptionPane.showMessageDialog(this, error, "Board could not be loaded", JOptionPane.ERROR_MESSAGE);
@@ -1123,8 +1128,7 @@ class IronsPubBingoPanel extends PluginPanel
 			"Irons Pub Bingo", JOptionPane.YES_NO_OPTION);
 		if (answer == JOptionPane.YES_OPTION)
 		{
-			plugin.clearBoard();
-			rebuild();
+			plugin.clearBoard(this::rebuild);
 		}
 	}
 }
