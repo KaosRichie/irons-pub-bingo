@@ -725,6 +725,18 @@ public class IronsPubBingoPlugin extends Plugin
 			: "Sent from an outdated copy of this board";
 	}
 
+	/** Whether the newer-board notice came from the store, so a one-click reimport works. */
+	boolean boardUpdateFromStore()
+	{
+		return newerBoardFromStore && newerBoardVersion != null;
+	}
+
+	/** The store's full error text for the status tooltip, or null. */
+	String storeErrorText()
+	{
+		return storeError;
+	}
+
 	/** Board name plus revision, e.g. "Summer Bingo (v2)". */
 	String boardTitleText()
 	{

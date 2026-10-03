@@ -375,28 +375,27 @@ class BingoTileDetail extends JPanel
 			}
 		});
 
-		// All tile actions behind one foldout; its state survives the constant detail
-		// rebuilds via the actionsExpanded field.
-		JButton actionsToggle = smallButton("Actions  " + (actionsExpanded ? "▾" : "▸"));
+		// The tile's main action stays in view: asking an admin for credit on a store
+		// team, the manual tick on a party-only team. The rarely used reset lives behind
+		// a foldout, whose state survives the constant detail rebuilds.
+		JButton primary = tick != null ? tick : request;
+		primary.setFont(FontManager.getRunescapeFont());
+		primary.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+		add(primary);
+		add(Box.createVerticalStrut(6));
+		JButton actionsToggle = smallButton("More actions  " + (actionsExpanded ? "▾" : "▸"));
 		actionsToggle.setHorizontalAlignment(SwingConstants.LEFT);
 		JPanel actionsCard = new JPanel();
 		actionsCard.setLayout(new BoxLayout(actionsCard, BoxLayout.Y_AXIS));
 		actionsCard.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		actionsCard.setAlignmentX(LEFT_ALIGNMENT);
-		if (tick != null)
-		{
-			actionsCard.add(tick);
-			actionsCard.add(Box.createVerticalStrut(4));
-		}
-		actionsCard.add(request);
-		actionsCard.add(Box.createVerticalStrut(4));
 		actionsCard.add(reset);
 		actionsCard.setVisible(actionsExpanded);
 		actionsToggle.addActionListener(e ->
 		{
 			actionsExpanded = !actionsCard.isVisible();
 			actionsCard.setVisible(actionsExpanded);
-			actionsToggle.setText("Actions  " + (actionsExpanded ? "▾" : "▸"));
+			actionsToggle.setText("More actions  " + (actionsExpanded ? "▾" : "▸"));
 			revalidate();
 			repaint();
 		});
@@ -411,16 +410,26 @@ class BingoTileDetail extends JPanel
 	{
 		JPanel form = new JPanel(new GridLayout(0, 1, 0, 4));
 		JComboBox<String> goalBox = null;
+		// Each goal with where the team stands, so the player sees what the amount adds to.
+		TileProgress current = plugin.mergedProgressFor(tileIndex);
+		String[] labels = new String[tile.goals.size()];
+		for (int g = 0; g < tile.goals.size(); g++)
+		{
+			BingoGoal goal = tile.goals.get(g);
+			labels[g] = (tile.goals.size() > 1 ? (g + 1) + ". " : "") + goal.shortDescribe()
+				+ (goal.goalType == GoalType.MANUAL ? ""
+					: "  (" + formatCount(goal.progressOf(current.goal(g, tile.goals.size())))
+						+ " / " + formatCount(goal.target()) + ")");
+		}
 		if (tile.goals.size() > 1)
 		{
-			String[] labels = new String[tile.goals.size()];
-			for (int g = 0; g < tile.goals.size(); g++)
-			{
-				labels[g] = (g + 1) + ". " + tile.goals.get(g).shortDescribe();
-			}
 			goalBox = new JComboBox<>(labels);
 			form.add(new JLabel("Goal:"));
 			form.add(goalBox);
+		}
+		else if (labels.length == 1)
+		{
+			form.add(new JLabel("Goal: " + labels[0]));
 		}
 		JTextField amount = new JTextField();
 		JCheckBox complete = new JCheckBox("Mark the whole tile complete instead");
@@ -428,6 +437,9 @@ class BingoTileDetail extends JPanel
 		JTextField links = new JTextField();
 		JCheckBox proofShot = new JCheckBox("Attach a screenshot (posts to your Discord webhook)");
 		proofShot.setEnabled(plugin.webhookConfigured());
+		// Proof is what the admin asks for first; with a webhook set, attach it by default.
+		proofShot.setSelected(plugin.webhookConfigured());
+		complete.addActionListener(e -> amount.setEnabled(!complete.isSelected()));
 		proofShot.setToolTipText(plugin.webhookConfigured()
 			? "Screenshots the game, posts it to your Discord webhook and files its link as proof"
 			: "Set a Discord webhook in the settings first");
@@ -447,7 +459,7 @@ class BingoTileDetail extends JPanel
 			return;
 		}
 		Long add = null;
-		String amountText = amount.getText().trim();
+		String amountText = complete.isSelected() ? "" : amount.getText().trim();
 		if (!amountText.isEmpty())
 		{
 			try

@@ -59,6 +59,15 @@ class IronsPubBingoPanel extends PluginPanel
 	private static final Icon MEDAL_BRONZE = medalIcon(new Color(0xD7, 0x8D, 0x4A), new Color(0x8B, 0x5A, 0x2B));
 	private final BingoWrappedLabel eventStatusLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
 	private final BingoWrappedLabel boardUpdateLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
+	private final JButton reimportButton = new JButton("Reimport from store");
+	private JPanel reimportRow;
+	/** First-run guidance: the one next step, as a button, until the player is set up. */
+	private final Card startCard = new Card();
+	private final BingoWrappedLabel startText = new BingoWrappedLabel("", CONTENT_WIDTH);
+	private final JButton startButton = new JButton();
+	private Runnable startAction;
+	/** A one-click store import is running; refresh() must not fight its button text. */
+	private boolean importingFromStore;
 	private final BingoWrappedLabel membersLabel = new BingoWrappedLabel("", CONTENT_WIDTH);
 	private final JButton membersToggle = smallButton("Members  ▸");
 	private boolean membersExpanded;
@@ -175,6 +184,28 @@ class IronsPubBingoPanel extends PluginPanel
 		headerCard.add(pointsLabel);
 		headerCard.add(eventStatusLabel);
 		headerCard.add(boardUpdateLabel);
+		reimportButton.setToolTipText("Load the board your host published on the team store");
+		reimportButton.addActionListener(e -> importFromStore());
+		reimportRow = buttonRow(reimportButton);
+		reimportRow.setVisible(false);
+		headerCard.add(Box.createVerticalStrut(4));
+		headerCard.add(reimportRow);
+
+		// ---- get started card: the next setup step, as one button ----
+
+		startCard.add(sectionHeader("Get started"));
+		startCard.add(Box.createVerticalStrut(4));
+		startCard.add(startText);
+		startCard.add(Box.createVerticalStrut(6));
+		startButton.addActionListener(e ->
+		{
+			if (startAction != null)
+			{
+				startAction.run();
+			}
+		});
+		startCard.add(buttonRow(startButton));
+		startCard.setVisible(false);
 
 		// ---- board card: the grid, centered within the card ----
 
@@ -317,6 +348,8 @@ class IronsPubBingoPanel extends PluginPanel
 		content.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		content.setAlignmentX(LEFT_ALIGNMENT);
 		content.add(headerCard);
+		content.add(Box.createVerticalStrut(8));
+		content.add(startCard);
 		content.add(Box.createVerticalStrut(8));
 		content.add(boardCard);
 		content.add(Box.createVerticalStrut(8));
@@ -636,7 +669,7 @@ class IronsPubBingoPanel extends PluginPanel
 			gridContainer.setPreferredSize(new Dimension(CONTENT_WIDTH, 48));
 			gridContainer.setMaximumSize(new Dimension(CONTENT_WIDTH, 48));
 			BingoWrappedLabel hint = new BingoWrappedLabel(
-				"No board loaded.\nAsk your bingo host for the board code and use Import board.", CONTENT_WIDTH);
+				"No board loaded yet. Get started above.", CONTENT_WIDTH);
 			gridContainer.add(hint, java.awt.BorderLayout.CENTER);
 		}
 		else
@@ -706,6 +739,8 @@ class IronsPubBingoPanel extends PluginPanel
 		String updateNotice = plugin.boardUpdateNotice();
 		boardUpdateLabel.setVisible(updateNotice != null);
 		boardUpdateLabel.setText(updateNotice == null ? "" : updateNotice);
+		reimportRow.setVisible(updateNotice != null && plugin.boardUpdateFromStore() && plugin.storeConfigured());
+		updateStartCard(board);
 		if (!fetchingTeams)
 		{
 			chooseTeamButton.setEnabled(plugin.storeConfigured());
@@ -752,9 +787,12 @@ class IronsPubBingoPanel extends PluginPanel
 					: ColorScheme.DARKER_GRAY_HOVER_COLOR;
 				cell.setBorder(BorderFactory.createLineBorder(border,
 					i == selectedTile || lineCells.contains(i) ? 2 : 1));
-				cell.setToolTipText("<html><b>" + BingoUi.escapeHtml(tile.label) + "</b>"
-					+ (tile.pointsValue() > 0 ? " (" + tile.pointsValue() + " pts)" : "") + "<br>"
-					+ (complete ? "Complete" : goalSummary(tile, i)) + "</html>");
+				String description = tile.description == null ? "" : tile.description.trim();
+				cell.setToolTipText("<html><b>" + (i + 1) + ". " + BingoUi.escapeHtml(tile.label) + "</b>"
+					+ (tile.pointsValue() > 0 ? " (" + tile.pointsValue() + " pts)" : "")
+					+ (description.isEmpty() ? "" : "<br><i>" + BingoUi.escapeHtml(
+						description.length() > 120 ? description.substring(0, 117) + "..." : description) + "</i>")
+					+ "<br>" + (complete ? "Complete" : goalSummary(tile, i)) + "</html>");
 			}
 		}
 
@@ -788,6 +826,12 @@ class IronsPubBingoPanel extends PluginPanel
 		storePauseButton.setText("<html><nobr>" + storeDot
 			+ BingoUi.escapeHtml(storeButtonState()) + "</nobr></html>");
 		storePauseButton.setEnabled(plugin.storeConfigured());
+		// The button shows the state; clicking it pauses or resumes. Say both in full.
+		String storeError = plugin.storeErrorText();
+		storePauseButton.setToolTipText(!plugin.storeConfigured() ? null
+			: "<html>" + BingoUi.escapeHtml(storeButtonState())
+				+ (storeError != null && !plugin.storePaused() ? "<br>" + BingoUi.escapeHtml(storeError) : "")
+				+ "<br><i>Click to " + (plugin.storePaused() ? "resume" : "pause") + " store sync</i></html>");
 
 		syncButton.setEnabled(plugin.getBoard() != null && syncCooldown <= 0);
 		portalButton.setEnabled(plugin.portalUrl() != null);
@@ -835,6 +879,76 @@ class IronsPubBingoPanel extends PluginPanel
 		}
 		String syncedAt = plugin.storeSyncedAtText();
 		return syncedAt == null ? "Store: Not synced yet" : "Store: Synced " + syncedAt;
+	}
+
+	/**
+	 * Shows the one thing to do next while the player isn't set up yet: import a board,
+	 * load it from the store in one click, or pick a team. Hidden once all is in place.
+	 */
+	private void updateStartCard(BingoBoard board)
+	{
+		String text = null;
+		String button = null;
+		Runnable action = null;
+		if (board == null && plugin.storeConfigured())
+		{
+			text = "Load your event's board from the team store.";
+			button = "Import board from store";
+			action = this::importFromStore;
+		}
+		else if (board == null)
+		{
+			text = "Import the board code from your host. Using a team store? Turn on Use team store "
+				+ "in the settings and paste its URL first, then the board loads in one click.";
+			button = "Import board";
+			action = this::importBoard;
+		}
+		else if (plugin.storeConfigured() && "No team".equals(plugin.storeSetupHint()))
+		{
+			text = "Pick your team, so your progress counts for it.";
+			button = "Choose team";
+			action = this::chooseTeam;
+		}
+		startCard.setVisible(text != null);
+		startAction = action;
+		if (text != null)
+		{
+			startText.setText(text);
+			if (!importingFromStore && !fetchingTeams)
+			{
+				startButton.setText(button);
+				startButton.setEnabled(true);
+			}
+		}
+	}
+
+	/** Loads the board the host pasted on the store, without the import dialog. */
+	private void importFromStore()
+	{
+		if (importingFromStore)
+		{
+			return;
+		}
+		importingFromStore = true;
+		startButton.setEnabled(false);
+		startButton.setText("Loading board...");
+		reimportButton.setEnabled(false);
+		reimportButton.setText("Loading board...");
+		plugin.fetchStoreBoard((json, error) -> SwingUtilities.invokeLater(() ->
+		{
+			importingFromStore = false;
+			reimportButton.setEnabled(true);
+			reimportButton.setText("Reimport from store");
+			if (error != null || json == null)
+			{
+				JOptionPane.showMessageDialog(this,
+					"Could not get the board from the store: " + (error == null ? "unexpected reply" : error),
+					"Irons Pub Bingo", JOptionPane.WARNING_MESSAGE);
+				refresh();
+				return;
+			}
+			plugin.loadBoardFromJson(json, this::afterBoardImport);
+		}));
 	}
 
 	/** Fetches the host-defined team list from the store and lets the player pick one. */
