@@ -173,7 +173,7 @@ return '<div class="ledrow"><div><span class="lbl">Team</span>'+esc(a.team?teamN
 fixClamps(el);
 Array.prototype.forEach.call(el.querySelectorAll('button[data-row]'),function(b){b.onclick=function(){var a=rows.find(function(x){return x.row===+b.dataset.row;});
 var what=(a.complete?'Completion of ':((a.add>=0?'+':'')+a.add+' on '))+a.tileLabel+' for '+a.player;
-confirmBox('Remove this credit?',what+' is taken back on everyone\\'s next sync.'+(a.fromRequest?' This came from an approved request: rejecting the request on the Requests page does the same and shows the player why.':''),'Remove',true)
+confirmBox('Remove this credit?',what+' is taken back on everyone\\'s next sync, and the team\\'s Discord is told.'+(a.fromRequest?' This came from an approved request: rejecting the request on the Requests page does the same and shows the player why.':''),'Remove',true)
 .then(function(ok){if(ok){api({action:'deleteAdjustment',row:a.row,fingerprint:a.fingerprint}).then(function(){toast('Credit removed.','ok');load();}).catch(function(e){toast(e.message,'bad');});}});};});}
 /* ---------------- teams */
 function renderTeams(el){var rows=(data.teamRows||[]).map(function(r){return {code:r.code,name:r.name,webhook:r.webhook};});
