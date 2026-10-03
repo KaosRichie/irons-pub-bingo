@@ -375,27 +375,28 @@ class BingoTileDetail extends JPanel
 			}
 		});
 
-		// The tile's main action stays in view: asking an admin for credit on a store
-		// team, the manual tick on a party-only team. The rarely used reset lives behind
-		// a foldout, whose state survives the constant detail rebuilds.
-		JButton primary = tick != null ? tick : request;
-		primary.setFont(FontManager.getRunescapeFont());
-		primary.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
-		add(primary);
-		add(Box.createVerticalStrut(6));
-		JButton actionsToggle = smallButton("More actions  " + (actionsExpanded ? "▾" : "▸"));
+		// All tile actions behind one foldout; its state survives the constant detail
+		// rebuilds via the actionsExpanded field.
+		JButton actionsToggle = smallButton("Actions  " + (actionsExpanded ? "▾" : "▸"));
 		actionsToggle.setHorizontalAlignment(SwingConstants.LEFT);
 		JPanel actionsCard = new JPanel();
 		actionsCard.setLayout(new BoxLayout(actionsCard, BoxLayout.Y_AXIS));
 		actionsCard.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		actionsCard.setAlignmentX(LEFT_ALIGNMENT);
+		if (tick != null)
+		{
+			actionsCard.add(tick);
+			actionsCard.add(Box.createVerticalStrut(4));
+		}
+		actionsCard.add(request);
+		actionsCard.add(Box.createVerticalStrut(4));
 		actionsCard.add(reset);
 		actionsCard.setVisible(actionsExpanded);
 		actionsToggle.addActionListener(e ->
 		{
 			actionsExpanded = !actionsCard.isVisible();
 			actionsCard.setVisible(actionsExpanded);
-			actionsToggle.setText("More actions  " + (actionsExpanded ? "▾" : "▸"));
+			actionsToggle.setText("Actions  " + (actionsExpanded ? "▾" : "▸"));
 			revalidate();
 			repaint();
 		});
