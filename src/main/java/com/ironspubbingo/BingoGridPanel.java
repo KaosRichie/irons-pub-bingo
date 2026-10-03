@@ -19,7 +19,7 @@ import javax.swing.JPanel;
 class BingoGridPanel extends JPanel
 {
 	private static final Color LINE_COLOR = new Color(
-		BingoUi.COLOR_LINE.getRed(), BingoUi.COLOR_LINE.getGreen(), BingoUi.COLOR_LINE.getBlue(), 170);
+		BingoUi.COLOR_LINE.getRed(), BingoUi.COLOR_LINE.getGreen(), BingoUi.COLOR_LINE.getBlue(), 110);
 
 	private int boardSize;
 	/** Completed lines as {firstCellIndex, lastCellIndex} pairs. */
@@ -43,7 +43,7 @@ class BingoGridPanel extends JPanel
 		Graphics2D g2 = (Graphics2D) g.create();
 		g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g2.setColor(LINE_COLOR);
-		g2.setStroke(new BasicStroke(Math.max(4f, getWidth() / (boardSize * 14f)),
+		g2.setStroke(new BasicStroke(Math.max(2.5f, getWidth() / (boardSize * 28f)),
 			BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		for (int[] segment : lineSegments)
 		{

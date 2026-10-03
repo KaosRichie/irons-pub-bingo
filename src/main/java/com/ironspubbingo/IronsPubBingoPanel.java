@@ -78,8 +78,6 @@ class IronsPubBingoPanel extends PluginPanel
 	private final JButton chooseTeamButton = new JButton("Choose team");
 	private final JButton advancedToggle = new JButton();
 	private final JButton setupToggle = new JButton();
-	private final JButton infoToggle = new JButton();
-	private final Card infoCard = new Card();
 	private final JPanel content = new JPanel();
 	private final Card loggedOutCard = new Card();
 	private final BingoGridPanel gridContainer = new BingoGridPanel();
@@ -162,9 +160,21 @@ class IronsPubBingoPanel extends PluginPanel
 		popOutButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		popOutButton.addActionListener(e -> plugin.openBoardWindow());
 
+		JButton helpButton = new JButton(helpIcon());
+		helpButton.setToolTipText("Help: how the board, teams, store and credit requests work");
+		helpButton.setFocusable(false);
+		helpButton.setContentAreaFilled(false);
+		helpButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+		helpButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		helpButton.addActionListener(e -> showReadme());
+		JPanel titleButtons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0));
+		titleButtons.setOpaque(false);
+		titleButtons.add(helpButton);
+		titleButtons.add(popOutButton);
+
 		Row titleRow = new Row();
 		titleRow.add(title, java.awt.BorderLayout.CENTER);
-		titleRow.add(popOutButton, java.awt.BorderLayout.EAST);
+		titleRow.add(titleButtons, java.awt.BorderLayout.EAST);
 
 		smallLabel(pointsLabel, ColorScheme.LIGHT_GRAY_COLOR);
 		eventStatusLabel.setForeground(ColorScheme.BRAND_ORANGE);
@@ -365,17 +375,6 @@ class IronsPubBingoPanel extends PluginPanel
 		content.add(Box.createVerticalStrut(4));
 		content.add(advancedCard);
 
-		// ---- info foldout ----
-
-		JButton readmeButton = new JButton("README");
-		readmeButton.setToolTipText("How the plugin, teams, store and credit requests work");
-		readmeButton.addActionListener(e -> showReadme());
-		infoCard.add(buttonRow(readmeButton));
-		wireFoldout(infoToggle, infoCard, "Info");
-		content.add(Box.createVerticalStrut(4));
-		content.add(infoToggle);
-		content.add(Box.createVerticalStrut(4));
-		content.add(infoCard);
 
 		// ---- logged-out view: shown instead of the content until an account is active ----
 
@@ -389,7 +388,7 @@ class IronsPubBingoPanel extends PluginPanel
 		BingoWrappedLabel loggedOutText = new BingoWrappedLabel(
 			"Log in to get started - your board and team are tied to the account you play on.",
 			SwingConstants.CENTER, CONTENT_WIDTH - 16);
-		JButton loggedOutReadme = new JButton("README");
+		JButton loggedOutReadme = new JButton("Help");
 		loggedOutReadme.addActionListener(e -> showReadme());
 		loggedOutCard.add(loggedOutLogo);
 		loggedOutCard.add(Box.createVerticalStrut(8));
@@ -409,65 +408,26 @@ class IronsPubBingoPanel extends PluginPanel
 		add(content);
 	}
 
-	/**
-	 * The in-client README: the player-facing half of README.md, wrapped for the
-	 * dialog. Keep it in step with the README's Players section when either changes.
-	 */
+	/** The in-client help: topics on the left, one short page each. */
 	private void showReadme()
 	{
-		JTextArea text = new JTextArea(
-			"GETTING STARTED\n"
-				+ "- Without a team store: Setup -> Import board, paste the code from\n"
-				+ "  your host, and put the team code in the settings.\n"
-				+ "- With a team store, in order:\n"
-				+ "  1. Settings: turn on Use team store, paste the store URL.\n"
-				+ "  2. Setup -> Import board -> Import from store.\n"
-				+ "  3. Setup -> Choose team, and pick your team from the list.\n"
-				+ "- While you set up, the Store line in the Team section shows which\n"
-				+ "  step is still missing.\n"
-				+ "- Tiles turn amber on progress and green when complete.\n"
-				+ "- Click a tile for its goals, who contributed, and its actions.\n"
-				+ "  Store teams claim untracked completions via credit requests;\n"
-				+ "  without a store, tiles can be ticked off by hand.\n"
-				+ "\n"
-				+ "TEAM PLAY\n"
-				+ "- Put the team code from your host in the settings, or pick it with\n"
-				+ "  Choose team, then Connect live sync.\n"
-				+ "- Progress combines across the team: counts add up, distinct item\n"
-				+ "  lists count each item once, manual ticks apply team-wide.\n"
-				+ "- Pause store sync stops store traffic without leaving the team.\n"
-				+ "\n"
-				+ "NOTES\n"
-				+ "- Keep the built-in Loot Tracker enabled - chest and raid loot comes\n"
-				+ "  from its events.\n"
-				+ "- For pet tiles, enable the game setting Collection log - New\n"
-				+ "  addition notification. Specific pets need it, and it names the\n"
-				+ "  pet on any-pet tiles.\n"
-				+ "- XP and kill-count goals start counting when you import the board.\n"
-				+ "- Each team keeps its own progress. Changing your team code (or the\n"
-				+ "  store toggle) switches the board to that team - nothing counts for\n"
-				+ "  two teams, and coming back restores what you had.\n"
-				+ "- Optional: set a Discord webhook to post your completions with a\n"
-				+ "  screenshot.\n"
-				+ "\n"
-				+ "TEAM PORTAL (browser)\n"
-				+ "- The team store URL in any browser shows the live board, all credit\n"
-				+ "  requests and their status, and a form to request credit with proof\n"
-				+ "  links - for mobile players and anyone without the plugin. Open it\n"
-				+ "  with the Team section's Portal button.\n"
-				+ "- Credit requests count only after an admin approves them.\n"
-				+ "\n"
-				+ "HOSTS\n"
-				+ "- Bingo Forge, the board builder, runs in your browser:\n"
-				+ "  https://kaosrichie.github.io/irons-pub-bingo/board-builder.html\n"
-				+ "- The full README - board format, every goal type and the team store\n"
-				+ "  sheet - is at github.com/KaosRichie/irons-pub-bingo");
-		text.setEditable(false);
-		text.setFont(FontManager.getRunescapeSmallFont());
-		text.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		text.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		text.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-		JOptionPane.showMessageDialog(this, text, "Irons Pub Bingo - README", JOptionPane.PLAIN_MESSAGE);
+		BingoHelp.show(this);
+	}
+
+	/** Hand-painted question mark in a ring, theme colored. */
+	private static Icon helpIcon()
+	{
+		BufferedImage image = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+		g.drawOval(0, 0, 13, 13);
+		g.setFont(new java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.BOLD, 10));
+		java.awt.FontMetrics metrics = g.getFontMetrics();
+		g.drawString("?", (14 - metrics.stringWidth("?")) / 2, 11);
+		g.dispose();
+		return new ImageIcon(image);
 	}
 
 	/** Hand-painted pop-out glyph (window with an arrow to the top right), theme colored. */
@@ -779,14 +739,10 @@ class IronsPubBingoPanel extends PluginPanel
 				BingoTile tile = board.getTiles().get(i);
 				BingoTileCell cell = cells.get(i);
 				boolean complete = plugin.isTileComplete(i);
-				cell.setBackground(complete ? BingoUi.COLOR_COMPLETE
-					: !fillMode && hasProgress(tile, i) ? BingoUi.COLOR_PARTIAL : BingoUi.COLOR_EMPTY);
-				cell.setFillFraction(complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i));
-				Color border = i == selectedTile ? Color.WHITE
-					: lineCells.contains(i) ? BingoUi.COLOR_LINE
-					: ColorScheme.DARKER_GRAY_HOVER_COLOR;
-				cell.setBorder(BorderFactory.createLineBorder(border,
-					i == selectedTile || lineCells.contains(i) ? 2 : 1));
+				// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
+				boolean partial = !complete && !fillMode && hasProgress(tile, i);
+				cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
+					i == selectedTile, lineCells.contains(i));
 				String description = tile.description == null ? "" : tile.description.trim();
 				cell.setToolTipText("<html><b>" + (i + 1) + ". " + BingoUi.escapeHtml(tile.label) + "</b>"
 					+ (tile.pointsValue() > 0 ? " (" + tile.pointsValue() + " pts)" : "")
@@ -1020,43 +976,30 @@ class IronsPubBingoPanel extends PluginPanel
 		}));
 	}
 
-	/** Header points line: "23 / 219 pts", plus a medal + colored placement on store events. */
+	/** Header stats line: "12 / 25 tiles  ·  23 / 219 pts", plus a medal + colored placement on store events. */
 	private void refreshPointsLine()
 	{
-		boolean show = plugin.getBoard() != null && plugin.totalBoardPoints() > 0;
-		pointsLabel.setVisible(show);
-		if (!show)
+		BingoBoard board = plugin.getBoard();
+		pointsLabel.setVisible(board != null);
+		if (board == null)
 		{
 			return;
 		}
 		int rank = plugin.placementRank();
-		String text = plugin.earnedPoints() + " / " + plugin.totalBoardPoints() + " pts";
+		StringBuilder text = new StringBuilder("<html>").append(plugin.completedCount()).append(" / ")
+			.append(board.getTiles().size()).append(" tiles");
+		if (plugin.totalBoardPoints() > 0)
+		{
+			text.append("  &#183;  ").append(plugin.earnedPoints()).append(" / ").append(plugin.totalBoardPoints()).append(" pts");
+		}
 		if (rank > 0)
 		{
-			String color = rank == 1 ? "#ffd700" : rank == 2 ? "#e8e8e8" : rank == 3 ? "#d78d4a" : "#ffffff";
-			text = "<html>" + text + "  &#183;  <font color='" + color + "'>" + ordinal(rank) + "</font></html>";
+			Color color = BingoUi.rankColor(rank);
+			text.append("  &#183;  <font color='").append(String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue()))
+				.append("'>").append(BingoUi.ordinal(rank)).append("</font>");
 		}
-		pointsLabel.setText(text);
+		pointsLabel.setText(text.append("</html>").toString());
 		pointsLabel.setIcon(rank == 1 ? MEDAL_GOLD : rank == 2 ? MEDAL_SILVER : rank == 3 ? MEDAL_BRONZE : null);
-	}
-
-	private static String ordinal(int n)
-	{
-		if (n % 100 >= 11 && n % 100 <= 13)
-		{
-			return n + "th";
-		}
-		switch (n % 10)
-		{
-			case 1:
-				return n + "st";
-			case 2:
-				return n + "nd";
-			case 3:
-				return n + "rd";
-			default:
-				return n + "th";
-		}
 	}
 
 	/** A little medal: rimmed disc with a centered, faded inner ring and a top-left shine. */

@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -12,6 +13,7 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -31,7 +33,13 @@ import net.runelite.client.util.ImageUtil;
 class BingoBoardWindow extends JFrame
 {
 	private final IronsPubBingoPlugin plugin;
-	private final JLabel statusLabel = new JLabel();
+	private final JLabel titleLabel = new JLabel();
+	private final JLabel subLabel = new JLabel();
+	private final BingoUi.Chip tilesChip = new BingoUi.Chip();
+	private final BingoUi.Chip linesChip = new BingoUi.Chip();
+	private final BingoUi.Chip pointsChip = new BingoUi.Chip();
+	private final BingoUi.Chip rankChip = new BingoUi.Chip();
+	private final BingoUi.Chip eventChip = new BingoUi.Chip();
 	private final BingoGridPanel grid = new BingoGridPanel();
 	private static final int DETAIL_WIDTH = 380;
 	private final BingoTileDetail detail;
@@ -56,9 +64,7 @@ class BingoBoardWindow extends JFrame
 		content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		content.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		statusLabel.setFont(FontManager.getRunescapeFont());
-		statusLabel.setForeground(Color.WHITE);
-		content.add(statusLabel, BorderLayout.NORTH);
+		content.add(buildHeader(), BorderLayout.NORTH);
 
 		grid.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		grid.addComponentListener(new ComponentAdapter()
@@ -135,7 +141,9 @@ class BingoBoardWindow extends JFrame
 		if (board == null)
 		{
 			setTitle("Irons Pub Bingo");
-			statusLabel.setText("No board loaded");
+			titleLabel.setText("No board loaded");
+			subLabel.setText("Import a board in the side panel to see it here.");
+			setChipsVisible(false);
 			detailScroll.setVisible(false);
 			split.setDividerSize(0);
 			return;
@@ -175,14 +183,10 @@ class BingoBoardWindow extends JFrame
 			BingoTile tile = board.getTiles().get(i);
 			BingoTileCell cell = cells.get(i);
 			boolean complete = plugin.isTileComplete(i);
-			cell.setBackground(complete ? BingoUi.COLOR_COMPLETE
-				: !fillMode && hasProgress(tile, i) ? BingoUi.COLOR_PARTIAL : BingoUi.COLOR_EMPTY);
-			cell.setFillFraction(complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i));
-			Color border = i == selected ? Color.WHITE
-				: lineCells.contains(i) ? BingoUi.COLOR_LINE
-				: ColorScheme.DARKER_GRAY_HOVER_COLOR;
-			cell.setBorder(BorderFactory.createLineBorder(border,
-				i == selected || lineCells.contains(i) ? 2 : 1));
+			// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
+			boolean partial = !complete && !fillMode && hasProgress(tile, i);
+			cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
+				i == selected, lineCells.contains(i));
 			cellLabels.get(i).setWrapWidth(textWidth);
 			String tooltip = "<html><b>" + BingoUi.escapeHtml(tile.label) + "</b><br>"
 				+ (complete ? "Complete" : summary(tile, i)) + "</html>";
@@ -194,6 +198,46 @@ class BingoBoardWindow extends JFrame
 		repaint();
 	}
 
+	/** Board title, a quiet subline (team, version) and a row of stat chips, over a gold rule. */
+	private JPanel buildHeader()
+	{
+		titleLabel.setFont(FontManager.getRunescapeBoldFont());
+		titleLabel.setForeground(Color.WHITE);
+		subLabel.setFont(FontManager.getRunescapeSmallFont());
+		subLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+		JPanel text = new JPanel(new GridLayout(2, 1, 0, 1));
+		text.setOpaque(false);
+		text.add(titleLabel);
+		text.add(subLabel);
+
+		JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		chips.setOpaque(false);
+		for (BingoUi.Chip chip : new BingoUi.Chip[]{tilesChip, linesChip, pointsChip, rankChip, eventChip})
+		{
+			chips.add(chip);
+			chips.add(Box.createHorizontalStrut(6));
+		}
+
+		JPanel header = new JPanel(new BorderLayout(0, 8));
+		header.setOpaque(false);
+		header.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 0, 1, 0, BingoUi.COLOR_GOLD.darker()),
+			BorderFactory.createEmptyBorder(2, 2, 10, 2)));
+		header.add(text, BorderLayout.NORTH);
+		header.add(chips, BorderLayout.CENTER);
+		return header;
+	}
+
+	private void setChipsVisible(boolean visible)
+	{
+		tilesChip.setVisible(visible);
+		linesChip.setVisible(visible);
+		pointsChip.setVisible(visible);
+		rankChip.setVisible(visible);
+		eventChip.setVisible(visible);
+	}
+
 	private void updateStatusLine()
 	{
 		BingoBoard board = plugin.getBoard();
@@ -201,22 +245,43 @@ class BingoBoardWindow extends JFrame
 		{
 			return;
 		}
-		StringBuilder status = new StringBuilder(plugin.boardTitleText())
-			.append("   |   ").append(plugin.completedCount()).append('/').append(board.getTiles().size()).append(" tiles")
-			.append("   |   ").append(plugin.completedLines()).append(" lines");
-		if (plugin.totalBoardPoints() > 0)
+		setText(titleLabel, board.getName());
+		String team = plugin.teamDisplayName();
+		String sub = (team == null ? "No team set" : "Team " + team)
+			+ (board.version != null ? "   ·   Board v" + board.version : "");
+		setText(subLabel, sub);
+
+		tilesChip.setVisible(true);
+		tilesChip.set(plugin.completedCount() + " / " + board.getTiles().size(), "tiles", null);
+		int lines = plugin.completedLines();
+		linesChip.setVisible(true);
+		linesChip.set(String.valueOf(lines), lines == 1 ? "line" : "lines", lines > 0 ? BingoUi.COLOR_GOLD : null);
+		pointsChip.setVisible(plugin.totalBoardPoints() > 0);
+		pointsChip.set(plugin.earnedPoints() + " / " + plugin.totalBoardPoints(), "pts", null);
+		int rank = plugin.placementRank();
+		rankChip.setVisible(rank > 0);
+		if (rank > 0)
 		{
-			status.append("   |   ").append(plugin.earnedPoints()).append('/').append(plugin.totalBoardPoints()).append(" pts");
+			rankChip.set(BingoUi.ordinal(rank), "place", BingoUi.rankColor(rank));
 		}
 		String event = plugin.eventStatusText();
-		if (!event.isEmpty())
+		eventChip.setVisible(!event.isEmpty());
+		if (event.startsWith("Time left: "))
 		{
-			status.append("   |   ").append(event);
+			eventChip.set(event.substring("Time left: ".length()), "left", ColorScheme.BRAND_ORANGE);
 		}
-		String text = status.toString();
-		if (!text.equals(statusLabel.getText()))
+		else if (!event.isEmpty())
 		{
-			statusLabel.setText(text);
+			eventChip.set(event, null, ColorScheme.BRAND_ORANGE);
+		}
+		eventChip.setToolTipText(plugin.eventWindowTooltip());
+	}
+
+	private static void setText(JLabel label, String text)
+	{
+		if (!text.equals(label.getText()))
+		{
+			label.setText(text);
 		}
 	}
 
@@ -279,6 +344,8 @@ class BingoBoardWindow extends JFrame
 				cell.addMouseListener(click);
 				iconLabel.addMouseListener(click);
 				label.addMouseListener(click);
+				cell.trackHover(iconLabel);
+				cell.trackHover(label);
 				cells.add(cell);
 				cellIcons.add(iconLabel);
 				cellLabels.add(label);
