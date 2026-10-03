@@ -3,9 +3,11 @@
 // Routes (event code = 3 to 40 of a-z, 0-9, -):
 //   POST /e/<code>              the plugin's sync, exactly as the Apps Script /exec URL takes it
 //   GET  /e/<code>              the player portal
+//   GET  /e/<code>/data         the portal's live data (JSON)
 //   POST /e/<code>/rpc          the portal's request form
 //   GET  /e/<code>/admin        the admin page
 //   POST /e/<code>/admin/api    admin actions (Authorization: Bearer <ADMIN_TOKEN>)
+//   GET  /assets/logo.png, /assets/icon.png
 //
 // The Durable Object runs the Apps Script store unchanged (built into a module by build.mjs)
 // against stand-ins for the Google services. A Durable Object handles one request at a time,
@@ -13,9 +15,15 @@
 // milliseconds instead of waiting on a lock for seconds.
 import { loadStore } from './generated/store-script.js';
 import { Sheet, Spreadsheet, createGoogle } from './google.js';
-import { ADMIN_PAGE } from './admin-page.js';
+import { adminPage } from './admin-page.js';
+import { portalPage } from './portal-page.js';
+import { eventData, summarizeBoard } from './data.js';
+import { LOGO_PNG, ICON_PNG } from './generated/assets.js';
 
 const EVENT_CODE = /^[a-z0-9-]{3,40}$/;
+const ASSETS = { '/assets/logo.png': LOGO_PNG, '/assets/icon.png': ICON_PNG };
+// Days of request counts kept for the admin page's Usage view.
+const USAGE_DAYS = 14;
 // Admin actions that map onto the store's own menu functions.
 const TAB_EDIT_ACTIONS = ['Teams', 'Board code', 'Settings', 'Adjustments', 'Requests'];
 
@@ -23,6 +31,12 @@ export default {
 	async fetch(request, env)
 	{
 		const url = new URL(request.url);
+		if (ASSETS[url.pathname])
+		{
+			const bytes = Uint8Array.from(atob(ASSETS[url.pathname]), c => c.charCodeAt(0));
+			return new Response(bytes, { headers: { 'content-type': 'image/png',
+				'cache-control': 'public, max-age=604800' } });
+		}
 		const match = url.pathname.match(/^\/e\/([^/]+)(\/.*)?$/);
 		if (!match)
 		{
@@ -52,6 +66,7 @@ export class BingoEvent
 	{
 		this.ready = this.ready || this.load();
 		await this.ready;
+		this.countRequest();
 		const url = new URL(request.url);
 		const rest = (url.pathname.match(/^\/e\/[^/]+(\/.*)?$/) || [])[1] || '';
 		try
@@ -65,8 +80,16 @@ export class BingoEvent
 						out => json(out.getContent()));
 				}
 				const params = Object.fromEntries(url.searchParams);
-				return await this.run(() => this.store.doGet({ parameter: params }),
-					out => params.board ? json(out.getContent()) : html(portalShell(out.getContent())));
+				if (params.board)
+				{
+					return await this.run(() => this.store.doGet({ parameter: params }), out => json(out.getContent()));
+				}
+				return html(portalPage());
+			}
+			if (rest === '/data')
+			{
+				return await this.run(() => eventData(this.store, this.spreadsheet, false),
+					out => json(JSON.stringify(out), 200, { 'cache-control': 'no-store' }));
 			}
 			if (rest === '/rpc' && request.method === 'POST')
 			{
@@ -74,7 +97,7 @@ export class BingoEvent
 			}
 			if (rest === '/admin')
 			{
-				return html(ADMIN_PAGE);
+				return html(adminPage());
 			}
 			if (rest === '/admin/api' && request.method === 'POST')
 			{
@@ -96,6 +119,25 @@ export class BingoEvent
 	}
 
 	// ------------------------------------------------------------------ store plumbing
+
+	/**
+	 * Counts requests per UTC day for the admin page. Saved along with other changes, or
+	 * every 25 requests, so counting never costs a storage write per request.
+	 */
+	countRequest()
+	{
+		const day = new Date().toISOString().slice(0, 10);
+		this.usage.days[day] = (this.usage.days[day] || 0) + 1;
+		const keep = Object.keys(this.usage.days).sort().slice(-USAGE_DAYS);
+		for (const old of Object.keys(this.usage.days))
+		{
+			if (keep.indexOf(old) < 0)
+			{
+				delete this.usage.days[old];
+			}
+		}
+		this.unsavedRequests++;
+	}
 
 	/** Restores the event's tabs and properties from storage into memory. */
 	async load()
@@ -119,6 +161,9 @@ export class BingoEvent
 			this.spreadsheet.sheets.set(tab.name, new Sheet(tab.name, data, tab.hidden));
 			this.persisted.set(tab.name, stored);
 		}
+		this.usage = (await this.state.storage.get('usage')) || { days: {} };
+		this.usageSaved = JSON.stringify(this.usage);
+		this.unsavedRequests = 0;
 		const props = (await this.state.storage.get('props')) || {};
 		for (const key of Object.keys(props))
 		{
@@ -188,6 +233,11 @@ export class BingoEvent
 		{
 			puts.props = props;
 			this.propsText = propsText;
+		}
+		if (this.unsavedRequests && (Object.keys(puts).length || deletes.length || this.unsavedRequests >= 25))
+		{
+			puts.usage = this.usage;
+			this.unsavedRequests = 0;
 		}
 		const keys = Object.keys(puts);
 		for (let i = 0; i < keys.length; i += 128)
@@ -303,11 +353,153 @@ export class BingoEvent
 				case 'resetStore':
 					store.resetStoreData();
 					break;
+				case 'overview':
+					store.onOpen();
+					result = eventData(store, this.spreadsheet, true);
+					result.usage = this.usage;
+					break;
+				case 'setRequestStatus':
+					result = this.setRequestStatus(String(body.id || ''), String(body.status || ''));
+					break;
+				case 'addAdjustment':
+					result = this.addAdjustment(body);
+					break;
+				case 'deleteAdjustment':
+					result = this.deleteAdjustment(parseInt(body.row, 10), String(body.fingerprint || ''));
+					break;
+				case 'saveTeams':
+					result = this.saveTeams(body.teams);
+					break;
+				case 'saveBoardCode':
+					result = this.saveBoardCode(String(body.code || ''));
+					break;
+				case 'saveSettings':
+					result = this.saveSettings(body);
+					break;
 				default:
 					result = { error: 'Unknown action' };
 			}
 		}, () => null);
 		return json(JSON.stringify({ result, alerts: this.google.alerts.slice() }));
+	}
+
+	/** Approves, rejects or reopens a request found by its id, so a moved row can't mislead. */
+	setRequestStatus(id, status)
+	{
+		if (['Pending', 'Done', 'Rejected'].indexOf(status) < 0)
+		{
+			return { error: 'Unknown status' };
+		}
+		const rows = this.spreadsheet.getSheetByName('Requests');
+		if (rows)
+		{
+			for (let i = 1; i < rows.data.length; i++)
+			{
+				const row = rows.data[i] || [];
+				if (String(row[11] || '') === id || (!row[11] && id === '#' + (i + 1)))
+				{
+					this.store.setRequestStatus(i + 1, status);
+					return { ok: true };
+				}
+			}
+		}
+		return { error: 'That request no longer exists. Reload the page.' };
+	}
+
+	/** A credit ledger row, checked the way the store reads it before it is written. */
+	addAdjustment(body)
+	{
+		const team = String(body.team || '').trim().toLowerCase();
+		const scope = this.store.latestBoardForTeam(team);
+		const row = [team, String(parseInt(body.tile, 10) || ''), body.goal === '' || body.goal == null ? '' : String(parseInt(body.goal, 10)),
+			this.store.cleanPlayerName(body.player), body.add === '' || body.add == null ? '' : Number(body.add),
+			body.complete ? 'yes' : '', String(body.note || '').slice(0, 200), 'admin page', new Date().toISOString()];
+		const issues = this.store.parseAdjustmentRow(row, scope ? scope.meta : null).issues.filter(Boolean);
+		if (!scope || issues.length)
+		{
+			return { error: scope ? issues.join('. ') : 'That team has no board yet.' };
+		}
+		this.store.onOpen();
+		this.spreadsheet.getSheetByName('Adjustments').appendRow(row);
+		return { ok: true };
+	}
+
+	/** Removes a ledger row, but only if it is still the row the admin was looking at. */
+	deleteAdjustment(rowNumber, fingerprint)
+	{
+		const sheet = this.spreadsheet.getSheetByName('Adjustments');
+		if (!sheet || !(rowNumber >= 2) || JSON.stringify(sheet.data[rowNumber - 1]) !== fingerprint)
+		{
+			return { error: 'The ledger changed meanwhile. Reload the page and try again.' };
+		}
+		sheet.deleteRow(rowNumber);
+		return { ok: true };
+	}
+
+	saveTeams(teams)
+	{
+		if (!Array.isArray(teams))
+		{
+			return { error: 'No teams sent' };
+		}
+		this.store.onOpen();
+		const sheet = this.spreadsheet.getSheetByName('Teams');
+		const header = sheet.data[0] || ['Code', 'Name', 'Webhook'];
+		const seen = {};
+		const rows = [];
+		for (const team of teams)
+		{
+			const code = String(team.code || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+			if (!code)
+			{
+				continue;
+			}
+			if (seen[code])
+			{
+				return { error: 'Two teams use the code "' + code + '". Codes must be unique.' };
+			}
+			seen[code] = true;
+			rows.push([code, String(team.name || '').trim().slice(0, 60), String(team.webhook || '').trim()]);
+		}
+		sheet.data = [header].concat(rows);
+		this.store.clearConfigCache();
+		return { ok: true, teams: rows.length };
+	}
+
+	saveBoardCode(code)
+	{
+		const summary = summarizeBoard(code);
+		if (!summary.ok)
+		{
+			return { error: summary.message };
+		}
+		const sheet = this.store.ensureBoardCodeSheet();
+		sheet.data = [sheet.data[0] || ['Paste the board code below'], [code]];
+		this.store.clearConfigCache();
+		this.google.alerts.push(this.store.reconcileBoardCode(code, this.store.sha256Hex(code)));
+		return { ok: true };
+	}
+
+	saveSettings(body)
+	{
+		const seconds = Math.round(Number(body.pollSeconds));
+		if (!(seconds >= 60 && seconds <= 900))
+		{
+			return { error: 'Pick a value from 60 to 900 seconds.' };
+		}
+		this.store.onOpen();
+		const sheet = this.spreadsheet.getSheetByName('Settings');
+		const row = sheet.data.findIndex((r, i) => i > 0 && String((r || [])[0] || '').toLowerCase().indexOf('poll') >= 0);
+		if (row > 0)
+		{
+			sheet.data[row][1] = seconds;
+		}
+		else
+		{
+			sheet.appendRow(['Poll interval (seconds)', seconds, '']);
+		}
+		this.store.clearConfigCache();
+		return { ok: true };
 	}
 
 	editTab(name, rows)
@@ -337,31 +529,13 @@ export class BingoEvent
 	}
 }
 
-function json(text, status)
+function json(text, status, extra)
 {
-	return new Response(text, { status: status || 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+	return new Response(text, { status: status || 200,
+		headers: Object.assign({ 'content-type': 'application/json; charset=utf-8' }, extra || {}) });
 }
 
 function html(text)
 {
 	return new Response(text, { headers: { 'content-type': 'text/html; charset=utf-8' } });
-}
-
-/**
- * The portal page the script renders, with a tiny google.script.run stand-in so its request
- * form posts to /rpc instead.
- */
-function portalShell(body)
-{
-	const bridge = '<script>window.google={script:{run:{withSuccessHandler:function(ok){return{'
-		+ 'withFailureHandler:function(bad){return{submitFormRequest:function(payload){'
-		+ 'fetch(location.pathname.replace(/\\/$/,"")+"/rpc",{method:"POST",'
-		+ 'headers:{"content-type":"application/json"},'
-		+ 'body:JSON.stringify({fn:"submitFormRequest",args:[payload]})})'
-		+ '.then(function(r){return r.json();})'
-		+ '.then(function(j){if(j.error){bad(new Error(j.error));}else{ok(j.result);}})'
-		+ '.catch(bad);}};}};}}}};</script>';
-	return '<!doctype html><html><head><meta charset="utf-8">'
-		+ '<meta name="viewport" content="width=device-width, initial-scale=1">'
-		+ '<title>Irons Pub Bingo</title>' + bridge + '</head><body>' + body + '</body></html>';
 }

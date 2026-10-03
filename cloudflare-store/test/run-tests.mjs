@@ -239,8 +239,12 @@ await test('the portal renders and its request form files a request', async () =
 		meta: { name: 'Summer board', size: 1, tiles: [{ label: 'Ten kills', goals: [{ label: 'Kills', target: 10 }] }] },
 		members: { [A]: member('Alice', { 0: tile(1000, [3]) }) } });
 	const page = await (await rt.request('/e/summer')).text();
-	ok(page.includes('Summer board'), 'board embedded in the portal');
-	ok(page.includes('window.google='), 'form bridge injected');
+	ok(page.includes('Irons Pub Bingo') && page.includes('/data'), 'the portal page loads its data live');
+	const data = await (await rt.request('/e/summer/data')).json();
+	is(data.event.name, 'Summer board', 'the portal data names the board');
+	const red = data.teams.find(t => t.code === 'red');
+	is(red.board.tiles[0].goals[0].total, 3, 'and carries the tile progress');
+	is(red.board.tiles[0].goals[0].contributors, [{ name: 'Alice', amount: 3 }], 'with contributors');
 	const rpc = await (await rt.request('/e/summer/rpc', { method: 'POST',
 		body: JSON.stringify({ fn: 'submitFormRequest', args: [{ board: 'b_red', player: 'Mobile Mo', tile: 1, add: 2, note: 'phone' }] }) })).json();
 	ok(!rpc.error && /sent/i.test(rpc.result), 'form answered: ' + JSON.stringify(rpc));
@@ -288,6 +292,54 @@ await test('menu actions report what they did', async () =>
 	ok(applied.body.alerts.some(a => /Board recorded|unchanged/.test(a)), 'apply reports: ' + applied.body.alerts);
 	const fetched = await rt.post('summer', { fetchBoard: true });
 	is(fetched.boardJson, code, 'players can fetch the pasted board');
+});
+
+await test('the admin page actions work from names, not row numbers', async () =>
+{
+	const rt = createRuntime();
+	await setupEvent(rt, 'summer');
+	const meta = { name: 'B', size: 1, tiles: [{ label: 'Ten kills', goals: [{ label: 'Kills', target: 10 }] }] };
+	await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, meta,
+		members: { [A]: member('Alice', { 0: tile(1000, [3]) }) },
+		request: { member: A, player: 'Alice', tile: 1, goal: 1, add: 4, note: 'missed', links: 'https://imgur.com/x' } });
+	let view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	const request = view.requests[0];
+	is(request.tileLabel, 'Ten kills', 'requests carry the tile name');
+	is(request.links, ['https://imgur.com/x'], 'and their proof links');
+	is((await rt.admin('summer', { action: 'setRequestStatus', id: request.id, status: 'Done' })).body.result, { ok: true }, 'approved by id');
+	view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	is(view.requests[0].status, 'Done', 'shown as approved');
+	is(view.teams.find(t => t.code === 'red').board.tiles[0].goals[0].total, 7, 'and the credit counts');
+
+	let r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 3, note: 'screenshot' })).body.result;
+	is(r, { ok: true }, 'credit added from the form');
+	r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 9, goal: 1, player: 'Bob', add: 3 })).body.result;
+	ok(r.error && /does not exist/.test(r.error), 'a tile outside the board is refused: ' + JSON.stringify(r));
+	view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	const bob = view.adjustments.find(a => a.player === 'Bob');
+	is(bob.tileLabel, 'Ten kills', 'the ledger shows tile names');
+	r = (await rt.admin('summer', { action: 'deleteAdjustment', row: bob.row, fingerprint: 'stale' })).body.result;
+	ok(r.error, 'a ledger row that changed is not removed');
+	r = (await rt.admin('summer', { action: 'deleteAdjustment', row: bob.row, fingerprint: bob.fingerprint })).body.result;
+	is(r, { ok: true }, 'the row the admin saw is removed');
+
+	r = (await rt.admin('summer', { action: 'saveTeams', teams: [{ code: 'Red', name: 'Red' }, { code: 'red', name: 'Again' }] })).body.result;
+	ok(r.error, 'duplicate team codes are refused');
+	r = (await rt.admin('summer', { action: 'saveTeams', teams: [{ code: 'Red Team!', name: 'Red' }, { code: 'blue', name: 'Blue' }] })).body.result;
+	is(r, { ok: true, teams: 2 }, 'teams saved');
+	view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	is(view.teamRows.map(t => t.code), ['red-team', 'blue'], 'codes are normalized like the plugin does');
+
+	r = (await rt.admin('summer', { action: 'saveBoardCode', code: '{not json' })).body.result;
+	ok(r.error, 'a broken board code is refused');
+	r = (await rt.admin('summer', { action: 'saveSettings', pollSeconds: 20 })).body.result;
+	ok(r.error, 'a poll interval below 60 is refused');
+	r = (await rt.admin('summer', { action: 'saveSettings', pollSeconds: 300 })).body.result;
+	is(r, { ok: true }, 'a valid poll interval is saved');
+	const sync = await rt.post('summer', { board: 'b_red-team', rejoin: B, members: {} });
+	is(sync.pollSeconds, 300, 'and players get it on their next sync');
+	view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	ok(Object.values(view.usage.days)[0] > 10, 'requests are counted for the usage view');
 });
 
 // ---------------------------------------------------------------- report

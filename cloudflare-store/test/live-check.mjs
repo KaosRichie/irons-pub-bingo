@@ -72,8 +72,8 @@ check('team red sees its 31 members', Object.keys(red.members).length === 31, Ob
 check('team red total is 33 kills', Object.values(red.members).reduce((s, m) => s + ((m.tiles['0'] || { goals: [{ n: 0 }] }).goals[0] || { n: 0 }).n, 0) === 33);
 
 // -- portal and its request form
-const portal = await (await fetch(url)).text();
-check('portal shows the board', portal.includes('Live check board'));
+const portal = await (await fetch(url + '/data')).json();
+check('portal shows the board', portal.event.name === 'Live check board', JSON.stringify(portal.event));
 const form = await (await fetch(url + '/rpc', { method: 'POST', body: JSON.stringify({ fn: 'submitFormRequest',
 	args: [{ board: 'id_live_red', player: 'Mobile Mo', tile: 1, add: 2, note: 'from my phone' }] }) })).json();
 check('portal form files a request', !form.error, form.error);
