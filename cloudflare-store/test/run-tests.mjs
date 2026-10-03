@@ -342,6 +342,25 @@ await test('the admin page actions work from names, not row numbers', async () =
 	ok(Object.values(view.usage.days)[0] > 10, 'requests are counted for the usage view');
 });
 
+await test('credit from the admin page is announced on Discord, and so is taking it back', async () =>
+{
+	const rt = createRuntime();
+	await setupEvent(rt, 'summer');
+	await rt.admin('summer', { action: 'saveTeams', teams: [{ code: 'red', name: 'Red Team', webhook: 'https://discord.com/api/webhooks/1/x' }] });
+	const meta = { name: 'Board', size: 1, tiles: [{ label: 'Ten kills', goals: [{ label: 'Kills', target: 10 }] }] };
+	await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, meta, members: { [A]: member('Alice', { 0: tile(1000, [3]) }) } });
+	rt.webhooks.length = 0;
+	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 2, note: 'screenshot in chat' });
+	ok(rt.webhooks.length === 1 && /Credit approved/.test(rt.webhooks[0].body) && /Bob/.test(rt.webhooks[0].body)
+		&& /screenshot in chat/.test(rt.webhooks[0].body), 'plain credit announced: ' + JSON.stringify(rt.webhooks));
+	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 5 });
+	ok(/completed \*\*Ten kills\*\*/.test(rt.webhooks[1].body), 'credit that finishes the tile is the completion post: ' + rt.webhooks[1].body);
+	const view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	const row = view.adjustments.find(a => a.add === 5);
+	await rt.admin('summer', { action: 'deleteAdjustment', row: row.row, fingerprint: row.fingerprint });
+	ok(/withdrawn/.test(rt.webhooks[2].body), 'removing credit is announced: ' + rt.webhooks[2].body);
+});
+
 // ---------------------------------------------------------------- report
 
 if (failures.length)

@@ -420,7 +420,11 @@ export class BingoEvent
 			return { error: scope ? issues.join('. ') : 'That team has no board yet.' };
 		}
 		this.store.onOpen();
+		// The before/after around the write tells the post whether this finished the tile
+		// and which bingo lines it completed, exactly as for an approved request.
+		const doneBefore = this.store.tileTotals(scope.board, scope.meta).done.slice();
 		this.spreadsheet.getSheetByName('Adjustments').appendRow(row);
+		this.store.announceApproval(asRequestRow(row), scope, parseInt(body.tile, 10) - 1, doneBefore);
 		return { ok: true };
 	}
 
@@ -432,7 +436,13 @@ export class BingoEvent
 		{
 			return { error: 'The ledger changed meanwhile. Reload the page and try again.' };
 		}
+		const removed = sheet.data[rowNumber - 1];
 		sheet.deleteRow(rowNumber);
+		const team = String(removed[0] || '').trim().toLowerCase();
+		if (team)
+		{
+			this.store.announceWithdrawal(asRequestRow(removed), this.store.latestBoardForTeam(team));
+		}
 		return { ok: true };
 	}
 
@@ -527,6 +537,16 @@ export class BingoEvent
 		}
 		return { changed };
 	}
+}
+
+/**
+ * A credit ledger row in the shape of a Requests row, which is what the store's Discord
+ * announcements read: team, player, tile, goal, amount, complete, note.
+ */
+function asRequestRow(ledger)
+{
+	const note = String(ledger[6] || '').replace(/^request \S+?: ?/, '');
+	return [ledger[8] || '', ledger[0], ledger[3], ledger[1], ledger[2], ledger[4], ledger[5], note, '', 'Done', ''];
 }
 
 function json(text, status, extra)
