@@ -34,7 +34,7 @@ const code = JSON.stringify({ name: 'Live check board', id: 'live', version: 1, 
 const hash = createHash('sha256').update(code, 'utf8').digest('hex');
 
 // -- admin setup, through the admin API the admin page uses
-check('admin page served', (await (await fetch(url + '/admin')).text()).includes('Irons Pub Bingo admin'));
+check('admin page served', (await (await fetch(url + '/admin')).text()).includes('Admin sign in'));
 check('wrong token refused', (await fetch(url + '/admin/api', { method: 'POST', body: '{}' })).status === 401);
 const tabs = await admin({ action: 'tabs' });
 check('tabs listed', tabs.status === 200 && tabs.body.result.some(t => t.name === 'Teams'), JSON.stringify(tabs.body));
