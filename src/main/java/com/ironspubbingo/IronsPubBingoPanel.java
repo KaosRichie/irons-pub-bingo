@@ -721,6 +721,12 @@ class IronsPubBingoPanel extends PluginPanel
 		{
 			boardNameLabel.setText("No board loaded");
 		}
+		else if (cells.size() != board.getTiles().size())
+		{
+			// The grid was built for a different board: build it for this one.
+			rebuild();
+			return;
+		}
 		else
 		{
 			boardNameLabel.setText(plugin.boardTitleText());
