@@ -20,6 +20,13 @@ public class TileProgress
 	 * issues between players.
 	 */
 	Long ts;
+	/**
+	 * This member's share of the tile as it stood the moment the tile completed, worked out
+	 * and published by the owner's client, which watched it happen. Teammates who only see
+	 * the tile later freeze these numbers instead of guessing. Null while the tile is not
+	 * complete, or before the owner's client has seen it complete.
+	 */
+	TileProgress completedAt;
 
 	/**
 	 * A copy safe to broadcast to teammates: counters, distinct item names, the manual
@@ -30,6 +37,7 @@ public class TileProgress
 		TileProgress share = new TileProgress();
 		share.manual = manual;
 		share.ts = ts;
+		share.completedAt = completedAt == null ? null : completedAt.counts(goalCount);
 		for (int g = 0; g < goalCount; g++)
 		{
 			GoalProgress own = goal(g, goalCount);
@@ -45,6 +53,41 @@ public class TileProgress
 			}
 		}
 		return share;
+	}
+
+	/** Just the numbers: counters, distinct names and the manual tick. */
+	TileProgress counts(int goalCount)
+	{
+		TileProgress copy = new TileProgress();
+		copy.manual = manual;
+		for (int g = 0; g < goalCount; g++)
+		{
+			GoalProgress own = goal(g, goalCount);
+			GoalProgress into = copy.goal(g, goalCount);
+			into.n = own.n;
+			if (own.matched != null && !own.matched.isEmpty())
+			{
+				into.matched = new HashSet<>(own.matched);
+			}
+		}
+		return copy;
+	}
+
+	/** Whether there is any progress at all: a count, a name or a tick. */
+	boolean hasProgress()
+	{
+		if (manual)
+		{
+			return true;
+		}
+		for (GoalProgress p : goals == null ? new ArrayList<GoalProgress>() : goals)
+		{
+			if (p != null && (p.n != 0 || p.matched != null && !p.matched.isEmpty()))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

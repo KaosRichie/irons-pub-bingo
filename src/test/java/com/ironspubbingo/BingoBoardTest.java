@@ -377,6 +377,25 @@ public class BingoBoardTest
 	}
 
 	@Test
+	public void publishedShareTravelsWithTheTileWithoutBaselines()
+	{
+		TileProgress own = new TileProgress();
+		own.goal(0, 1).n = 7;
+		own.goal(0, 1).baseline = 123456L;
+		own.completedAt = own.counts(1);
+		own.completedAt.goal(0, 1).n = 3;
+		own.ts = 1000L;
+
+		TileProgress shared = gson.fromJson(gson.toJson(own.toShare(1)), TileProgress.class);
+		assertEquals(7, shared.goal(0, 1).n);
+		assertEquals(3, shared.completedAt.goal(0, 1).n);
+		assertEquals(null, shared.completedAt.goal(0, 1).baseline);
+		assertEquals(null, shared.completedAt.completedAt);
+		assertTrue(shared.completedAt.hasProgress());
+		assertTrue(!new TileProgress().hasProgress());
+	}
+
+	@Test
 	public void matchedNamesKeepGameCasingAndDedupeIgnoringCase()
 	{
 		GoalProgress p = new GoalProgress();

@@ -843,14 +843,7 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(teamCode, storeMode), FROZEN_TYPE);
 		if (frozen != null)
 		{
-			frozen.forEach((tile, snapshot) ->
-			{
-				if (board != null && tile != null && tile >= 0 && tile < board.getTiles().size() && snapshot != null)
-				{
-					trimToTargets(tile, snapshot);
-					frozenContributions.put(tile, snapshot);
-				}
-			});
+			frozenContributions.putAll(frozen);
 		}
 		loadRemovedMembers();
 	}
@@ -1115,12 +1108,13 @@ public class IronsPubBingoPlugin extends Plugin
 			if (onClientThread)
 			{
 				frozenContributions.remove(tileIndex);
+				publishOwnShare(tileIndex, null);
 			}
 			return live;
 		}
 		Map<String, TileProgress> frozen = frozenContributions.get(tileIndex);
 		if (frozen != null && live.keySet().containsAll(frozen.keySet())
-			&& snapshotCompletes(tileIndex, frozen))
+			&& snapshotCompletes(tileIndex, frozen) && (!onClientThread || followsPublished(tileIndex, live, frozen)))
 		{
 			return frozen;
 		}
@@ -1132,58 +1126,75 @@ public class IronsPubBingoPlugin extends Plugin
 		// stays complete: the snapshot is worked out again from the history, for the
 		// members on the team now, at the moment their progress completed the tile.
 		observeTile(tileIndex);
+		int goalCount = board.getTiles().get(tileIndex).goals.size();
 		frozen = replaySnapshot(tileIndex, live);
 		if (frozen == null || !snapshotCompletes(tileIndex, frozen))
 		{
 			frozen = new java.util.LinkedHashMap<>();
-			int goalCount = board.getTiles().get(tileIndex).goals.size();
 			for (Map.Entry<String, TileProgress> entry : live.entrySet())
 			{
-				frozen.put(entry.getKey(), entry.getValue().toShare(goalCount));
+				frozen.put(entry.getKey(), entry.getValue().counts(goalCount));
 			}
 		}
-		trimToTargets(tileIndex, frozen);
+		// Teammates who watched the tile complete published their share at that moment;
+		// those beat anything this client could reconstruct, if they still add up.
+		String ownName = memberNamesFor(tileIndex).get(OWN_MEMBER);
+		Map<String, TileProgress> published = new java.util.LinkedHashMap<>(frozen);
+		for (Map.Entry<String, TileProgress> entry : live.entrySet())
+		{
+			if (!entry.getKey().equals(ownName) && entry.getValue().completedAt != null)
+			{
+				published.put(entry.getKey(), entry.getValue().completedAt.counts(goalCount));
+			}
+		}
+		if (snapshotCompletes(tileIndex, published))
+		{
+			frozen = published;
+		}
+		publishOwnShare(tileIndex, frozen.get(ownName));
 		frozenContributions.put(tileIndex, frozen);
 		saveProgress(false);
 		return frozen;
 	}
 
-	/**
-	 * A completed goal freezes at exactly its target: counts past it come off the members
-	 * who updated the tile last. A client that only saw the tile after it completed (a
-	 * teammate joining later) then freezes the same numbers as one that watched it happen.
-	 */
-	private void trimToTargets(int tileIndex, Map<String, TileProgress> snapshot)
+	/** Whether the snapshot still shows every teammate's published share. */
+	private boolean followsPublished(int tileIndex, Map<String, TileProgress> live, Map<String, TileProgress> frozen)
 	{
-		BingoTile tile = board.getTiles().get(tileIndex);
-		int goalCount = tile.goals.size();
-		List<TileProgress> latestFirst = new ArrayList<>(snapshot.values());
-		latestFirst.removeIf(java.util.Objects::isNull);
-		latestFirst.sort((a, b) -> Long.compare(b.ts == null ? 0 : b.ts, a.ts == null ? 0 : a.ts));
-		for (int g = 0; g < goalCount; g++)
+		int goalCount = board.getTiles().get(tileIndex).goals.size();
+		String ownName = memberNamesFor(tileIndex).get(OWN_MEMBER);
+		for (Map.Entry<String, TileProgress> entry : live.entrySet())
 		{
-			BingoGoal goal = tile.goals.get(g);
-			if (goal.goalType == GoalType.MANUAL || goal.usesMatchedSet())
+			TileProgress published = entry.getValue().completedAt;
+			TileProgress shown = frozen.get(entry.getKey());
+			if (!entry.getKey().equals(ownName) && published != null && (shown == null
+				|| !gson.toJson(published.counts(goalCount)).equals(gson.toJson(shown.counts(goalCount)))))
 			{
-				continue;
-			}
-			long excess = -goal.target();
-			for (TileProgress tp : latestFirst)
-			{
-				excess += tp.goal(g, goalCount).n;
-			}
-			for (TileProgress tp : latestFirst)
-			{
-				if (excess <= 0)
-				{
-					break;
-				}
-				GoalProgress p = tp.goal(g, goalCount);
-				long cut = Math.min(excess, Math.max(0, p.n));
-				p.n -= cut;
-				excess -= cut;
+				return false;
 			}
 		}
+		return true;
+	}
+
+	/**
+	 * Publishes this account's share of a completed tile (null once it is no longer
+	 * complete) as part of its own progress, so teammates who only see the tile later
+	 * freeze the same numbers. Nothing is published for a tile this account never touched.
+	 */
+	private void publishOwnShare(int tileIndex, TileProgress share)
+	{
+		TileProgress mine = progress.get(tileIndex);
+		int goalCount = board.getTiles().get(tileIndex).goals.size();
+		TileProgress next = share == null || !share.hasProgress() ? null : share.counts(goalCount);
+		if (mine == null || (mine.completedAt == null ? next == null
+			: next != null && gson.toJson(mine.completedAt).equals(gson.toJson(next))))
+		{
+			return;
+		}
+		mine.completedAt = next;
+		mine.ts = nextTs(mine.ts, System.currentTimeMillis());
+		broadcastOwnTiles(java.util.Collections.singleton(tileIndex));
+		syncStore(false);
+		saveProgress(false);
 	}
 
 	private boolean snapshotCompletes(int tileIndex, Map<String, TileProgress> snapshot)
@@ -3810,6 +3821,7 @@ public class IronsPubBingoPlugin extends Plugin
 			BingoTile tile = board.getTiles().get(index);
 			TileProgress local = progressFor(index);
 			local.manual = theirs.manual;
+			local.completedAt = theirs.completedAt;
 			for (int g = 0; g < tile.goals.size(); g++)
 			{
 				if (tile.goals.get(g).goalType == GoalType.XP)
