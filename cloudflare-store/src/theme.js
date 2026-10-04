@@ -127,14 +127,23 @@ for(var c2=0;c2<n;c2++){var ok2=true;for(var r2=0;r2<n;r2++){ok2=ok2&&d[r2*n+c2]
 if(diagonals){var a=true,b=true;for(var i=0;i<n;i++){a=a&&d[i*n+i];b=b&&d[i*n+(n-1-i)];}if(a){out.push([0,0,n-1,n-1]);}if(b){out.push([n-1,0,0,n-1]);}}
 return out;}
 function renderBoard(el,board,diagonals,selected,onPick){
-el.innerHTML='';el.className='board';el.style.gridTemplateColumns='repeat('+board.size+',minmax(0,1fr))';
-board.tiles.forEach(function(tile,i){var d=document.createElement('div');d.className='tile'+(tile.done?' done':'')+(i===selected?' sel':'');
-d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label',tile.label+(tile.done?', complete':''));
+// Updates the tiles in place when the board is the same shape, so a click or a refresh never
+// rebuilds the icons: re-created images can blank for a frame while the browser redraws them.
+var tiles=Array.prototype.filter.call(el.children,function(c){return c.classList.contains('tile');});
+var reuse=el.classList.contains('board')&&tiles.length===board.tiles.length;
+if(!reuse){el.innerHTML='';el.className='board';tiles=[];}
+el.style.gridTemplateColumns='repeat('+board.size+',minmax(0,1fr))';el._pick=onPick;
+board.tiles.forEach(function(tile,i){var d=tiles[i];
+if(!d){d=document.createElement('div');d.tabIndex=0;d.setAttribute('role','button');
+d.onclick=function(){el._pick(i);};d.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();el._pick(i);}};el.appendChild(d);}
+d.className='tile'+(tile.done?' done':'')+(i===selected?' sel':'');
+d.setAttribute('aria-label',tile.label+(tile.done?', complete':''));
 var url=iconUrl(tile.icon),frac=tileFraction(tile);
-d.innerHTML='<span class="num">'+(i+1)+'</span>'+(tile.done?'<span class="check">&#10003;</span>':'')
+var html='<span class="num">'+(i+1)+'</span>'+(tile.done?'<span class="check">&#10003;</span>':'')
 +(url?'<img alt="" loading="lazy" src="'+esc(url)+'" onerror="this.remove()">':'')
 +'<span class="name">'+esc(tile.label)+'</span>'+(!tile.done&&frac>0?'<span class="prog"><i style="width:'+(frac*100).toFixed(0)+'%"></i></span>':'');
-d.onclick=function(){onPick(i);};d.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();onPick(i);}};el.appendChild(d);});
+if(d._html!==html){d.innerHTML=html;d._html=html;}});
+var old=el.querySelector('svg.lines');if(old){old.remove();}
 var lines=doneLines(board,diagonals);if(!lines.length){return;}
 var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','lines');
 svg.setAttribute('viewBox','0 0 '+board.size+' '+board.size);svg.setAttribute('preserveAspectRatio','none');
