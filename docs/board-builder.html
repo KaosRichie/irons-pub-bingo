@@ -157,7 +157,7 @@ button:disabled:hover { border-color: var(--line); }
 .pv:hover { border-color: #6e6e6e; }
 .pv.partial { background: linear-gradient(180deg, #96701a, #785812); }
 .pv.complete { background: linear-gradient(180deg, #42843a, #2d6228); border-color: #5aa14f; }
-.pv.line { border: 2px solid #e2ad48; }
+.pv.line { border: 2px solid #ff0000; }
 .pv img { width: 28px; height: 28px; object-fit: contain; image-rendering: pixelated; }
 .pv .pts { color: #c8c8c8; font-size: 11px; }
 .pvhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -501,6 +501,15 @@ function fromLocalInput(v) {
   const d = new Date(v);
   return isNaN(d) ? "" : d.toISOString();
 }
+/** A board code time as an ISO instant, read like the plugin's parseTime: no zone means UTC. */
+function fromBoardTime(raw) {
+  let v = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) v += "T00:00";
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(v)) v += "Z";
+  v = v.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  const d = new Date(v);
+  return isNaN(d) ? "" : d.toISOString();
+}
 
 let board = freshBoard();
 let selected = -1;
@@ -528,7 +537,77 @@ function resizeTiles() {
   if (selected >= want) selected = -1;
 }
 
+// ---------- chat patterns (Java regex, checked with the browser's engine) ----------
+// The plugin compiles patterns with Java's Pattern.CASE_INSENSITIVE and matches with find().
+// For testing here, common Java-only syntax is rewritten to a JS equivalent. The exported
+// pattern is always the one the host wrote.
+function javaRegexToJs(pattern) {
+  let p = String(pattern);
+  const flags = new Set(["i"]);
+  let lead;
+  while ((lead = p.match(/^\(\?([a-zA-Z]+)\)/))) {
+    const fl = lead[1];
+    if (!/^[ismuU]+$/.test(fl)) break;   // other flags (like x) have no JS equivalent
+    for (const f of fl) if (f === "s" || f === "m") flags.add(f);
+    p = p.slice(lead[0].length);
+  }
+  const quote = s => s.replace(/[\\^$.*+?()[\]{}|\/-]/g, "\\$&");
+  let out = "";
+  let i = 0;
+  // A quantifier just written: a following + makes it possessive, which JS reads as greedy.
+  function afterQuantifier() {
+    if (p[i] === "?") out += p[i++];
+    else if (p[i] === "+") i++;
+  }
+  while (i < p.length) {
+    const c = p[i];
+    if (c === "\\") {
+      const n = p[i + 1];
+      if (n === "Q") {
+        const end = p.indexOf("\\E", i + 2);
+        out += quote(end < 0 ? p.slice(i + 2) : p.slice(i + 2, end));
+        i = end < 0 ? p.length : end + 2;
+      } else if (n === "A") { out += "(?<![\\s\\S])"; i += 2; }
+      else if (n === "z") { out += "(?![\\s\\S])"; i += 2; }
+      else if (n === "Z") { out += "(?=\\n?(?![\\s\\S]))"; i += 2; }
+      else { out += p.slice(i, i + 2); i += 2; }
+    } else if (c === "[") {
+      // Copy a character class as is, minding escapes and a leading ].
+      out += c; i++;
+      if (p[i] === "^") out += p[i++];
+      if (p[i] === "]") { out += "\\]"; i++; }   // Java reads a leading ] as a literal, JS as an empty class
+      while (i < p.length && p[i] !== "]") {
+        if (p[i] === "\\" && p[i + 1] === "Q") {
+          const end = p.indexOf("\\E", i + 2);
+          out += quote(end < 0 ? p.slice(i + 2) : p.slice(i + 2, end));
+          i = end < 0 ? p.length : end + 2;
+        } else if (p[i] === "\\") { out += p.slice(i, i + 2); i += 2; }
+        else out += p[i++];
+      }
+      if (i < p.length) out += p[i++];
+    } else if (c === "(" && p[i + 1] === "?") {
+      if (p[i + 2] === ">") { out += "(?:"; i += 3; }
+      else { out += "(?"; i += 2; }
+    } else if (c === "*" || c === "+" || c === "?") {
+      out += c; i++;
+      afterQuantifier();
+    } else if (c === "{") {
+      const q = p.slice(i).match(/^\{\d+(,\d*)?\}/);
+      if (q) { out += q[0]; i += q[0].length; afterQuantifier(); }
+      else { out += c; i++; }
+    } else {
+      out += c; i++;
+    }
+  }
+  return new RegExp(out, Array.from(flags).join(""));
+}
+/** The pattern as a JS regex for testing, or null if the browser can't run it. */
+function chatRegex(pattern) {
+  try { return javaRegexToJs(pattern); } catch (e) { return null; }
+}
+
 // ---------- validation (mirrors the plugin's rules) ----------
+const RAIDS = ["COX", "TOB", "TOA"];
 function validateGoal(g) {
   const errs = [];
   const list = v => (v || []).filter(s => s && s.trim());
@@ -539,7 +618,10 @@ function validateGoal(g) {
       break;
     case "KC": if (!list(g.npcs).length) errs.push("Boss kill count goal needs at least one NPC name."); break;
     case "KILL": if (!list(g.npcs).length) errs.push("NPC kills goal needs at least one NPC name."); break;
-    case "RAID_PURPLE": if (!(g.raids || []).length) errs.push("Pick at least one raid."); break;
+    case "RAID_PURPLE":
+      if (!(g.raids || []).length) errs.push("Pick at least one raid.");
+      (g.raids || []).filter(r => !RAIDS.includes(r)).forEach(r => errs.push("Unknown raid \"" + r + "\". Use CoX, ToB or ToA."));
+      break;
     case "XP":
       if (!g.skill) errs.push("XP goal needs a skill.");
       if (!(g.amount > 0)) errs.push("XP goal needs a positive amount.");
@@ -548,14 +630,25 @@ function validateGoal(g) {
       if (!(g.amount > 0)) errs.push("Loot value goal needs a positive gp amount.");
       if (!(g.loot || []).length) errs.push("Tick at least one loot kind.");
       break;
-    case "LAP": if (!g.course) errs.push("Course laps goal needs a course."); break;
+    case "LAP":
+      if (!g.course) errs.push("Course laps goal needs a course.");
+      else if (!COURSES.includes(g.course)) errs.push("Unknown agility course \"" + g.course + "\". Pick one from the list.");
+      break;
     case "CHAT":
-      if (!g.pattern || !g.pattern.trim()) { errs.push("Chat goal needs a pattern."); break; }
-      try { new RegExp(g.pattern); } catch (e) { errs.push("Pattern is not a valid regex."); }
+      // A pattern the browser can't run is only a warning (see chatPatternWarnings).
+      if (!g.pattern || !g.pattern.trim()) errs.push("Chat goal needs a pattern.");
       break;
   }
   if (g.count != null && !(g.count > 0)) errs.push("Count must be at least 1.");
   return errs;
+}
+/** The plugin keeps letters, numbers, - and _ of the id (lowercased) and allows 40 of them. */
+function boardIdError(raw) {
+  const id = (raw || "").trim();
+  if (!id) return null;
+  if (/[^A-Za-z0-9_-]/.test(id)) return "Board ID can only use letters, numbers, - and _.";
+  if (id.length > 40) return "Board ID is too long. Use 40 characters or fewer.";
+  return null;
 }
 function validateTile(t) {
   const errs = [];
@@ -631,7 +724,9 @@ function exportBoard() {
     const out = { label: (t.label || "").trim() };
     if (t.description && t.description.trim()) out.description = t.description.trim();
     const ic = (t.icon || "").trim();
-    if (ic) out.icon = /^\d+$/.test(ic) ? parseInt(ic, 10) : ic;
+    // The plugin looks names up among tradeable items only, so send the id when the item
+    // list knows the name (untradeables like the Fire cape need it).
+    if (ic) out.icon = /^\d+$/.test(ic) ? parseInt(ic, 10) : (itemNameMap && itemNameMap[ic.toLowerCase()]) || ic;
     if (t.points > 0) out.points = Math.round(t.points);
     if (t.mode === "ANY" && (t.goals || []).length > 1) out.mode = "ANY";
     const goals = (t.goals || []).map(g => {
@@ -673,43 +768,68 @@ function exportBoard() {
   // page, Discord, the plugin's import box).
   return JSON.stringify(out);
 }
+// Board codes are hand-edited, so every field is coerced to the type the editor expects.
+// Gson reads numbers and booleans into string fields, so those become strings too.
+function asText(v) { return typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : ""; }
+function asTextList(v) { return Array.isArray(v) ? v.map(asText).filter(s => s !== "") : null; }
+function asNumber(v) {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+  return isFinite(n) ? n : 0;
+}
+/** A course from a board code as the enum value, if it names one: "Agility Pyramid" is PYRAMID. */
+function courseFromText(raw) {
+  const compact = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const exact = COURSES.find(c => c.replace(/_/g, "") === compact);
+  if (exact) return exact;
+  const inside = COURSES.filter(c => compact.includes(c.replace(/_/g, "")));
+  return inside.length === 1 ? inside[0] : raw.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+}
 function importBoard(json) {
   const b = JSON.parse(json);
-  if (!b || !b.size || !Array.isArray(b.tiles)) throw new Error("Missing size or tiles.");
-  const size = Math.max(1, Math.min(10, b.size | 0));
-  board = { name: b.name || "",
-    id: b.id == null ? "" : String(b.id),
-    version: b.version > 0 ? Math.round(b.version) : 1,
-    start: b.start ? fromLocalInput(toLocalInput(b.start)) || String(b.start) : "",
-    end: b.end ? fromLocalInput(toLocalInput(b.end)) || String(b.end) : "",
-    linePoints: b.linePoints > 0 ? Math.round(b.linePoints) : 0,
-    blackoutPoints: b.blackoutPoints > 0 ? Math.round(b.blackoutPoints) : 0,
+  if (!b || typeof b !== "object" || !b.size || !Array.isArray(b.tiles)) throw new Error("Missing size or tiles.");
+  const size = Math.max(1, Math.min(10, asNumber(b.size) | 0));
+  const version = asNumber(b.version), linePoints = asNumber(b.linePoints), blackoutPoints = asNumber(b.blackoutPoints);
+  const start = asText(b.start).trim(), end = asText(b.end).trim();
+  board = { name: asText(b.name),
+    id: asText(b.id),
+    version: version > 0 ? Math.round(version) : 1,
+    start: start ? fromBoardTime(start) || start : "",
+    end: end ? fromBoardTime(end) || end : "",
+    linePoints: linePoints > 0 ? Math.round(linePoints) : 0,
+    blackoutPoints: blackoutPoints > 0 ? Math.round(blackoutPoints) : 0,
     diagonals: b.diagonals !== false,
     size, tiles: b.tiles.map(t => {
+    if (!t || typeof t !== "object") t = {};
     const tile = emptyTile();
-    tile.label = t.label || "";
-    tile.description = t.description || "";
-    tile.icon = t.icon == null ? "" : String(t.icon);
-    tile.points = t.points > 0 ? Math.round(t.points) : 0;
-    tile.mode = (t.mode || "ALL").toUpperCase() === "ANY" ? "ANY" : "ALL";
-    tile.goals = (t.goals || []).map(g => {
-      const type = String(g.type || "DROP").toUpperCase();
+    tile.label = asText(t.label);
+    tile.description = asText(t.description);
+    tile.icon = asText(t.icon);
+    const points = asNumber(t.points);
+    tile.points = points > 0 ? Math.round(points) : 0;
+    tile.mode = asText(t.mode).toUpperCase() === "ANY" ? "ANY" : "ALL";
+    tile.goals = (Array.isArray(t.goals) ? t.goals : []).map(g => {
+      if (!g || typeof g !== "object") g = {};
+      const type = (asText(g.type) || "DROP").toUpperCase();
       const goal = defaultGoal(GOAL_TYPES.some(x => x[0] === type) ? type : "DROP");
-      if (g.name) goal.name = String(g.name);
-      ["items", "sources", "npcs", "pets", "raids"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].slice(); });
+      if (asText(g.name)) goal.name = asText(g.name);
+      ["items", "sources", "npcs", "pets"].forEach(k => { const v = asTextList(g[k]); if (v) goal[k] = v; });
+      const raids = asTextList(g.raids);
+      if (raids) goal.raids = raids.map(r => r.trim().toUpperCase()).filter((r, i, a) => r && a.indexOf(r) === i);
       ["itemIds", "regions"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].map(v => parseInt(v, 10)).filter(v => v > 0); });
       if (g.screenshot) goal.screenshot = true;
-      if (g.count) goal.count = g.count;
+      const count = asNumber(g.count);
+      if (count) goal.count = count;
       if (g.distinct) goal.distinct = true;
       if (g.loot) {
         const kinds = (Array.isArray(g.loot) ? g.loot : [g.loot])
-          .map(v => String(v).toUpperCase()).filter(v => ["KILL", "PICKPOCKET", "OTHER"].includes(v));
+          .map(v => asText(v).toUpperCase()).filter(v => ["KILL", "PICKPOCKET", "OTHER"].includes(v));
         if (kinds.length) goal.loot = kinds;
       }
-      if (g.skill) goal.skill = String(g.skill).toUpperCase();
-      if (g.course) goal.course = String(g.course).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-      if (g.amount) goal.amount = g.amount;
-      if (g.pattern) goal.pattern = g.pattern;
+      if (asText(g.skill)) goal.skill = asText(g.skill).trim().toUpperCase();
+      if (asText(g.course).trim()) goal.course = courseFromText(asText(g.course));
+      const amount = asNumber(g.amount);
+      if (amount) goal.amount = amount;
+      if (asText(g.pattern)) goal.pattern = asText(g.pattern);
       return goal;
     });
     return tile;
@@ -1294,7 +1414,9 @@ function renderGoal(tile, goal, gi) {
   if (goal.type === "RAID_PURPLE") {
     const raids = document.createElement("div");
     raids.className = "row";
-    [["COX", "CoX"], ["TOB", "ToB"], ["TOA", "ToA"]].forEach(([v, t]) => {
+    // Raids the plugin doesn't know show up too, so they can be unticked.
+    [["COX", "CoX"], ["TOB", "ToB"], ["TOA", "ToA"]].concat(goal.raids.filter(r => !RAIDS.includes(r)).map(r => [r, r]))
+      .forEach(([v, t]) => {
       const wrap = document.createElement("div");
       wrap.className = "checkline";
       const cb = document.createElement("input");
@@ -1350,6 +1472,12 @@ function renderGoal(tile, goal, gi) {
       if (goal.course === c) o.selected = true;
       sel.appendChild(o);
     });
+    if (!COURSES.includes(goal.course)) {
+      // An imported course the plugin doesn't know: show it so the problem is visible.
+      const o = document.createElement("option");
+      o.value = goal.course || ""; o.textContent = (goal.course || "None") + " (unknown)"; o.selected = true;
+      sel.insertBefore(o, sel.firstChild);
+    }
     sel.addEventListener("change", () => { goal.course = sel.value; saveDraft(); renderGrid(); });
     box.appendChild(field("Agility course", sel, "Laps count like RuneLite's lap counter."));
   }
@@ -1357,7 +1485,7 @@ function renderGoal(tile, goal, gi) {
     const patternInput = textInput(goal.pattern, v => { goal.pattern = v; runTest(); }, "Corrupted challenge duration: [0-6]:[0-5][0-9]");
     box.appendChild(field("Game message pattern (regex)", patternInput, "Counts once per matching game message."));
     // Tester: a sample message, checked against the pattern as the plugin would (tags removed,
-    // match anywhere in the line). Browser regex is close to Java's for patterns like these.
+    // case ignored, match anywhere in the line). Java-only syntax is rewritten for the browser.
     const tester = document.createElement("div");
     tester.className = "tester";
     const sample = document.createElement("input");
@@ -1372,9 +1500,8 @@ function renderGoal(tile, goal, gi) {
       chatSamples[gi] = sample.value;
       verdict.innerHTML = "";
       if (!goal.pattern) { verdict.textContent = "Write a pattern first."; verdict.style.color = "var(--muted)"; return; }
-      let re;
-      try { re = new RegExp(goal.pattern); }
-      catch (e) { verdict.textContent = "The pattern has an error: " + e.message; verdict.style.color = "var(--red)"; return; }
+      const re = chatRegex(goal.pattern);
+      if (!re) { verdict.textContent = "This pattern can't be checked here. It is exported as written, so test it in game."; verdict.style.color = "var(--gold)"; return; }
       if (!text) { verdict.textContent = "Paste a message above to check the pattern."; verdict.style.color = "var(--muted)"; return; }
       const m = re.exec(text);
       if (!m) { verdict.textContent = "\u2717 No match. This message would not count."; verdict.style.color = "var(--red)"; return; }
@@ -1574,6 +1701,8 @@ function openDialog(mode) {
   setDialogNotes("");
   if (mode === "export") {
     const problems = [];
+    const idErr = boardIdError(board.id);
+    if (idErr) problems.push(idErr);
     if (board.start && board.end && board.end <= board.start) {
       problems.push("The event end must be after the start.");
     }
@@ -1604,6 +1733,15 @@ function openDialog(mode) {
     const tilePts = board.tiles.map(t => t.points > 0 ? Math.round(t.points) : 0);
     if (tilePts.some(p => p > 0) && tilePts.some(p => p === 0)) {
       warnings.push(tilePts.filter(p => p === 0).length + " tile(s) award 0 points while the rest have point values");
+    }
+    board.tiles.forEach((t, i) => (t.goals || []).forEach((g, gi) => {
+      if (g.type === "CHAT" && g.pattern && !chatRegex(g.pattern)) {
+        warnings.push("tile " + (i + 1) + " goal " + (gi + 1) + ": the chat pattern can't be checked here, so test it in game");
+      }
+    }));
+    if (!itemNameMap) {
+      const named = board.tiles.filter(t => /\D/.test((t.icon || "").trim())).length;
+      if (named > 0) warnings.push("the item list has not loaded, so " + named + (named === 1 ? " icon is" : " icons are") + " sent as a name, which only works for tradeable items");
     }
     if (warnings.length) {
       setDialogNotes("Worth a second look: " + warnings.join(" · "), "var(--gold)");
@@ -1731,7 +1869,15 @@ $("btnDialogApply").addEventListener("click", () => {
 });
 
 if (!loadDraft()) resizeTiles();
+try {
+  renderTopbar(); renderGrid(); renderEditor();
+} catch (e) {
+  // A saved draft this version can't show: start a fresh board rather than a broken page.
+  board = freshBoard();
+  selected = -1;
+  resizeTiles();
+  renderTopbar(); renderGrid(); renderEditor();
+}
 lastSnapshot = JSON.stringify(board);
 updateUndoButtons();
-renderTopbar(); renderGrid(); renderEditor();
 </script>
