@@ -267,6 +267,7 @@ test('leaving a since-delisted team still cleans up (remove before allow-list)',
 	s.sheet('Teams').appendRow(['Red', 'Red Team']);
 	const r = s.post({ board: 'b_old', remove: [A], members: {} });
 	ok(!r.error, 'the departure notice itself succeeds');
+	is(r.left, [A], 'and the departure was recorded');
 	const rows = s.sheet('Removed').data.filter(row => row[0] === 'b_old' && row[1] === A);
 	is(rows.length, 1, 'the eviction still landed');
 });
@@ -720,7 +721,6 @@ test('a tampered board cannot sync once the host pasted the official code', () =
 	r = s.post({ board: 'b_red', boardHash: 'deadbeef', boardVersion: 2, members: {} });
 	ok(!('newerVersion' in r), 'same-version tampering carries no update hint');
 
-
 	// A client that sends no fingerprint at all cannot prove which board it runs.
 	r = s.post({ board: 'b_red', meta: META, members: {} });
 	ok(!!r.error, 'client without a board fingerprint is rejected');
@@ -741,8 +741,8 @@ test('a tampered board cannot sync once the host pasted the official code', () =
 	ok(!r.error, 'no pasted code means no enforcement');
 
 	// The host pastes a revised code. A client still on the earlier paste is outdated
-	// however it reports itself: same version number, or no version at all (hub
-	// clients from before the field existed).
+	// however it reports itself: same version number, or no version at all (older
+	// hub clients send none).
 	const revised = '{"name":"Official","version":2,"tiles":[{"label":"Any weed","goals":[{"type":"XP","skill":"HERBLORE","amount":5}]}]}';
 	s.sheet('Board code').getRange(2, 1).setValue(revised);
 	const revisedHash = require('crypto').createHash('sha256').update(revised, 'utf8').digest('hex');
@@ -855,7 +855,7 @@ test('a board update reaches the cached meta and the rendered view', () =>
 test('manual goals appear in the portal and keep goal indices aligned', () =>
 {
 	const s = newStore();
-	// A mixed tile the way the plugin now sends it: manual first, tracked second.
+	// A mixed tile the way the plugin sends it: manual first, tracked second.
 	const MIXED = { name: 'M', size: 1, tiles: [{ label: 'Outfit OR XP', mode: 'ANY', goals: [
 		{ label: 'Manual: outfit', target: 1, manual: true },
 		{ label: 'Herblore XP', target: 100, manual: false }] }] };
@@ -921,7 +921,7 @@ test('an unlisted team code never gets a Board tab', () =>
 	let r = s.post({ board: 'b_oldteam', members: { [A]: member('Alice', { 0: tile(1000, [1]) }) } });
 	ok(!!r.error, 'unlisted team is rejected');
 	ok(!s.sheet('Board oldteam'), 'no board tab from the rejected sync');
-	// Leaving that team sends a departure mark, which used to render (and create) its tab.
+	// Leaving that team sends a departure mark, which must not render (and create) its tab.
 	r = s.post({ board: 'b_oldteam', members: {}, remove: [A] });
 	ok(!s.sheet('Board oldteam'), 'no board tab from the departure mark either');
 	// A listed team still renders on demand.
@@ -1231,16 +1231,6 @@ test('credit requests must name a real tile, goal and a positive amount', () =>
 	is(s.sheet('Requests').data.length, 2, 'a valid request still is');
 });
 
-test('a departure notice succeeds even for a team the host has since removed', () =>
-{
-	const s = newStore();
-	s.post({ board: 'b_blue', members: { [A]: member('Alice', { 0: tile(1000, [1]) }) } });
-	s.sheet('Teams').data.splice(2, 1); // the host removes Blue
-	const r = s.post({ board: 'b_blue', members: {}, remove: [A] });
-	ok(!r.error, 'no error, so the client stops retrying');
-	is(r.left, [A], 'and the departure was recorded');
-});
-
 // ---------------------------------------------------------------- report
 
 if (failures.length)
@@ -1248,7 +1238,7 @@ if (failures.length)
 	console.error('\nSTORE TESTS FAILED (' + failures.length + '):');
 	for (const failure of failures)
 	{
-		console.error('  âœ— ' + failure);
+		console.error('  - ' + failure);
 	}
 	process.exitCode = 1;
 }

@@ -73,7 +73,7 @@
  * Limits the requested permission to this script's own spreadsheet only,
  * instead of access to all spreadsheets on the account. Approval announcements to
  * Discord additionally need the "connect to an external service" permission, which
- * Google asks for once after deploying this version.
+ * Google asks for once after deploying.
  */
 
 var STORE_SHEET = 'Store';
@@ -112,7 +112,7 @@ var HIDDEN_SHEETS = [STORE_SHEET, META_SHEET, REMOVED_SHEET, SCORES_SHEET];
 
 var REFRESH_THROTTLE_MS = 120000;
 // Teams, the board code, the poll interval and the store generation change rarely but
-// were read on every sync. They are cached this long; editing those tabs by hand clears
+// would otherwise be read on every sync. They are cached this long; editing those tabs by hand clears
 // the cache at once (onEdit), so a host's change still applies on the next sync.
 var CONFIG_CACHE_SECONDS = 60;
 // Client clocks drift; anything further ahead than this is clamped on write. An
@@ -218,7 +218,7 @@ function handlePost(e, deferRefresh)
 
 		if (body.remove && body.remove.length)
 		{
-			// A player who left this team scope: delete their row and tombstone the id,
+			// A player who left this team scope: tombstone the id (their row stays parked),
 			// so teammates' cached copies can't push it back (see the Removed tab).
 			// Processed before the team allow-list so leaving a since-delisted team
 			// still cleans up. Only the member themselves can leave.
@@ -652,7 +652,6 @@ function respond(board, rows, removed, teams, scores)
 		.setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Latest points per team on this board scope's board, best first (Scores tab). */
 /** The Scores tab read once, for upsertScore and standingsFor to share. */
 function readScores()
 {
@@ -682,6 +681,7 @@ function upsertScore(board, points, scores)
 	scores.values.push([board, points, '']);
 }
 
+/** Latest points per team on this board scope's board, best first (Scores tab). */
 function standingsFor(board, scores)
 {
 	var at = board.lastIndexOf('_');
@@ -843,8 +843,10 @@ function readDepartures()
 	return { marks: marks, leftRows: leftRows };
 }
 
-/** Member ids that left this board scope; their data is kept but stops counting. */
-// Pass preloaded allDepartures() marks to avoid re-reading the Removed tab.
+/**
+ * Member ids that left this board scope; their data is kept but stops counting.
+ * Pass preloaded allDepartures() marks to avoid re-reading the Removed tab.
+ */
 function removedFor(board, marks)
 {
 	marks = marks || allDepartures();
@@ -934,7 +936,7 @@ function newRequestId()
 	return 'r' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
 }
 
-/** Sheets made before the Id column existed get its header the first time it is used. */
+/** A Requests tab without the Id header gets it the first time an id is written. */
 function ensureRequestIdHeader(sheet)
 {
 	var header = sheet.getRange(1, 12);
@@ -1473,7 +1475,7 @@ function boardPrefix(board)
 
 /**
  * A member's own arrival on a team evicts them from any sibling team on the same board:
- * their row is deleted there and tombstoned "left", so stale relays can't restore it.
+ * their row there is tombstoned "left" and parked, so stale relays can't restore it.
  */
 function moveMemberIfElsewhere(board, memberId, rows, departures, deferRefresh)
 {
@@ -1512,7 +1514,6 @@ function clearLeftTombstones(board, memberId, departures)
 	return readDepartures();
 }
 
-/** Deletes members' store rows for a board and tombstones the ids on the Removed tab. */
 /**
  * Marks members as gone from this team scope. Their store row is deliberately KEPT: it
  * stops counting the moment the mark exists (every reader filters on it), and if the same
@@ -2260,15 +2261,11 @@ function getSheet(name, headers)
 }
 
 /**
- * Host-tuned seconds between a client's store polls (Settings tab). 0 = not set, which
- * leaves the plugin on its 120 second default; other values are clamped to 60-900.
- */
-/**
  * The board code the host pasted onto the Board code tab, so players with the store URL
  * can load the board without being sent the code separately. Multi-line pastes land one
- * line per row; everything under the instruction row is joined back together.
+ * line per row; everything under the instruction row is joined back together and
+ * trimmed. '' when the tab is empty.
  */
-/** The board code the host pasted (rows rejoined, trimmed); '' when the tab is empty. */
 function readBoardCode()
 {
 	return cachedConfig('boardCode', loadBoardCode);
@@ -2365,6 +2362,10 @@ function readPortalUrl()
 	return null;
 }
 
+/**
+ * Host-tuned seconds between a client's store polls (Settings tab). 0 = not set, which
+ * leaves the plugin on its 120 second default; other values are clamped to 60-900.
+ */
 function readPollInterval()
 {
 	return cachedConfig('poll', loadPollInterval);
@@ -3230,7 +3231,10 @@ function refreshAllViews()
 	}
 }
 
-/** Stamps when an adjustment row was added, so the ledger is self-documenting. */
+/**
+ * Hand edits: config tabs clear the config cache, the Requests Status column applies the
+ * picked status, and a new Adjustments row is stamped so the ledger is self-documenting.
+ */
 function onEdit(e)
 {
 	var sheet = e.range.getSheet();

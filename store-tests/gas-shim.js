@@ -189,18 +189,6 @@ class FakeSheet
 			}
 		};
 	}
-
-	insertImage(blob, column, row)
-	{
-		this.images = this.images || [];
-		const image = {
-			blob, column, row, width: 0, height: 0,
-			setWidth(w) { this.width = w; return this; },
-			setHeight(h) { this.height = h; return this; }
-		};
-		this.images.push(image);
-		return image;
-	}
 }
 
 class FakeSpreadsheet
@@ -343,7 +331,7 @@ function createEnvironment()
 					}
 					urlFetches.push({ url: String(url), options });
 					const code = urlFetchStatus.value;
-					return { getResponseCode: () => code, getContentText: () => '' };
+					return { getResponseCode: () => code };
 				}
 			},
 			HtmlService: {
@@ -353,8 +341,6 @@ function createEnvironment()
 				}
 			},
 			Utilities: {
-				base64Decode: text => Array.from(Buffer.from(String(text), 'base64')),
-				newBlob: (bytes, contentType, name) => ({ bytes, contentType, name }),
 				DigestAlgorithm: { SHA_256: 'SHA_256' },
 				Charset: { UTF_8: 'UTF_8' },
 				getUuid: () => require('crypto').randomUUID(),
