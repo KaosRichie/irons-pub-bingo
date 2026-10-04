@@ -843,7 +843,14 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(teamCode, storeMode), FROZEN_TYPE);
 		if (frozen != null)
 		{
-			frozenContributions.putAll(frozen);
+			frozen.forEach((tile, snapshot) ->
+			{
+				if (board != null && tile != null && tile >= 0 && tile < board.getTiles().size() && snapshot != null)
+				{
+					trimToTargets(tile, snapshot);
+					frozenContributions.put(tile, snapshot);
+				}
+			});
 		}
 		loadRemovedMembers();
 	}
@@ -1135,9 +1142,48 @@ public class IronsPubBingoPlugin extends Plugin
 				frozen.put(entry.getKey(), entry.getValue().toShare(goalCount));
 			}
 		}
+		trimToTargets(tileIndex, frozen);
 		frozenContributions.put(tileIndex, frozen);
 		saveProgress(false);
 		return frozen;
+	}
+
+	/**
+	 * A completed goal freezes at exactly its target: counts past it come off the members
+	 * who updated the tile last. A client that only saw the tile after it completed (a
+	 * teammate joining later) then freezes the same numbers as one that watched it happen.
+	 */
+	private void trimToTargets(int tileIndex, Map<String, TileProgress> snapshot)
+	{
+		BingoTile tile = board.getTiles().get(tileIndex);
+		int goalCount = tile.goals.size();
+		List<TileProgress> latestFirst = new ArrayList<>(snapshot.values());
+		latestFirst.removeIf(java.util.Objects::isNull);
+		latestFirst.sort((a, b) -> Long.compare(b.ts == null ? 0 : b.ts, a.ts == null ? 0 : a.ts));
+		for (int g = 0; g < goalCount; g++)
+		{
+			BingoGoal goal = tile.goals.get(g);
+			if (goal.goalType == GoalType.MANUAL || goal.usesMatchedSet())
+			{
+				continue;
+			}
+			long excess = -goal.target();
+			for (TileProgress tp : latestFirst)
+			{
+				excess += tp.goal(g, goalCount).n;
+			}
+			for (TileProgress tp : latestFirst)
+			{
+				if (excess <= 0)
+				{
+					break;
+				}
+				GoalProgress p = tp.goal(g, goalCount);
+				long cut = Math.min(excess, Math.max(0, p.n));
+				p.n -= cut;
+				excess -= cut;
+			}
+		}
 	}
 
 	private boolean snapshotCompletes(int tileIndex, Map<String, TileProgress> snapshot)
@@ -3154,6 +3200,27 @@ public class IronsPubBingoPlugin extends Plugin
 		});
 	}
 
+	/**
+	 * Empties one tile of our own progress. XP goals count on from the current XP: without a
+	 * baseline the next XP drop would only set one, and that drop would be lost.
+	 */
+	private void clearTile(int tileIndex, long ts)
+	{
+		progress.remove(tileIndex);
+		TileProgress fresh = progressFor(tileIndex);
+		fresh.ts = ts;
+		BingoTile tile = board.getTiles().get(tileIndex);
+		for (int g = 0; g < tile.goals.size(); g++)
+		{
+			BingoGoal goal = tile.goals.get(g);
+			if (goal.goalType == GoalType.XP)
+			{
+				int xp = client.getSkillExperience(goal.skillEnum);
+				fresh.goal(g, tile.goals.size()).baseline = xp > 0 ? (long) xp : null;
+			}
+		}
+	}
+
 	void resetTileProgress(int tileIndex)
 	{
 		clientThread.invoke(() ->
@@ -3162,8 +3229,8 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				return;
 			}
-			TileProgress old = progress.remove(tileIndex);
-			progressFor(tileIndex).ts = nextTs(old == null ? null : old.ts, System.currentTimeMillis());
+			TileProgress old = progress.get(tileIndex);
+			clearTile(tileIndex, nextTs(old == null ? null : old.ts, System.currentTimeMillis()));
 			Set<Integer> tiles = new HashSet<>();
 			tiles.add(tileIndex);
 			broadcastOwnTiles(tiles);
@@ -3737,8 +3804,7 @@ public class IronsPubBingoPlugin extends Plugin
 			changed = true;
 			if (!theirs.manual && (theirs.goals == null || theirs.goals.isEmpty()))
 			{
-				progress.remove(index);
-				progressFor(index).ts = theirs.ts;
+				clearTile(index, theirs.ts);
 				continue;
 			}
 			BingoTile tile = board.getTiles().get(index);
