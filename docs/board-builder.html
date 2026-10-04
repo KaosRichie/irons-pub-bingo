@@ -123,7 +123,21 @@ input[type=checkbox]:checked::after {
 button.sm { padding: 3px 9px; font-size: 13.5px; }
 button:disabled { opacity: .45; cursor: default; }
 button:disabled:hover { border-color: var(--line); }
-.toolrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctxmenu {
+  position: fixed; z-index: 100; min-width: 190px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+.ctxmenu .head { padding: 4px 10px 6px; color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--line-soft); margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.ctxmenu button {
+  display: flex; width: 100%; gap: 10px; align-items: center; text-align: left;
+  background: transparent; border: 0; border-radius: 3px; padding: 6px 10px; font-size: 14px;
+}
+.ctxmenu button:hover:not(:disabled), .ctxmenu button:focus-visible { background: var(--panel-2); outline: none; }
+.ctxmenu button .ic { width: 16px; text-align: center; color: var(--muted); }
+.ctxmenu button.danger { color: var(--red); }
+.ctxmenu hr { border: 0; border-top: 1px solid var(--line-soft); margin: 3px 0; }
 .templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
 .templates button {
   display: flex; align-items: center; gap: 7px; text-align: left; padding: 6px 8px;
@@ -293,7 +307,7 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     </div>
     <div id="pvHead" class="pvhead" style="display:none"></div>
     <div id="grid"></div>
-    <p class="hint" id="boardHint">Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
+    <p class="hint" id="boardHint">Click a tile to edit it, right-click it to copy, paste, duplicate or clear, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
     <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID: tile positions carry the players' progress, so only swap tiles around <b>before</b> the event goes live.</p>
   </section>
   <aside class="pane" id="editorPane">
@@ -435,11 +449,19 @@ function tileFromTemplate(tpl) {
   t.goals = tpl.goals.map(g => Object.assign(defaultGoal(g.type), JSON.parse(JSON.stringify(g))));
   return t;
 }
-function templatePicker(onPick) {
+function templatePicker(onPick, onClose) {
   const box = document.createElement("div");
   box.className = "tplbox";
   const h = document.createElement("h3");
-  h.textContent = "Start from a template";
+  h.textContent = onClose ? "Replace with a template" : "Start from a template";
+  if (onClose) {
+    h.style.display = "flex";
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "sm ghost"; x.textContent = "Cancel";
+    x.style.marginLeft = "auto";
+    x.addEventListener("click", onClose);
+    h.appendChild(x);
+  }
   box.appendChild(h);
   const grid = document.createElement("div");
   grid.className = "templates";
@@ -872,7 +894,7 @@ function renderGrid() {
     ? "This is how players see the board. Click tiles to try out progress and completed lines. Nothing here is saved."
     : "";
   if (!previewMode) {
-    $("boardHint").innerHTML = 'Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.';
+    $("boardHint").innerHTML = 'Click a tile to edit it, right-click it to copy, paste, duplicate or clear, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.';
   }
   if (previewMode) { renderPreview(totalPoints); return; }
   $("pvHead").style.display = "none";
@@ -898,9 +920,10 @@ function renderGrid() {
     } else {
       cell.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
     }
-    cell.addEventListener("click", () => { selected = i; renderGrid(); renderEditor(); });
+    cell.addEventListener("click", () => { selected = i; templatesOpen = false; renderGrid(); renderEditor(); });
+    cell.addEventListener("contextmenu", e => { e.preventDefault(); openTileMenu(i, e.clientX, e.clientY); });
     cell.draggable = true;
-    cell.title = "Drag onto another tile to swap positions";
+    cell.title = "Click to edit, right-click for copy, paste and more. Drag onto another tile to swap.";
     cell.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", String(i)));
     cell.addEventListener("dragover", e => e.preventDefault());
     cell.addEventListener("drop", e => {
@@ -916,6 +939,70 @@ function renderGrid() {
     grid.appendChild(cell);
   });
 }
+// ---------- tile right-click menu ----------
+function closeTileMenu() {
+  const m = document.getElementById("tileMenu");
+  if (m) m.remove();
+}
+function openTileMenu(i, x, y) {
+  closeTileMenu();
+  const tile = board.tiles[i];
+  const empty = isEmptyTile(tile);
+  const menu = document.createElement("div");
+  menu.className = "ctxmenu"; menu.id = "tileMenu";
+  menu.setAttribute("role", "menu");
+  const head = document.createElement("div");
+  head.className = "head";
+  head.textContent = "Tile " + (i + 1) + (tile.label ? ": " + tile.label : "");
+  menu.appendChild(head);
+  const item = (icon, label, run, disabled, cls) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.setAttribute("role", "menuitem");
+    if (cls) b.className = cls;
+    b.disabled = !!disabled;
+    const ic = document.createElement("span"); ic.className = "ic"; ic.textContent = icon;
+    b.append(ic, label);
+    b.addEventListener("click", () => { closeTileMenu(); run(); });
+    menu.appendChild(b);
+    return b;
+  };
+  const sep = () => menu.appendChild(document.createElement("hr"));
+  const done = at => { selected = at; saveDraft(); renderGrid(); renderEditor(); };
+  item("\u270e", "Edit", () => { selected = i; renderGrid(); renderEditor(); });
+  item("\u2606", empty ? "Fill from a template" : "Replace with a template", () => { selected = i; templatesOpen = !empty; renderGrid(); renderEditor(); });
+  sep();
+  item("\u29c9", "Copy", () => { tileClipboard = JSON.parse(JSON.stringify(tile)); }, empty);
+  item("\u2398", tileClipboard ? "Paste \u201c" + shorten(tileClipboard.label || "empty tile", 22) + "\u201d" : "Paste",
+    () => { board.tiles[i] = JSON.parse(JSON.stringify(tileClipboard)); done(i); }, !tileClipboard);
+  item("\u2750", "Duplicate to next empty tile", () => {
+    const n = board.tiles.length;
+    for (let step = 1; step < n; step++) {
+      const at = (i + step) % n;
+      if (isEmptyTile(board.tiles[at])) { board.tiles[at] = JSON.parse(JSON.stringify(tile)); done(at); return; }
+    }
+  }, empty || !board.tiles.some((t, k) => k !== i && isEmptyTile(t)));
+  sep();
+  item("\u2715", "Clear", () => { board.tiles[i] = emptyTile(); done(i); }, empty, "danger");
+  document.body.appendChild(menu);
+  // Keep the menu on screen.
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + "px";
+  const first = menu.querySelector("button:not(:disabled)");
+  if (first) first.focus();
+  menu.addEventListener("keydown", e => {
+    const items = Array.from(menu.querySelectorAll("button:not(:disabled)"));
+    const at = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length].focus(); }
+  });
+}
+document.addEventListener("mousedown", e => { if (!e.target.closest || !e.target.closest("#tileMenu")) closeTileMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeTileMenu(); });
+window.addEventListener("blur", closeTileMenu);
+window.addEventListener("resize", closeTileMenu);
+document.addEventListener("scroll", closeTileMenu, true);
+
 function shorten(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
 function field(labelText, node, hint) {
@@ -1043,65 +1130,13 @@ function renderEditor() {
   const tile = board.tiles[selected];
   $("editorTitle").textContent = "Tile " + (selected + 1);
 
-  // Copy/paste between tiles
-  const toolRow = document.createElement("div");
-  toolRow.className = "toolrow";
-  const copyBtn = document.createElement("button");
-  copyBtn.textContent = "Copy tile";
-  copyBtn.title = "Copy this tile, then paste it onto another tile";
-  copyBtn.addEventListener("click", () => {
-    tileClipboard = JSON.parse(JSON.stringify(tile));
-    renderEditor();
-  });
-  const pasteBtn = document.createElement("button");
-  pasteBtn.textContent = tileClipboard ? "Paste: " + shorten(tileClipboard.label || "empty tile", 18) : "Paste tile";
-  pasteBtn.disabled = !tileClipboard;
-  pasteBtn.title = tileClipboard ? "Replace this tile with the copied one" : "Copy a tile first";
-  pasteBtn.addEventListener("click", () => {
-    if (!tileClipboard) return;
-    board.tiles[selected] = JSON.parse(JSON.stringify(tileClipboard));
-    saveDraft(); renderEditor(); renderGrid();
-  });
-  const dupBtn = document.createElement("button");
-  dupBtn.textContent = "Duplicate";
-  dupBtn.title = "Put a copy of this tile on the next empty tile";
-  dupBtn.addEventListener("click", () => {
-    const n = board.tiles.length;
-    for (let step = 1; step < n; step++) {
-      const at = (selected + step) % n;
-      if (isEmptyTile(board.tiles[at])) {
-        board.tiles[at] = JSON.parse(JSON.stringify(tile));
-        selected = at;
-        saveDraft(); renderGrid(); renderEditor();
-        return;
-      }
-    }
-    dupBtn.textContent = "No empty tile";
-    setTimeout(() => { dupBtn.textContent = "Duplicate"; }, 1600);
-  });
-  const clearBtn = document.createElement("button");
-  clearBtn.textContent = "Clear";
-  clearBtn.className = "ghost";
-  clearBtn.title = "Empty this tile (Undo brings it back)";
-  clearBtn.disabled = isEmptyTile(tile);
-  clearBtn.addEventListener("click", () => {
-    board.tiles[selected] = emptyTile();
-    saveDraft(); renderGrid(); renderEditor();
-  });
-  const tplBtn = document.createElement("button");
-  const empty = isEmptyTile(tile);
-  tplBtn.textContent = templatesOpen && !empty ? "Hide templates" : "Templates";
-  tplBtn.title = "Fill this tile from a ready-made template";
-  tplBtn.style.display = empty ? "none" : "";
-  tplBtn.addEventListener("click", () => { templatesOpen = !templatesOpen; renderEditor(); });
-  [tplBtn, copyBtn, pasteBtn, dupBtn, clearBtn].forEach(b => { b.classList.add("sm"); toolRow.appendChild(b); });
-  editor.appendChild(toolRow);
-  if (empty || templatesOpen) {
+  // Copy, paste, duplicate and clear live on the tile's right-click menu.
+  if (isEmptyTile(tile) || templatesOpen) {
     editor.appendChild(templatePicker(t => {
       board.tiles[selected] = t;
       templatesOpen = false;
       saveDraft(); renderGrid(); renderEditor();
-    }));
+    }, isEmptyTile(tile) ? null : () => { templatesOpen = false; renderEditor(); }));
   }
 
   editor.appendChild(field("Label (shown on the board)",
