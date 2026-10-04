@@ -16,8 +16,8 @@ import javax.swing.JPanel;
 
 /**
  * One tile on the board grid, hand-painted: a rounded card whose color tells its state,
- * an optional bottom-up progress fill, a gold outline on tiles in a completed line, and a
- * white outline on the selected tile.
+ * an optional bottom-up progress fill, an outline in the Line color on tiles in a
+ * completed line (Highlight style), and a white outline on the selected tile.
  */
 class BingoTileCell extends JPanel
 {

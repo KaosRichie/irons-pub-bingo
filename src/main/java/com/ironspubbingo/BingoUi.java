@@ -15,7 +15,7 @@ final class BingoUi
 {
 	static final Color COLOR_COMPLETE = new Color(60, 124, 50);
 	static final Color COLOR_PARTIAL = new Color(148, 111, 22);
-	/** Gold, as on the clan logo: completed bingo lines, check badges, highlights. */
+	/** Gold, as on the clan logo: the pop-out header rule and the line count chip. */
 	static final Color COLOR_GOLD = new Color(226, 173, 72);
 	/** Completed bingo lines, unless the Line color setting says otherwise. */
 	static final Color COLOR_LINE = new Color(255, 0, 0);

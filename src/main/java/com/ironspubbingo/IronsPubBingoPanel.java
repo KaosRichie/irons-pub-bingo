@@ -407,7 +407,7 @@ class IronsPubBingoPanel extends PluginPanel
 	/** The in-client help: topics on the left, one short page each. */
 	private void showReadme()
 	{
-		BingoHelp.show(this);
+		BingoHelp.show(this, plugin.lineColor());
 	}
 
 	/** Hand-painted question mark in a ring, theme colored. */
@@ -692,7 +692,7 @@ class IronsPubBingoPanel extends PluginPanel
 		eventStatusLabel.setVisible(!eventText.isEmpty());
 		eventStatusLabel.setText(eventText);
 		eventStatusLabel.setToolTipText(plugin.eventWindowTooltip());
-		String updateNotice = plugin.boardUpdateNotice();
+		String updateNotice = plugin.boardUpdateNotice(true);
 		boardUpdateLabel.setVisible(updateNotice != null);
 		boardUpdateLabel.setText(updateNotice == null ? "" : updateNotice);
 		reimportRow.setVisible(updateNotice != null && plugin.boardUpdateFromStore() && plugin.storeConfigured());

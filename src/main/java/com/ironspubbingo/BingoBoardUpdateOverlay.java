@@ -30,7 +30,7 @@ class BingoBoardUpdateOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		String notice = config.boardUpdateOverlay() ? plugin.boardUpdateNotice() : null;
+		String notice = config.boardUpdateOverlay() ? plugin.boardUpdateNotice(false) : null;
 		if (notice == null)
 		{
 			return null;

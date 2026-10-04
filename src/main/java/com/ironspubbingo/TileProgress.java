@@ -46,24 +46,6 @@ public class TileProgress
 		return share;
 	}
 
-	/** Just the numbers: counters, distinct names and the manual tick. */
-	TileProgress counts(int goalCount)
-	{
-		TileProgress copy = new TileProgress();
-		copy.manual = manual;
-		for (int g = 0; g < goalCount; g++)
-		{
-			GoalProgress own = goal(g, goalCount);
-			GoalProgress into = copy.goal(g, goalCount);
-			into.n = own.n;
-			if (own.matched != null && !own.matched.isEmpty())
-			{
-				into.matched = new HashSet<>(own.matched);
-			}
-		}
-		return copy;
-	}
-
 	/**
 	 * Combines the progress of several team members into one team view:
 	 * counters sum ("2 uniques" = one each from two people), distinct item sets union

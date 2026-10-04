@@ -92,6 +92,9 @@ public class IronsPubBingoPlugin extends Plugin
 	};
 	private static final String COLLECTION_LOG_PREFIX = "new item added to your collection log: ";
 	private static final String PARTY_PREFIX = "bingo-";
+	// Party-only teams get their own party. Team codes never contain ':', so no store
+	// team's passphrase can collide with a party-only one.
+	private static final String PARTY_ONLY_SUFFIX = ":party";
 	private static final long SAVE_THROTTLE_MS = 15_000;
 	private static final long BROADCAST_THROTTLE_MS = 10_000;
 	private static final long STORE_POST_THROTTLE_MS = 15_000;
@@ -154,6 +157,7 @@ public class IronsPubBingoPlugin extends Plugin
 	private NavigationButton navButton;
 	private BingoBoardWindow boardWindow;
 	private ScheduledFuture<?> storePollTask;
+	private ScheduledFuture<?> rejoinCheckTask;
 
 	@Getter
 	private BingoBoard board;
@@ -226,12 +230,6 @@ public class IronsPubBingoPlugin extends Plugin
 	private boolean revertingTeamCode;
 	/** Store requests in flight; the panel shows a syncing indicator while > 0. */
 	private int storeRequestsInFlight;
-	/**
-	 * Per completed tile, the contributions as they stood when it completed. Tracking
-	 * keeps counting underneath (the numbers still sync, and decide completion if a
-	 * member leaves), but a finished tile shouldn't keep reshuffling who did what.
-	 */
-	// Read from the panel's Swing thread as well as the client thread.
 	/** A forced sync asked for while another was in flight; runs once that one returns. */
 	private boolean storeSyncQueued;
 	/**
@@ -326,6 +324,12 @@ public class IronsPubBingoPlugin extends Plugin
 			storePollTask.cancel(false);
 			storePollTask = null;
 		}
+		if (rejoinCheckTask != null)
+		{
+			rejoinCheckTask.cancel(false);
+			rejoinCheckTask = null;
+		}
+		discordNotifier.shutDown();
 		flushBroadcast();
 		saveProgress(true);
 		wsClient.unregisterMessage(IronsPubBingoMemberState.class);
@@ -570,6 +574,9 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void activateBoard(BingoBoard parsed)
 	{
+		// Finish with the old board first: loadProgress drops whatever is in memory.
+		flushBroadcast();
+		saveProgress(true);
 		newerBoardVersion = null;
 		newerBoardFromStore = false;
 		metaSentForBoard = null;
@@ -691,8 +698,11 @@ public class IronsPubBingoPlugin extends Plugin
 		return notes;
 	}
 
-	/** Warning when a teammate runs a newer revision of this board, or null. */
-	String boardUpdateNotice()
+	/**
+	 * Warning when a teammate runs a newer revision of this board, or null.
+	 * besideReimportButton: the text sits right above the panel's Reimport from store button.
+	 */
+	String boardUpdateNotice(boolean besideReimportButton)
 	{
 		if (newerBoardVersion == null)
 		{
@@ -701,9 +711,17 @@ public class IronsPubBingoPlugin extends Plugin
 		// The store can flag an update the host pasted without bumping the version.
 		String what = board != null && board.version != null && newerBoardVersion <= board.version
 			? "The board changed" : "Board v" + newerBoardVersion + " is out";
-		return newerBoardFromStore
-			? what + " - reimport it: Setup, Import board, Import from store"
-			: what + " - ask your host for the new board code";
+		if (!newerBoardFromStore)
+		{
+			return what + " - ask your host for the new board code";
+		}
+		if (!teamStore.isConfigured())
+		{
+			return what + " - reimport it: Setup, Import board, Import from store";
+		}
+		return besideReimportButton
+			? what + " - press Reimport from store below"
+			: what + " - press Reimport from store in the bingo panel";
 	}
 
 	/** For Discord posts: says the post came from an outdated board, or null. */
@@ -756,6 +774,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void clearBoardNow()
 	{
+		flushBroadcast();
 		saveProgress(true);
 		newerBoardVersion = null;
 		newerBoardFromStore = false;
@@ -947,6 +966,13 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	TileProgress mergedProgressFor(int tileIndex)
 	{
+		// The panels call this from the Swing thread while the client thread may swap
+		// the board, so an index from the old board can be out of range here.
+		BingoBoard current = board;
+		if (current == null || tileIndex < 0 || tileIndex >= current.getTiles().size())
+		{
+			return new TileProgress();
+		}
 		TileProgress own = progressFor(tileIndex);
 		Map<String, TeamMemberState> team = activeTeamProgress();
 		if (team.isEmpty())
@@ -967,7 +993,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return own;
 		}
-		return TileProgress.merge(board.getTiles().get(tileIndex).goals.size(), all);
+		return TileProgress.merge(current.getTiles().get(tileIndex).goals.size(), all);
 	}
 
 	boolean hasTeamData()
@@ -1013,11 +1039,12 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Whether any goal of the tile shows progress, for the amber "partial" tile color. */
 	boolean tileHasProgress(int tileIndex)
 	{
-		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
+		BingoBoard current = board;
+		if (current == null || tileIndex < 0 || tileIndex >= current.getTiles().size())
 		{
 			return false;
 		}
-		BingoTile tile = board.getTiles().get(tileIndex);
+		BingoTile tile = current.getTiles().get(tileIndex);
 		TileProgress tp = mergedProgressFor(tileIndex);
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
@@ -1032,11 +1059,12 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Each goal's "progress/target", one per line, for tile tooltips. */
 	String tileGoalSummaryHtml(int tileIndex)
 	{
-		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
+		BingoBoard current = board;
+		if (current == null || tileIndex < 0 || tileIndex >= current.getTiles().size())
 		{
 			return "";
 		}
-		BingoTile tile = board.getTiles().get(tileIndex);
+		BingoTile tile = current.getTiles().get(tileIndex);
 		TileProgress tp = mergedProgressFor(tileIndex);
 		StringBuilder sb = new StringBuilder();
 		for (int g = 0; g < tile.goals.size(); g++)
@@ -1286,8 +1314,21 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private String expectedPassphrase()
 	{
-		String code = normalizedTeamCode();
-		return code == null ? null : PARTY_PREFIX + code;
+		return passphraseFor(normalizedTeamCode(), config.teamStoreEnabled());
+	}
+
+	/**
+	 * The party a team meets in. The store team and the party-only team of one code are
+	 * different teams, so they get different parties. Store mode keeps the original
+	 * passphrase so existing store teams stay together.
+	 */
+	private static String passphraseFor(String code, boolean storeMode)
+	{
+		if (code == null)
+		{
+			return null;
+		}
+		return storeMode ? PARTY_PREFIX + code : PARTY_PREFIX + code + PARTY_ONLY_SUFFIX;
 	}
 
 	/**
@@ -1422,8 +1463,10 @@ public class IronsPubBingoPlugin extends Plugin
 		storePushed.clear();
 		teamProgress.clear();
 		removedMembers.clear();
-		configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-			removedCacheKey(loadedTeamCode, loadedStoreMode));
+		if (loadedStoreMode)
+		{
+			configManager.unsetRSProfileConfiguration(IronsPubBingoConfig.GROUP, removedCacheKey(loadedTeamCode));
+		}
 		saveProgress(true);
 	}
 
@@ -1492,20 +1535,21 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
-	private String removedCacheKey(String teamCode, boolean storeMode)
+	/** Departures come from the store only, so only store teams have them cached. */
+	private String removedCacheKey(String teamCode)
 	{
-		return (storeMode ? "removed3_" : "removed3p_") + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
+		return "removed3_" + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
 	}
 
 	/** Loads the evicted-member tombstones for the current team scope and enforces them. */
 	private void loadRemovedMembers()
 	{
 		removedMembers.clear();
-		if (boardKey == null || configManager.getRSProfileKey() == null)
+		if (boardKey == null || configManager.getRSProfileKey() == null || !loadedStoreMode)
 		{
 			return;
 		}
-		Set<String> cached = readJsonConfig(removedCacheKey(loadedTeamCode, loadedStoreMode), STRING_SET);
+		Set<String> cached = readJsonConfig(removedCacheKey(loadedTeamCode), STRING_SET);
 		if (cached != null)
 		{
 			removedMembers.addAll(cached);
@@ -1717,8 +1761,10 @@ public class IronsPubBingoPlugin extends Plugin
 		newStoreGeneration(); // toggling modes invalidates any in-flight request
 		storePushed.clear();
 		storeStandings.clear();
-		// The store team and the party-only team keep their own teammates.
+		// The store team and the party-only team keep their own teammates, and meet in
+		// their own parties.
 		switchTeamCaches(normalizedTeamCode(), !wasOn);
+		followIntoTeamParty(passphraseFor(normalizedTeamCode(), wasOn));
 		if (wasOn)
 		{
 			// Leaving the store team: the departure notice tombstones this account there.
@@ -1768,16 +1814,25 @@ public class IronsPubBingoPlugin extends Plugin
 		// restores them, and start from whatever is cached for the new team. What
 		// each team shows is then filtered by that team's departures.
 		switchTeamCaches(normalizedTeamCode(), config.teamStoreEnabled());
-		// Follow the code into its party - but only if we were in the old team's party.
-		// Never pull the player out of an unrelated party (e.g. a raid).
-		String oldPassphrase = oldCode == null ? null : PARTY_PREFIX + oldCode;
-		if (partyService.isInParty() && oldPassphrase != null
-			&& oldPassphrase.equals(partyService.getPartyPassphrase()))
-		{
-			partyService.changeParty(expectedPassphrase());
-		}
+		followIntoTeamParty(passphraseFor(oldCode, config.teamStoreEnabled()));
 		syncStore(true);
 		refreshPanel();
+	}
+
+	/**
+	 * Moves us from the old team's party into the current team's party, but only if we
+	 * were in the old team's party. Never pulls the player out of an unrelated party
+	 * (e.g. a raid).
+	 */
+	private void followIntoTeamParty(String oldPassphrase)
+	{
+		String expected = expectedPassphrase();
+		if (partyService.isInParty() && oldPassphrase != null
+			&& oldPassphrase.equals(partyService.getPartyPassphrase())
+			&& !oldPassphrase.equals(expected))
+		{
+			partyService.changeParty(expected);
+		}
 	}
 
 	/** Drops every in-flight store request: their replies will be ignored. */
@@ -2023,6 +2078,12 @@ public class IronsPubBingoPlugin extends Plugin
 		return discordNotifier.webhookConfigured();
 	}
 
+	/** Whether tile completions are posted to the Discord webhook. */
+	boolean postCompletions()
+	{
+		return config.postCompletions();
+	}
+
 	/** Posts a proof screenshot for a credit request; callback gets (link, error). */
 	void postProofScreenshot(String requestDetail, java.util.function.BiConsumer<String, String> callback)
 	{
@@ -2224,7 +2285,9 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		clientThread.invokeLater(() ->
 		{
-			if (update.member == null)
+			// Admin credit rows come from the store reply only. A party message carrying
+			// one is forged or relayed, so it is dropped.
+			if (!isPlayerMemberId(update.member))
 			{
 				return;
 			}
@@ -2262,7 +2325,17 @@ public class IronsPubBingoPlugin extends Plugin
 				lastRejoinCheckMs = System.currentTimeMillis();
 				syncStore(true);
 				// Their own rejoin may reach the store a moment after this: look once more.
-				executor.schedule(() -> clientThread.invokeLater(() -> syncStore(true)), 5, TimeUnit.SECONDS);
+				if (rejoinCheckTask != null)
+				{
+					rejoinCheckTask.cancel(false);
+				}
+				rejoinCheckTask = executor.schedule(() -> clientThread.invokeLater(() ->
+				{
+					if (running)
+					{
+						syncStore(true);
+					}
+				}), 5, TimeUnit.SECONDS);
 			}
 			applyMemberStates(Map.of(update.member, memberState(update.name, update.tiles)));
 		});
@@ -2343,11 +2416,13 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	private static boolean isValidMemberId(String member)
 	{
-		if (isAdminMember(member))
-		{
-			return true;
-		}
-		if (member.length() != 16)
+		return isAdminMember(member) || isPlayerMemberId(member);
+	}
+
+	/** A 16-hex-char id derived from a player account. Admin credit ids do not count. */
+	private static boolean isPlayerMemberId(String member)
+	{
+		if (member == null || member.length() != 16)
 		{
 			return false;
 		}
@@ -2598,10 +2673,10 @@ public class IronsPubBingoPlugin extends Plugin
 					// cache the moment they rejoin the team.
 					removedMembers.clear();
 					removedMembers.addAll(payload.removed);
-					if (configManager.getRSProfileKey() != null)
+					if (configManager.getRSProfileKey() != null && loadedStoreMode)
 					{
 						configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-							removedCacheKey(loadedTeamCode, loadedStoreMode), gson.toJson(removedMembers));
+							removedCacheKey(loadedTeamCode), gson.toJson(removedMembers));
 					}
 					dropped = true;
 				}
@@ -2625,19 +2700,30 @@ public class IronsPubBingoPlugin extends Plugin
 
 	boolean isTileComplete(int tileIndex)
 	{
-		return board != null && board.getTiles().get(tileIndex).isComplete(mergedProgressFor(tileIndex));
+		return isTileComplete(board, tileIndex);
+	}
+
+	/** Against one board snapshot: false for indexes it doesn't have (a board swapped mid-redraw). */
+	private boolean isTileComplete(BingoBoard current, int tileIndex)
+	{
+		if (current == null || current != board || tileIndex < 0 || tileIndex >= current.getTiles().size())
+		{
+			return false;
+		}
+		return current.getTiles().get(tileIndex).isComplete(mergedProgressFor(tileIndex));
 	}
 
 	int completedCount()
 	{
-		if (board == null)
+		BingoBoard current = board;
+		if (current == null)
 		{
 			return 0;
 		}
 		int n = 0;
-		for (int i = 0; i < board.getTiles().size(); i++)
+		for (int i = 0; i < current.getTiles().size(); i++)
 		{
-			if (isTileComplete(i))
+			if (isTileComplete(current, i))
 			{
 				n++;
 			}
@@ -2647,11 +2733,12 @@ public class IronsPubBingoPlugin extends Plugin
 
 	int completedLines()
 	{
-		if (board == null)
+		BingoBoard current = board;
+		if (current == null)
 		{
 			return 0;
 		}
-		int size = board.getSize();
+		int size = current.getSize();
 		int lines = 0;
 		for (int r = 0; r < size; r++)
 		{
@@ -2659,12 +2746,12 @@ public class IronsPubBingoPlugin extends Plugin
 			boolean col = true;
 			for (int c = 0; c < size; c++)
 			{
-				row &= isTileComplete(r * size + c);
-				col &= isTileComplete(c * size + r);
+				row &= isTileComplete(current, r * size + c);
+				col &= isTileComplete(current, c * size + r);
 			}
 			lines += (row ? 1 : 0) + (col ? 1 : 0);
 		}
-		if (!board.diagonalsCount())
+		if (!current.diagonalsCount())
 		{
 			return lines;
 		}
@@ -2672,8 +2759,8 @@ public class IronsPubBingoPlugin extends Plugin
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
 		{
-			diag &= isTileComplete(i * size + i);
-			anti &= isTileComplete(i * size + (size - 1 - i));
+			diag &= isTileComplete(current, i * size + i);
+			anti &= isTileComplete(current, i * size + (size - 1 - i));
 		}
 		return lines + (diag ? 1 : 0) + (anti ? 1 : 0);
 	}
@@ -2704,11 +2791,12 @@ public class IronsPubBingoPlugin extends Plugin
 	 */
 	double tileProgressFraction(int tileIndex)
 	{
-		if (board == null)
+		BingoBoard current = board;
+		if (current == null || tileIndex < 0 || tileIndex >= current.getTiles().size())
 		{
 			return 0;
 		}
-		BingoTile tile = board.getTiles().get(tileIndex);
+		BingoTile tile = current.getTiles().get(tileIndex);
 		TileProgress merged = mergedProgressFor(tileIndex);
 		double sum = 0;
 		double best = 0;
@@ -2737,19 +2825,20 @@ public class IronsPubBingoPlugin extends Plugin
 	Set<Integer> completedLineCells()
 	{
 		Set<Integer> cells = new HashSet<>();
-		if (board == null)
+		BingoBoard current = board;
+		if (current == null)
 		{
 			return cells;
 		}
-		int size = board.getSize();
+		int size = current.getSize();
 		for (int r = 0; r < size; r++)
 		{
 			boolean row = true;
 			boolean col = true;
 			for (int c = 0; c < size; c++)
 			{
-				row &= isTileComplete(r * size + c);
-				col &= isTileComplete(c * size + r);
+				row &= isTileComplete(current, r * size + c);
+				col &= isTileComplete(current, c * size + r);
 			}
 			for (int c = 0; c < size; c++)
 			{
@@ -2763,7 +2852,7 @@ public class IronsPubBingoPlugin extends Plugin
 				}
 			}
 		}
-		if (!board.diagonalsCount())
+		if (!current.diagonalsCount())
 		{
 			return cells;
 		}
@@ -2771,8 +2860,8 @@ public class IronsPubBingoPlugin extends Plugin
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
 		{
-			diag &= isTileComplete(i * size + i);
-			anti &= isTileComplete(i * size + (size - 1 - i));
+			diag &= isTileComplete(current, i * size + i);
+			anti &= isTileComplete(current, i * size + (size - 1 - i));
 		}
 		for (int i = 0; i < size; i++)
 		{
@@ -2795,19 +2884,20 @@ public class IronsPubBingoPlugin extends Plugin
 	List<int[]> completedLineSegments()
 	{
 		List<int[]> segments = new ArrayList<>();
-		if (board == null)
+		BingoBoard current = board;
+		if (current == null)
 		{
 			return segments;
 		}
-		int size = board.getSize();
+		int size = current.getSize();
 		for (int r = 0; r < size; r++)
 		{
 			boolean row = true;
 			boolean col = true;
 			for (int c = 0; c < size; c++)
 			{
-				row &= isTileComplete(r * size + c);
-				col &= isTileComplete(c * size + r);
+				row &= isTileComplete(current, r * size + c);
+				col &= isTileComplete(current, c * size + r);
 			}
 			if (row)
 			{
@@ -2818,7 +2908,7 @@ public class IronsPubBingoPlugin extends Plugin
 				segments.add(new int[]{r, (size - 1) * size + r});
 			}
 		}
-		if (!board.diagonalsCount())
+		if (!current.diagonalsCount())
 		{
 			return segments;
 		}
@@ -2826,8 +2916,8 @@ public class IronsPubBingoPlugin extends Plugin
 		boolean anti = true;
 		for (int i = 0; i < size; i++)
 		{
-			diag &= isTileComplete(i * size + i);
-			anti &= isTileComplete(i * size + (size - 1 - i));
+			diag &= isTileComplete(current, i * size + i);
+			anti &= isTileComplete(current, i * size + (size - 1 - i));
 		}
 		if (diag)
 		{
@@ -3862,9 +3952,9 @@ public class IronsPubBingoPlugin extends Plugin
 					window.refresh();
 				}
 			}
-			catch (java.util.ConcurrentModificationException e)
+			catch (java.util.ConcurrentModificationException | IndexOutOfBoundsException e)
 			{
-				// Progress changed on the client thread mid-render; draw it again.
+				// Progress or the board changed on the client thread mid-render: draw it again.
 				log.debug("Panel refresh raced a progress update, redrawing", e);
 				clientThread.invokeLater(this::refreshPanel);
 			}

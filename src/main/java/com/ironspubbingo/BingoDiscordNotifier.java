@@ -9,7 +9,12 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -40,6 +45,10 @@ import okhttp3.Response;
 class BingoDiscordNotifier
 {
 	private static final MediaType PNG = MediaType.parse("image/png");
+	// How long a capture waits for the player to get past the welcome screen.
+	private static final long CAPTURE_WAIT_MS = 120_000;
+	// How long a capture waits for the requested frame to be drawn.
+	private static final long FRAME_WAIT_SECONDS = 10;
 
 	@Inject
 	private OkHttpClient okHttpClient;
@@ -62,6 +71,12 @@ class BingoDiscordNotifier
 	@Inject
 	private IronsPubBingoConfig config;
 
+	/** Timeouts still waiting to fire; cancelled on shutdown. */
+	private final Set<ScheduledFuture<?>> pendingTimeouts = ConcurrentHashMap.newKeySet();
+
+	/** Bumped on shutdown, so captures started before it give up. */
+	private volatile int generation;
+
 	/** Supplies a note when this client runs an outdated board, else null. Client thread. */
 	private volatile java.util.function.Supplier<String> outdatedNote = () -> null;
 
@@ -75,6 +90,23 @@ class BingoDiscordNotifier
 	{
 		String note = outdatedNote.get();
 		return note == null ? "" : "\n:warning: " + note;
+	}
+
+	/** Cancels pending timeouts and stops captures in progress. Called from the plugin's shutDown. */
+	void shutDown()
+	{
+		generation++;
+		for (ScheduledFuture<?> timeout : pendingTimeouts)
+		{
+			timeout.cancel(false);
+		}
+		pendingTimeouts.clear();
+	}
+
+	private void scheduleTimeout(Runnable task, long delay, TimeUnit unit)
+	{
+		pendingTimeouts.removeIf(ScheduledFuture::isDone);
+		pendingTimeouts.add(executor.schedule(task, delay, unit));
 	}
 
 	/** Whether a webhook URL is set, so callers can offer webhook-backed features. */
@@ -97,7 +129,7 @@ class BingoDiscordNotifier
 		// Exactly one answer, whatever happens: the request dialog waits on it. A client
 		// that stops drawing frames (minimized) or a Discord reply that never parses
 		// would otherwise leave the request unsent for the rest of the session.
-		java.util.concurrent.atomic.AtomicBoolean answered = new java.util.concurrent.atomic.AtomicBoolean();
+		AtomicBoolean answered = new AtomicBoolean();
 		java.util.function.BiConsumer<String, String> callback = (link, error) ->
 		{
 			if (answered.compareAndSet(false, true))
@@ -105,7 +137,7 @@ class BingoDiscordNotifier
 				rawCallback.accept(link, error);
 			}
 		};
-		executor.schedule(() -> callback.accept(null, "Screenshot timed out"), 60, java.util.concurrent.TimeUnit.SECONDS);
+		scheduleTimeout(() -> callback.accept(null, "Screenshot timed out"), 60, TimeUnit.SECONDS);
 		HttpUrl url = HttpUrl.parse(config.webhookUrl().trim());
 		if (url == null)
 		{
@@ -177,17 +209,32 @@ class BingoDiscordNotifier
 	 * inventory, so the picture shows what it is proof of. And after a login the
 	 * welcome screen is skipped: XP caught up from mobile completes tiles the moment the
 	 * client logs in, when the next frame is the "Welcome to Gielinor" banner. Both
-	 * checks retry frame by frame for as long as the player is in the game. If they log
-	 * out first there is nothing to photograph, and the post goes out without a picture.
+	 * checks retry frame by frame while the player is in the game, for up to two minutes.
+	 * If they log out first, wait too long, or no frame is drawn (a minimized client),
+	 * the post goes out without a picture.
 	 */
 	private void captureFrame(java.util.function.Consumer<Image> onFrame)
 	{
 		int[] startTick = {-1};
+		int startGeneration = generation;
+		long deadline = System.currentTimeMillis() + CAPTURE_WAIT_MS;
+		AtomicBoolean delivered = new AtomicBoolean();
+		java.util.function.Consumer<Image> deliver = frame ->
+		{
+			if (delivered.compareAndSet(false, true))
+			{
+				executor.execute(() -> onFrame.accept(frame));
+			}
+		};
 		clientThread.invokeLater(() ->
 		{
-			if (client.getGameState() != GameState.LOGGED_IN)
+			if (generation != startGeneration)
 			{
-				executor.execute(() -> onFrame.accept(null));
+				return true; // the plugin shut down: drop the post
+			}
+			if (client.getGameState() != GameState.LOGGED_IN || System.currentTimeMillis() > deadline)
+			{
+				deliver.accept(null);
 				return true;
 			}
 			if (startTick[0] < 0)
@@ -201,7 +248,8 @@ class BingoDiscordNotifier
 			{
 				return false; // try again next frame
 			}
-			drawManager.requestNextFrameListener(frame -> executor.execute(() -> onFrame.accept(frame)));
+			drawManager.requestNextFrameListener(deliver::accept);
+			scheduleTimeout(() -> deliver.accept(null), FRAME_WAIT_SECONDS, TimeUnit.SECONDS);
 			return true;
 		});
 	}

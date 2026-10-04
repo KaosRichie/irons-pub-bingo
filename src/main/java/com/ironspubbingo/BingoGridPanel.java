@@ -49,13 +49,22 @@ class BingoGridPanel extends JPanel
 		{
 			Point from = cellCenter(segment[0]);
 			Point to = cellCenter(segment[1]);
-			g2.drawLine(from.x, from.y, to.x, to.y);
+			// A segment from a board swapped in mid-redraw can name cells this grid lacks.
+			if (from != null && to != null)
+			{
+				g2.drawLine(from.x, from.y, to.x, to.y);
+			}
 		}
 		g2.dispose();
 	}
 
+	/** The center of a cell, or null when the grid has no such cell. */
 	private Point cellCenter(int cellIndex)
 	{
+		if (cellIndex < 0 || cellIndex >= getComponentCount())
+		{
+			return null;
+		}
 		Rectangle bounds = getComponent(cellIndex).getBounds();
 		return new Point(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 	}

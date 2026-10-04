@@ -6,7 +6,7 @@ import net.runelite.client.party.messages.PartyMemberMessage;
 /**
  * Party message carrying (a chunk of) one member's tile progress. Sent for the local
  * player's own changes, and also as a relay of cached teammate state when answering sync
- * requests — so progress spreads through any chain of online members (gossip). The
+ * requests, so progress spreads through any chain of online members (gossip). The
  * {@code member}/{@code name} fields identify the progress OWNER, not the sender; each
  * tile share carries the owner's own timestamp for last-write-wins merging.
  */

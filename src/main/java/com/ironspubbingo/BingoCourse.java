@@ -7,8 +7,8 @@ import net.runelite.api.coords.WorldPoint;
 
 /**
  * Agility courses whose laps can be counted: a lap completes when Agility XP lands while
- * the player stands on the course's end tile(s), with the course identified by map region —
- * the same detection RuneLite's own Agility plugin uses.
+ * the player stands on the course's end tile(s), with the course identified by map region.
+ * This is the same detection RuneLite's own Agility plugin uses.
  *
  * Region ids and end tiles adapted from RuneLite's agility plugin Courses
  * (BSD-2, Copyright (c) 2018, Seth <http://github.com/sethtroll>).

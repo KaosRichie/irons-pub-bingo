@@ -40,6 +40,8 @@ who have synced to that team, so sync once with the plugin first.
 - When your host publishes a newer board, the panel and an overlay in game say so.
   Reimport it from the store. The **New board overlay** setting turns the overlay off.
 - Each team keeps its own progress. Switching teams parks it, switching back restores it.
+- Completed lines are drawn as red strokes through their tiles. **Line style** set to
+  **Highlight** outlines the tiles instead. **Line color** picks the color for both.
 - Discord: set a **Webhook URL** and turn on **Post completions to Discord** to post your
   completed tiles with a screenshot.
 
@@ -98,27 +100,30 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 - `start`/`end`: outside this window automatic tracking doesn't count. Manual ticks do.
 - `diagonals`: set `false` and only rows and columns count as lines.
 - `icon`: an item name, or a numeric item id for untradeables.
-- Any goal takes `"screenshot": true` to post each step of its progress with a screenshot
-  to the player's Discord webhook.
+- Any goal except `XP` and `MANUAL` takes `"screenshot": true`. Each step of its progress
+  then posts a screenshot to the player's Discord webhook, if they post completions there.
 
 ### Goal types
 
 | type | tracks | fields |
 |---|---|---|
-| `DROP` | item drops, pickpockets included | `items`, `itemIds`?, `sources`?, `loot`?, `count`, `distinct`? |
-| `RAID_PURPLE` | raid uniques | `raids` (`COX`/`TOB`/`TOA`), `count`, `distinct`? |
-| `KC` | kill count of bosses that print one | `npcs`, `count` |
-| `KILL` | kills of any NPC, a shared kill counts once | `npcs`, `count` |
-| `PET` | pets received | `pets`?, `count` |
+| `DROP` | item drops, pickpockets included | `items` and/or `itemIds`, `sources`?, `loot`?, `count`?, `distinct`? |
+| `RAID_PURPLE` | raid uniques | `raids`? (`COX`/`TOB`/`TOA`), `count`?, `distinct`? |
+| `KC` | kill count of bosses that print one | `npcs`, `count`? |
+| `KILL` | kills of any NPC, a shared kill counts once | `npcs`, `count`? |
+| `PET` | pets received | `pets`?, `count`? |
 | `XP` | XP since import | `skill`, `amount` |
-| `LAP` | agility course laps | `course`, `count` |
-| `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `loot`?, `count` |
-| `CHAT` | a game message matching a regex | `pattern`, `regions`?, `count` |
+| `LAP` | agility course laps | `course`, `count`? |
+| `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `loot`?, `count`? |
+| `CHAT` | a game message matching a regex | `pattern`, `regions`?, `count`? |
 | `MANUAL` | nothing, players tick it by hand | none |
 
+- Fields marked `?` are optional. `count` defaults to 1.
 - Item and NPC names are case-insensitive globs (`Ancient page*`).
 - `name` labels a goal's progress bar.
-- `itemIds` matches exact ids, for items that share a name with something else.
+- `itemIds` matches exact ids, for items that share a name with something else. A `DROP`
+  goal needs `items`, `itemIds` or both.
+- `raids` left out counts all three raids.
 - `regions` limits a chat goal to certain map regions. Find region ids on the
   [region map](https://kaosrichie.github.io/irons-pub-bingo/region-map.html).
 - `loot` lists which loot kinds count: any of `"KILL"`, `"PICKPOCKET"` and `"OTHER"`
@@ -145,3 +150,14 @@ finish around Lumbridge in a few minutes.
   another player's progress.
 - A modified client could still fake numbers. The per-player view and your proof policy
   are the backstop.
+
+## Developing
+
+`run-alt.cmd` (Windows) starts a second dev client next to your main one, so two accounts
+can test team sync together. It builds the plugin and runs it with its own RuneLite home in
+`alt-home\.runelite`. The `alt-home` folder is gitignored.
+
+The first time, create a `credentials.properties` for the second account in
+`alt-home\.runelite\`. Follow
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+The file holds account credentials. Never commit it or share it.

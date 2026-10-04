@@ -1,6 +1,7 @@
 package com.ironspubbingo;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -40,12 +41,12 @@ final class BingoHelp
 	{
 	}
 
-	/** Opens the help window over the given component. */
-	static void show(Component parent)
+	/** Opens the help window over the given component. lineColor is the Line color setting. */
+	static void show(Component parent, Color lineColor)
 	{
 		Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
 		JDialog dialog = new JDialog(owner, "Irons Pub Bingo - Help");
-		dialog.setContentPane(content(dialog::dispose));
+		dialog.setContentPane(content(dialog::dispose, lineColor));
 		dialog.setSize(680, 520);
 		dialog.setMinimumSize(new Dimension(520, 380));
 		dialog.setLocationRelativeTo(parent);
@@ -53,9 +54,9 @@ final class BingoHelp
 	}
 
 	/** The whole help view, also used on its own to preview the layout. */
-	static JComponent content(Runnable onClose)
+	static JComponent content(Runnable onClose, Color lineColor)
 	{
-		Map<String, String> pages = pages();
+		Map<String, String> pages = pages(lineColor);
 
 		JEditorPane page = new JEditorPane("text/html", "");
 		page.setEditable(false);
@@ -139,7 +140,7 @@ final class BingoHelp
 
 	// ---------------------------------------------------------------- pages
 
-	private static Map<String, String> pages()
+	private static Map<String, String> pages(Color lineColor)
 	{
 		Map<String, String> pages = new LinkedHashMap<>();
 		pages.put("Getting started", page("Getting started",
@@ -154,7 +155,7 @@ final class BingoHelp
 				+ ul("Press <b>Import board</b> and paste the board code from your host.",
 					"Put your team code from the host in the plugin settings.")));
 		pages.put("The board", page("The board",
-			legend()
+			legend(lineColor)
 				+ ul("Click a tile to see its goals, who contributed what, and its actions.",
 					"Hover a tile for a quick summary.",
 					"The window button next to the title opens a large board you can resize.",
@@ -240,13 +241,15 @@ final class BingoHelp
 	}
 
 	/** The tile colors, as small swatches with what they mean. */
-	private static String legend()
+	private static String legend(Color lineColor)
 	{
+		Color line = lineColor == null ? BingoUi.COLOR_LINE : lineColor;
+		String lineHex = String.format("#%02x%02x%02x", line.getRed(), line.getGreen(), line.getBlue());
 		return "<table cellspacing='0' cellpadding='3' style='margin-top:4px; margin-bottom:6px'>"
 			+ swatch("#2c2c2c", "No progress yet")
 			+ swatch("#96701a", "Some progress")
 			+ swatch("#42843a", "Complete")
-			+ swatch(GOLD, "A completed bingo line")
+			+ swatch(lineHex, "A completed bingo line. Line style and Line color in the settings change how it looks.")
 			+ "</table>";
 	}
 

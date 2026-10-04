@@ -103,8 +103,8 @@ class BingoTeamStore
 		String boardJson;
 		/**
 		 * Request: the sender's own member id. Clears any "left the team" tombstone for it
-		 * in this scope, so someone who switches back to a team they left heals themselves —
-		 * admin-added (hand-written) tombstones are not cleared by this.
+		 * in this scope, so someone who switches back to a team they left heals themselves.
+		 * Admin-added (hand-written) tombstones are not cleared by this.
 		 */
 		String rejoin;
 		/** Request: a credit request for the admins' Requests tab. */
@@ -170,7 +170,7 @@ class BingoTeamStore
 	 * Pushes the given state and hands the server's reply to the callback. On success the
 	 * payload carries the merged team view (plus the host's team list and evicted ids);
 	 * on failure the payload is null (or, for a store-side rejection, carries the team
-	 * list alongside the error). The callback runs on an OkHttp thread — hop to the
+	 * list alongside the error). The callback runs on an OkHttp thread, so hop to the
 	 * client thread before touching plugin state.
 	 */
 	void sync(String board, Map<String, TeamMemberState> members, Object meta, String selfId,

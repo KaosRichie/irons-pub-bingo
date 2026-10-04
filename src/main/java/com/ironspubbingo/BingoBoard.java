@@ -18,9 +18,9 @@ public class BingoBoard
 	String name;
 	/**
 	 * Optional stable identifier. Boards sharing an id share progress and team sync, so a
-	 * host can edit the board mid-event without resetting anyone — labels, icons, points,
-	 * targets, even what a tile tracks — as long as tiles keep their position (edit in
-	 * place, don't insert or reorder). Only a new id (or removing it) is a new board.
+	 * host can edit the board mid-event without resetting anyone. Labels, icons, points,
+	 * targets and even what a tile tracks can all change, as long as tiles keep their
+	 * position (edit in place, don't insert or reorder). Only a new id (or removing it) is a new board.
 	 */
 	String id;
 	/** Optional board revision, shown next to the board name. */

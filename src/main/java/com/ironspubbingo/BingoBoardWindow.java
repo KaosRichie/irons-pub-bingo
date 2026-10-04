@@ -25,7 +25,7 @@ import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ImageUtil;
 
 /**
- * Resizable pop-out window with a large view of the bingo board — icons, full tile labels,
+ * Resizable pop-out window with a large view of the bingo board: icons, full tile labels,
  * points and progress colors. Opened from the sidebar panel; clicking a tile selects it
  * there. Live-updates together with the panel.
  */
@@ -41,6 +41,9 @@ class BingoBoardWindow extends JFrame
 	private final BingoUi.Chip eventChip = new BingoUi.Chip();
 	private final BingoGridPanel grid = new BingoGridPanel();
 	private static final int DETAIL_WIDTH = 380;
+	private static final String SELECT_TILE_HINT = "<html><div style='text-align:center'>Select a tile to see its goals,<br>"
+		+ "who contributed and its actions.</div></html>";
+	private static final String NO_BOARD_HINT = "<html><div style='text-align:center'>No board loaded.</div></html>";
 	private final BingoTileDetail detail;
 	private final JScrollPane detailScroll;
 	private final JPanel detailCards = new JPanel(new java.awt.CardLayout());
@@ -53,6 +56,8 @@ class BingoBoardWindow extends JFrame
 	private final List<JLabel> cellIcons = new ArrayList<>();
 	private final List<BingoWrappedLabel> cellLabels = new ArrayList<>();
 	private BingoBoard renderedBoard;
+	/** Whether the grid was built at all. renderedBoard alone can't tell: it starts null. */
+	private boolean gridBuilt;
 	private final javax.swing.Timer countdownTimer;
 
 	BingoBoardWindow(IronsPubBingoPlugin plugin)
@@ -98,8 +103,6 @@ class BingoBoardWindow extends JFrame
 		detailScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		detailScroll.getVerticalScrollBar().setUnitIncrement(16);
 
-		detailHint.setText("<html><div style='text-align:center'>Select a tile to see its goals,<br>"
-			+ "who contributed and its actions.</div></html>");
 		detailHint.setHorizontalAlignment(SwingConstants.CENTER);
 		detailHint.setFont(FontManager.getRunescapeSmallFont());
 		detailHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -149,11 +152,13 @@ class BingoBoardWindow extends JFrame
 	void refresh()
 	{
 		BingoBoard board = plugin.getBoard();
-		if (board != renderedBoard)
+		if (!gridBuilt || board != renderedBoard)
 		{
 			rebuildGrid(board);
 			renderedBoard = board;
+			gridBuilt = true;
 		}
+		setText(detailHint, board == null ? NO_BOARD_HINT : SELECT_TILE_HINT);
 		if (board == null)
 		{
 			setTitle("Irons Pub Bingo");
@@ -401,7 +406,7 @@ class BingoBoardWindow extends JFrame
 				final int tileIndex = i;
 				BingoTile tile = board.getTiles().get(i);
 				BingoTileCell cell = new BingoTileCell();
-				// Icon and text as separately stacked, individually centered components —
+				// Icon and text as separately stacked, individually centered components.
 				// Swing's compound icon+text label does not center HTML text reliably.
 				JLabel iconLabel = new JLabel();
 				iconLabel.setAlignmentX(java.awt.Component.CENTER_ALIGNMENT);

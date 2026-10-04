@@ -41,6 +41,8 @@ class BingoTileDetail extends JPanel
 	private boolean actionsExpanded;
 	/** Goals whose contributor rows are unfolded (click the goal's bar to toggle). */
 	private final java.util.Set<Integer> expandedGoals = new java.util.HashSet<>();
+	/** The board the expanded goals belong to; another board starts folded. */
+	private BingoBoard expandedBoard;
 	/** A credit request is on its way to the store; the button says so meanwhile. */
 	private boolean requestInFlight;
 
@@ -55,6 +57,10 @@ class BingoTileDetail extends JPanel
 
 	void setSelectedTile(int tileIndex)
 	{
+		if (tileIndex != selectedTile)
+		{
+			expandedGoals.clear();
+		}
 		selectedTile = tileIndex;
 	}
 
@@ -67,6 +73,11 @@ class BingoTileDetail extends JPanel
 	{
 		removeAll();
 		BingoBoard board = plugin.getBoard();
+		if (board != expandedBoard)
+		{
+			expandedGoals.clear();
+			expandedBoard = board;
+		}
 		boolean show = board != null && selectedTile >= 0 && selectedTile < board.getTiles().size();
 		setVisible(show);
 		if (!show)
@@ -438,8 +449,9 @@ class BingoTileDetail extends JPanel
 		JTextField links = new JTextField();
 		JCheckBox proofShot = new JCheckBox("Attach a screenshot (posts to your Discord webhook)");
 		proofShot.setEnabled(plugin.webhookConfigured());
-		// Proof is what the admin asks for first; with a webhook set, attach it by default.
-		proofShot.setSelected(plugin.webhookConfigured());
+		// Proof is what the admin asks for first. Attach it by default only when the
+		// player already posts completions to the webhook.
+		proofShot.setSelected(plugin.webhookConfigured() && plugin.postCompletions());
 		complete.addActionListener(e -> amount.setEnabled(!complete.isSelected()));
 		proofShot.setToolTipText(plugin.webhookConfigured()
 			? "Screenshots the game, posts it to your Discord webhook and files its link as proof"
