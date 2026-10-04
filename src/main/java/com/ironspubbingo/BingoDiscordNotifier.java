@@ -321,8 +321,6 @@ class BingoDiscordNotifier
 			content.append("\n:sparkles: ").append(bonus);
 		}
 		String message = content.append(outdatedSuffix()).toString();
-
-		// Grab a rendered frame as proof, then build and send the request off the client thread.
 		captureFrame(frame -> post(url, message, frame));
 	}
 

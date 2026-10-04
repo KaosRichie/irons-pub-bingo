@@ -6,7 +6,6 @@ import javax.swing.ImageIcon;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
-import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.AsyncBufferedImage;
 
 /**
@@ -16,7 +15,6 @@ final class BingoUi
 {
 	static final Color COLOR_COMPLETE = new Color(60, 124, 50);
 	static final Color COLOR_PARTIAL = new Color(148, 111, 22);
-	static final Color COLOR_EMPTY = ColorScheme.DARKER_GRAY_COLOR;
 	/** Gold, as on the clan logo: completed bingo lines, check badges, highlights. */
 	static final Color COLOR_GOLD = new Color(226, 173, 72);
 	static final Color COLOR_LINE = COLOR_GOLD;
@@ -26,14 +24,6 @@ final class BingoUi
 
 	private BingoUi()
 	{
-	}
-
-	/** A stat chip with a fixed text, for previews and one-off use. */
-	static Chip chip(String value, String caption, Color valueColor)
-	{
-		Chip chip = new Chip();
-		chip.set(value, caption, valueColor);
-		return chip;
 	}
 
 	/**

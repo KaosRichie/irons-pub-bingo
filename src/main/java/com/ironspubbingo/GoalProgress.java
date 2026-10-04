@@ -38,8 +38,8 @@ public class GoalProgress
 
 	/**
 	 * Records a distinct item/pet name, keeping the game's own capitalisation for display.
-	 * Names are compared case-insensitively so a teammate (or older saved progress, which
-	 * stored lowercase) can't make the same item count twice.
+	 * Names are compared case-insensitively so a teammate (or a lowercase name in saved
+	 * progress) can't make the same item count twice.
 	 *
 	 * @return whether the name was new
 	 */

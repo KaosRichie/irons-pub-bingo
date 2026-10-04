@@ -173,9 +173,7 @@ class BingoBoardWindow extends JFrame
 		updateStatusLine();
 
 		int size = board.getSize();
-		// Actual cell width: grid width minus the inter-cell gaps, minus padding. Swing's
-		// HTML renderer honors width only on <body>, and an over-wide block would render
-		// left-anchored and clipped, pushing the text off center.
+		// Actual cell width: grid width minus the inter-cell gaps, minus padding.
 		int gridWidth = grid.getWidth() > 0 ? grid.getWidth() : 640;
 		int textWidth = Math.max(48, (gridWidth - (size - 1) * 4) / size - 16);
 		boolean drawLines = plugin.lineDisplay() == LineDisplay.LINES;

@@ -18,7 +18,6 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.components.ProgressBar;
@@ -734,7 +733,7 @@ class BingoTileDetail extends JPanel
 		return sorted;
 	}
 
-	/** Compact counts so bar labels stay inside the bar: 1500 -> 1.5k, 5000000 -> 5M. */
+	/** Compact counts so bar labels stay inside the bar: 15000 -> 15k, 5000000 -> 5M. */
 	private static String formatCount(long value)
 	{
 		if (value >= 1_000_000)
