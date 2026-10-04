@@ -115,8 +115,11 @@ el.innerHTML='<section class="card"><div class="toolbar"><h2 class="grow" style=
 +(t.points!=null?'<span><b style="color:var(--gold2)">'+t.points+'</b> points</span>':'')+'<span>'+t.members.length+' members</span></div>'
 +'<div class="boardwrap"><div id="bb"></div><div id="bd"></div></div></section>';
 var seg=document.getElementById('bt');teams.forEach(function(x,i){var b=document.createElement('button');b.className=i===boardTeam?'on':'';b.textContent=x.name;b.onclick=function(){boardTeam=i;boardTile=-1;render();};seg.appendChild(b);});
-renderBoard(document.getElementById('bb'),t.board,data.event.diagonals,boardTile,function(i){boardTile=i;render();});
-var d=document.getElementById('bd');if(boardTile<0){d.innerHTML='<div class="empty">Select a tile to see its progress, give credit, or reset it.</div>';return;}
+// A tile click updates the board in place and redraws only the detail: rebuilding the
+// whole view would re-create the icons, which blink while the browser redraws them.
+var pick=function(i){boardTile=i;renderBoard(document.getElementById('bb'),t.board,data.event.diagonals,boardTile,pick);renderBoardDetail(t);};
+renderBoard(document.getElementById('bb'),t.board,data.event.diagonals,boardTile,pick);renderBoardDetail(t);}
+function renderBoardDetail(t){var d=document.getElementById('bd');if(boardTile<0){d.innerHTML='<div class="empty">Select a tile to see its progress, give credit, or reset it.</div>';return;}
 var tile=t.board.tiles[boardTile];
 d.innerHTML='<h2 style="overflow-wrap:anywhere">'+esc(tile.label)+'</h2><div class="row" style="gap:6px;margin-bottom:8px">'+(tile.done?'<span class="chip done">&#10003; Complete</span>':'<span class="chip">In progress</span>')
 +(tile.goals.length>1?'<span class="chip">'+(tile.mode==='ANY'?'Any goal':'All goals')+'</span>':'')+(tile.points!=null?'<span class="chip gold">'+tile.points+' pts</span>':'')+'</div>'
