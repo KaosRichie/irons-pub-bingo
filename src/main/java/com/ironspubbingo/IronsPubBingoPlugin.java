@@ -1857,22 +1857,15 @@ public class IronsPubBingoPlugin extends Plugin
 		String code = normalizedTeamCode();
 		boolean storeMode = config.teamStoreEnabled();
 		String owner = configManager.getRSProfileConfiguration(IronsPubBingoConfig.GROUP, "teamOf_" + boardKey);
-		if (owner == null)
-		{
-			// Pre-invariant progress (or a fresh board): it belongs to the current team.
-			stampTeamOwnership();
-			return;
-		}
-		// "code|store" was earned on a store team, "code|party" on a party-only one. Stamps
-		// from before the mode was recorded are read as the current mode, and rewritten.
-		boolean legacy = !owner.endsWith("|store") && !owner.endsWith("|party");
-		boolean ownerStore = legacy ? storeMode : owner.endsWith("|store");
-		String ownerCode = legacy ? owner : owner.substring(0, owner.length() - 6);
-		if (legacy && ownerCode.equals(code == null ? "solo" : code))
+		// "code|store" was earned on a store team, "code|party" on a party-only one. Without
+		// a stamp (a fresh board) the progress belongs to the current team.
+		if (owner == null || !owner.endsWith("|store") && !owner.endsWith("|party"))
 		{
 			stampTeamOwnership();
 			return;
 		}
+		boolean ownerStore = owner.endsWith("|store");
+		String ownerCode = owner.substring(0, owner.length() - 6);
 		if (ownerStore != storeMode || !ownerCode.equals(code == null ? "solo" : code))
 		{
 			log.debug("Progress for {} belonged to {} - parking it and loading {}", boardKey, owner, code);

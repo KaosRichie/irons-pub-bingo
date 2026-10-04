@@ -200,8 +200,7 @@ export class BingoEvent
 			this.properties.set(key, props[key]);
 		}
 		this.propsText = JSON.stringify(props);
-		// Events from before the created flag have stored tabs: those count as set up.
-		this.created = !!(await this.state.storage.get('created')) || tabs.length > 0;
+		this.created = !!(await this.state.storage.get('created'));
 		this.google = createGoogle(this.spreadsheet, this.properties, this.cache);
 		this.store = loadStore(this.google);
 	}
@@ -466,7 +465,7 @@ export class BingoEvent
 			for (let i = 1; i < rows.data.length; i++)
 			{
 				const row = rows.data[i] || [];
-				if (String(row[11] || '') === id || (!row[11] && id === '#' + (i + 1)))
+				if (id && String(row[11] || '') === id)
 				{
 					this.store.setRequestStatus(i + 1, status);
 					return { ok: true };

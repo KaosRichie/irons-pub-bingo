@@ -211,7 +211,8 @@ function handlePost(e, deferRefresh)
 			{
 				// Say so, instead of silently dropping every sync this player sends.
 				return ContentService.createTextOutput(JSON.stringify({ board: board,
-					error: 'Key mismatch - ask your host' })).setMimeType(ContentService.MimeType.JSON);
+					error: keyHash ? 'Key mismatch - ask your host' : 'Update the plugin to sync' }))
+					.setMimeType(ContentService.MimeType.JSON);
 			}
 			self = null;
 		}
@@ -384,7 +385,7 @@ function handlePost(e, deferRefresh)
 				}
 			}
 			var name = cleanPlayerName(incoming.name) || (row ? row.name : '');
-			if (!row || changed || name !== row.name || (keyHash && !row.key))
+			if (!row || changed || name !== row.name || !row.key)
 			{
 				writeStoreRow(sheet, rows, key, board, memberId, name, current, keyHash);
 			}
@@ -922,7 +923,6 @@ function recordRequest(board, request, fromForm)
 	range.setNumberFormat('@');
 	range.setValues([[new Date().toISOString(), team, player, tileCell, goal, add, complete,
 		note, member, 'Pending', links, newRequestId()]]);
-	ensureRequestIdHeader(sheet);
 	styleStatusCell(sheet, row, 'Pending');
 	return row;
 }
@@ -936,32 +936,6 @@ function newRequestId()
 	return 'r' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
 }
 
-/** A Requests tab without the Id header gets it the first time an id is written. */
-function ensureRequestIdHeader(sheet)
-{
-	var header = sheet.getRange(1, 12);
-	if (!String(header.getValue() || ''))
-	{
-		header.setValue('Id').setFontWeight('bold');
-	}
-}
-
-/**
- * The id of a request row, assigning one on first use. Rows from before ids existed
- * get "#<row>", which is exactly the tag their approvals were written with.
- */
-function requestIdOf(sheet, rowNumber, row)
-{
-	var id = String(row[11] || '').trim();
-	if (!id)
-	{
-		id = '#' + rowNumber;
-		ensureRequestIdHeader(sheet);
-		sheet.getRange(rowNumber, 12).setNumberFormat('@').setValue(id);
-		row[11] = id;
-	}
-	return id;
-}
 
 /** Keeps only things that look like http(s) URLs; at most 5, newline-separated. */
 function cleanProofLinks(text)
@@ -1087,11 +1061,11 @@ function setRequestStatus(rowNumber, status)
 	}
 	var sheet = getSheet(REQUESTS_SHEET, REQUESTS_HEADERS);
 	var row = sheet.getRange(rowNumber, 1, 1, REQUESTS_HEADERS.length).getValues()[0];
-	if (!String(row[2] || '').trim())
+	var requestId = String(row[11] || '').trim();
+	if (!String(row[2] || '').trim() || !requestId)
 	{
 		return false;
 	}
-	var requestId = requestIdOf(sheet, rowNumber, row);
 	if (status === 'Done' && !adjustmentExistsForRequest(requestId))
 	{
 		// The announcement's before/after diff around the ledger write tells whether
@@ -2436,13 +2410,13 @@ function memberKeyHash(memberKey)
 
 /**
  * Whether a request carrying this key hash may act for the member: every row of theirs
- * that has a key must have this one. Rows from before keys existed have none; the
- * member's first keyed sync claims them. Clearing a row's key cell (hidden Store tab)
- * resets the claim, for a player who somehow got locked out.
+ * that has a key must have this one. A request without a key acts for nobody. Clearing
+ * a row's key cell (hidden Store tab) lets the member's next sync claim it again, for a
+ * player who somehow got locked out.
  */
 function ownsMember(rows, memberId, keyHash)
 {
-	if (!/^[0-9a-f]{16}$/.test(memberId))
+	if (!keyHash || !/^[0-9a-f]{16}$/.test(memberId))
 	{
 		return false;
 	}

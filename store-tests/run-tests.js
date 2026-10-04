@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
 const { createEnvironment, FakeSheet } = require('./gas-shim');
 
 const SOURCE = fs.readFileSync(path.join(__dirname, '..', 'docs', 'apps-script-store.gs'), 'utf8');
@@ -54,6 +55,12 @@ function newStore(options)
 			{
 				body = Object.assign({ rejoin: Object.keys(body.members)[0] }, body);
 			}
+			// ...and signs with that member's own key (memberKey: null sends none).
+			const actor = body.rejoin || (body.remove && body.remove[0]) || (body.request && body.request.member);
+			if (body.memberKey === undefined && actor)
+			{
+				body = Object.assign({ memberKey: keyFor(actor) }, body);
+			}
 			context.__body = JSON.stringify(body);
 			const out = vm.runInContext('doPost({ postData: { contents: __body } })', context);
 			return JSON.parse(out.getContent());
@@ -69,6 +76,12 @@ function newStore(options)
 const A = 'aaaaaaaaaaaaaa01';
 const B = 'bbbbbbbbbbbbbb02';
 const X = 'cccccccccccccc03';
+
+/** A member's key, the way the plugin derives one per account. */
+function keyFor(memberId)
+{
+	return crypto.createHash('sha256').update('key:' + memberId).digest('hex');
+}
 
 function member(name, tiles)
 {
@@ -1004,21 +1017,12 @@ test('approvals follow the request, not its row number', () =>
 	is(r.members['admin:alice'].tiles['0'].goals[0].n, 40, 'Alice keeps hers');
 });
 
-test('legacy request rows keep matching their old row-number tags', () =>
+test('a client without a member key is refused', () =>
 {
 	const s = newStore();
-	s.post({ board: 'b_red', meta: META, members: {}, request:
-		{ member: A, player: 'Alice', tile: 1, goal: 1, add: 40, complete: false, note: 'a' } });
-	// A row from before ids existed, approved under the old "request #2:" tag.
-	s.sheet('Requests').data[1][11] = '';
-	s.sheet('Adjustments').appendRow(['red', '1', '1', 'Alice', '40', '', 'request #2: a', 'approved request']);
-	const setRequestStatus = vm.runInContext('setRequestStatus', s.context);
-	ok(setRequestStatus(2, 'Done'), 'Done again');
-	is(s.sheet('Adjustments').data.filter(r => String(r[6]).indexOf('request #2:') === 0).length, 1,
-		'no second credit for a legacy approval');
-	ok(setRequestStatus(2, 'Pending'), 'back to Pending');
-	is(s.sheet('Adjustments').data.filter(r => String(r[6]).indexOf('request #2:') === 0).length, 0,
-		'Pending withdraws the legacy approval too');
+	const r = s.post({ board: 'b_red', meta: META, memberKey: null, members: { [A]: member('Alice', { 0: tile(1000, [3]) }) } });
+	is(r.error, 'Update the plugin to sync', 'told to update');
+	ok(!s.sheet('Store') || s.sheet('Store').data.length <= 1, 'nothing stored');
 });
 
 test('pasting Done over several Status cells applies every row', () =>

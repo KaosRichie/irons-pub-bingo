@@ -130,7 +130,7 @@ export function eventData(store, spreadsheet, admin)
 		const tileMeta = meta && meta.tiles[tileNumber - 1];
 		const status = cell(row, 9).trim();
 		out.requests.push({
-			id: cell(row, 11) || '#' + (i + 1),
+			id: cell(row, 11),
 			when: cell(row, 0),
 			team,
 			player: cell(row, 2),

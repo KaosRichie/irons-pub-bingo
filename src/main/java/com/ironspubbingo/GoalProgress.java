@@ -38,41 +38,23 @@ public class GoalProgress
 
 	/**
 	 * Records a distinct item/pet name, keeping the game's own capitalisation for display.
-	 * Names are compared case-insensitively so a teammate (or a lowercase name in saved
-	 * progress) can't make the same item count twice.
+	 * Names are compared case-insensitively so a teammate can't make the same item count
+	 * twice.
 	 *
 	 * @return whether the name was new
 	 */
 	boolean addName(String name)
 	{
 		Set<String> names = matchedSet();
-		String existing = null;
 		for (String candidate : names)
 		{
 			if (candidate.equalsIgnoreCase(name))
 			{
-				existing = candidate;
-				break;
+				return false;
 			}
 		}
-		if (existing == null)
-		{
-			names.add(name);
-			return true;
-		}
-		// Upgrade a lowercase entry to the properly cased name.
-		if (!existing.equals(name) && betterCased(name, existing))
-		{
-			names.remove(existing);
-			names.add(name);
-		}
-		return false;
-	}
-
-	private static boolean betterCased(String candidate, String existing)
-	{
-		return !candidate.isEmpty() && Character.isUpperCase(candidate.charAt(0))
-			&& (existing.isEmpty() || !Character.isUpperCase(existing.charAt(0)));
+		names.add(name);
+		return true;
 	}
 
 	/** Records a counted drop under its name (case-insensitive), most names capped. */

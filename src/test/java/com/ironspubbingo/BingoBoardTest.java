@@ -384,14 +384,6 @@ public class BingoBoardTest
 		assertTrue(!p.addName("raw chicken"));
 		assertEquals(1, p.matchedSet().size());
 		assertEquals("Raw chicken", p.matchedSet().iterator().next());
-
-		// A lowercase name already in saved progress must not count twice, and the
-		// properly cased name wins for display.
-		GoalProgress legacy = new GoalProgress();
-		legacy.matchedSet().add("feather");
-		assertTrue(!legacy.addName("Feather"));
-		assertEquals(1, legacy.matchedSet().size());
-		assertEquals("Feather", legacy.matchedSet().iterator().next());
 	}
 
 	@Test

@@ -101,6 +101,12 @@ function createRuntime()
 		},
 		async post(code, body)
 		{
+			// Signed like the plugin: with the acting member's own key.
+			const actor = body.rejoin || (body.remove && body.remove[0]);
+			if (body.memberKey === undefined && actor)
+			{
+				body = Object.assign({ memberKey: createHash('sha256').update('key:' + actor).digest('hex') }, body);
+			}
 			const response = await this.request('/e/' + code, { method: 'POST', body: JSON.stringify(body) });
 			return response.json();
 		},
