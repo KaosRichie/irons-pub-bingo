@@ -83,7 +83,8 @@ export function eventData(store, admin)
 
 	for (const request of store.requests.values())
 	{
-		const tileMeta = metaByTeam[request.team] && metaByTeam[request.team].tiles[request.tile - 1];
+		const requestMeta = store.metaFor(request.board);
+		const tileMeta = requestMeta && requestMeta.tiles[request.tile - 1];
 		out.requests.push({
 			id: request.id,
 			when: request.when,
@@ -111,7 +112,7 @@ export function eventData(store, admin)
 	out.adjustments = [];
 	for (const credit of store.credits.values())
 	{
-		const meta = metaByTeam[credit.team] || Object.values(metaByTeam)[0] || null;
+		const meta = store.metaFor(credit.board);
 		const parsed = parseCredit(credit, meta);
 		const tileMeta = meta && meta.tiles[parsed.tile - 1];
 		out.adjustments.push({

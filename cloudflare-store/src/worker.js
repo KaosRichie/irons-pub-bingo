@@ -346,7 +346,12 @@ export class BingoEvent
 				case 'setRequestStatus':
 					return store.setRequestStatus(String(body.id || ''), String(body.status || ''));
 				case 'addAdjustment':
-					return store.addCredit(body);
+				{
+					const added = store.addCredit(body);
+					(added.alerts || []).forEach(a => alerts.push(a));
+					delete added.alerts;
+					return added;
+				}
 				case 'deleteAdjustment':
 					return store.removeCredit(String(body.id || ''));
 				case 'saveTeams':

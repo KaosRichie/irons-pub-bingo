@@ -9,8 +9,8 @@
 //   meta:<board>          the board summary (labels, targets) for one team scope
 //   score:<board>         a team's self-reported points, for the standings
 //   left:<board>|<id>     a member who left that team scope (their progress stays parked)
-//   request:<id>          a credit request from the plugin or the portal
-//   credit:<id>           admin credit: an approved request, or credit given by hand
+//   request:<id>          a credit request from the plugin or the portal, on one team scope
+//   credit:<id>           admin credit on one team scope: an approved request, or given by hand
 //   config                teams, the official board code, the poll interval, the generation
 //
 // A team scope ("board") is "<board key>_<team code>": every team on the same board shares
@@ -459,6 +459,13 @@ export class EventStore
 		return best;
 	}
 
+	/** A team scope with its board summary, or null when it has none. */
+	scopeOf(board)
+	{
+		const meta = this.metaFor(String(board || ''));
+		return meta && meta.tiles ? { board, meta } : null;
+	}
+
 	/** The official board code, parsed, or null. */
 	officialBoard()
 	{
@@ -569,13 +576,13 @@ export class EventStore
 	 */
 	creditMembers(board, meta)
 	{
-		const team = teamOf(board);
 		const members = {};
 		const stamp = Date.now();
 		for (const credit of this.credits.values())
 		{
+			// Credit belongs to the board it was given on: a new board starts without it.
 			const parsed = parseCredit(credit, meta);
-			if (parsed.issues.length || (parsed.team && team && parsed.team !== team))
+			if (credit.board !== board || parsed.issues.length)
 			{
 				continue;
 			}
@@ -622,6 +629,7 @@ export class EventStore
 		const team = String(fields.team || '').trim().toLowerCase();
 		const scope = this.latestBoardForTeam(team);
 		const credit = {
+			board: scope ? scope.board : '',
 			team,
 			tile: parseInt(fields.tile, 10),
 			goal: fields.goal === '' || fields.goal == null ? null : parseInt(fields.goal, 10),
@@ -641,12 +649,47 @@ export class EventStore
 		{
 			return { error: 'Pick a player who has synced to this team.' };
 		}
+		const alerts = [];
+		if (credit.add < 0)
+		{
+			// A correction takes off what the player has right now, and no more: stored as
+			// that amount, it can never lie in wait and eat progress they make later.
+			const has = this.playerGoalTotal(scope.board, credit.player, credit.tile, credit.goal || 1);
+			if (has <= 0)
+			{
+				return { error: credit.player + ' has no progress on that goal to take off.' };
+			}
+			if (-credit.add > has)
+			{
+				credit.add = -has;
+				alerts.push('Took off ' + has + ', all of ' + credit.player + "'s progress on that goal.");
+			}
+		}
 		// The before and after around the write tell the post whether this finished the
 		// tile, and which bingo lines it completed.
 		const doneBefore = this.tileTotals(scope.board, scope.meta).done.slice();
 		this.writeCredit(credit);
 		this.announceApproval(credit, scope, doneBefore);
-		return { ok: true };
+		return alerts.length ? { ok: true, alerts } : { ok: true };
+	}
+
+	/** A player's progress on one goal right now: what they tracked plus what they were credited. */
+	playerGoalTotal(board, player, tileNumber, goalNumber)
+	{
+		const name = String(player || '').trim().toLowerCase();
+		const key = String(tileNumber - 1);
+		let total = 0;
+		for (const row of this.members.values())
+		{
+			if (row.board === board && String(row.name || '').toLowerCase() === name
+				&& !this.departures.has(row.board + '|' + row.member) && row.tiles && row.tiles[key])
+			{
+				total += Number(((row.tiles[key].goals || [])[goalNumber - 1] || {}).n || 0);
+			}
+		}
+		const credited = this.creditMembers(board, this.metaFor(board))['admin:' + name];
+		const tile = credited && credited.tiles[key];
+		return total + Number(tile && tile.goals[goalNumber - 1] ? tile.goals[goalNumber - 1].n : 0);
 	}
 
 	writeCredit(credit)
@@ -664,10 +707,7 @@ export class EventStore
 			return { error: 'That credit no longer exists. Reload the page.' };
 		}
 		this.drop('credit', credit.id);
-		if (credit.team)
-		{
-			this.announceWithdrawal(credit, this.latestBoardForTeam(credit.team));
-		}
+		this.announceWithdrawal(credit, this.scopeOf(credit.board));
 		return { ok: true };
 	}
 
@@ -702,7 +742,7 @@ export class EventStore
 			return null;
 		}
 		const fields = {
-			team: teamOf(board), player, tile, goal, add, complete,
+			board, team: teamOf(board), player, tile, goal, add, complete,
 			note: String(request.note || '').slice(0, 300), member
 		};
 		for (const known of this.requests.values())
@@ -760,13 +800,13 @@ export class EventStore
 		{
 			return { error: 'That request no longer exists. Reload the page.' };
 		}
-		const scope = this.latestBoardForTeam(request.team);
+		const scope = this.scopeOf(request.board);
 		const credit = [...this.credits.values()].find(c => c.request === request.id);
 		if (status === 'Done' && !credit)
 		{
 			const doneBefore = scope ? this.tileTotals(scope.board, scope.meta).done.slice() : null;
 			this.writeCredit({
-				team: request.team, tile: request.tile, goal: request.goal, player: request.player,
+				board: request.board, team: request.team, tile: request.tile, goal: request.goal, player: request.player,
 				add: request.add || 0, complete: request.complete, note: request.note,
 				request: request.id, by: 'approved request'
 			});

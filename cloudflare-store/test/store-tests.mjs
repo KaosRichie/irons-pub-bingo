@@ -39,7 +39,8 @@ function newStore(teams)
 		},
 		credit(fields)
 		{
-			store.writeCredit(Object.assign({ team: '', goal: null, add: 0, complete: false, note: '', request: null, by: 'test' }, fields));
+			store.writeCredit(Object.assign({ board: 'b_' + (fields.team || 'red'), team: fields.team || 'red', goal: null, add: 0,
+				complete: false, note: '', request: null, by: 'test' }, fields));
 		},
 		requests()
 		{
@@ -324,6 +325,32 @@ test('credit from the admin page is checked and announced, and so is taking it b
 	is(s.store.removeCredit(last.id), { ok: true }, 'removed');
 	ok(/withdrawn/.test(s.posts()[0].content), 'and the removal is announced');
 	ok(!!s.store.removeCredit(last.id).error, 'removing it twice reports it gone');
+});
+
+test('a correction takes off what the player has when it is given, never later progress', () =>
+{
+	const s = newStore();
+	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', {}) } });
+	ok(/no progress/.test(s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: -6 }).error),
+		'nothing to take off yet is refused');
+	s.post({ board: 'b_red', members: { [A]: member('Alice', { 0: tile(2000, [4]) }) } });
+	const r = s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: -6 });
+	ok(r.ok && /Took off 4/.test(r.alerts[0]), 'cut down to the 4 she has: ' + JSON.stringify(r));
+	s.post({ board: 'b_red', members: { [A]: member('Alice', { 0: tile(3000, [9]) }) } });
+	const totals = s.store.tileTotals('b_red', META);
+	is(totals.tracked[0][0] + totals.verified[0][0], 5, 'her later progress counts in full: 9 tracked minus the 4 taken off');
+});
+
+test('credit belongs to the board it was given on', () =>
+{
+	const s = newStore();
+	s.post({ board: 'id_old_red', meta: META, members: { [A]: member('Alice', { 0: tile(1000, [6]) }) } });
+	s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: -3 });
+	s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: 2 });
+	is(s.store.creditMembers('id_old_red', META)['admin:alice'].tiles['0'].goals[0].n, -1, 'it counts on its board');
+	s.post({ board: 'id_new_red', meta: META, members: { [A]: member('Alice', { 0: tile(2000, [5]) }) } });
+	ok(!('admin:alice' in s.store.creditMembers('id_new_red', META)), 'a new board starts without it');
+	is(s.store.tileTotals('id_new_red', META).tracked[0][0], 5, 'so new progress counts in full');
 });
 
 // ---------------------------------------------------------------- credit requests
