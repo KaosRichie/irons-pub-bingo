@@ -577,8 +577,19 @@ test('the /exec URL serves the player portal to browsers (no board param)', () =
 test('browser form requests land with member "form" and sanitized proof links', () =>
 {
 	const s = newStore();
-	s.post({ board: 'b_red', meta: META, members: {} });
+	s.post({ board: 'b_red', meta: META, members: { [A]: member('MobileMike', {}) } });
 	const submit = vm.runInContext('submitFormRequest', s.context);
+
+	let refused = '';
+	try
+	{
+		submit({ board: 'b_red', player: 'Stranger', tile: 1, add: '5' });
+	}
+	catch (err)
+	{
+		refused = err.message;
+	}
+	ok(/Pick your name/.test(refused), 'a name nobody synced to the team is refused');
 
 	submit({ board: 'b_red', player: 'MobileMike', tile: 1, goal: '', add: '40',
 		complete: false, note: 'laps 0-40',
@@ -587,7 +598,7 @@ test('browser form requests land with member "form" and sanitized proof links', 
 	const rows = s.sheet('Requests').data;
 	is(rows.length, 2, 'request row appended');
 	is(rows[1][8], 'form', 'browser requests are marked form');
-	is(rows[1][2], 'MobileMike', 'typed player name recorded');
+	is(rows[1][2], 'MobileMike', 'picked player name recorded');
 	is(rows[1][10], 'https://imgur.com/a/abc\nhttps://cdn.discordapp.com/x.png',
 		'only http(s) links survive, junk dropped');
 

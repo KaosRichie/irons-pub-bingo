@@ -245,11 +245,15 @@ await test('the portal renders and its request form files a request', async () =
 	const red = data.teams.find(t => t.code === 'red');
 	is(red.board.tiles[0].goals[0].total, 3, 'and carries the tile progress');
 	is(red.board.tiles[0].goals[0].contributors, [{ name: 'Alice', amount: 3 }], 'with contributors');
-	const rpc = await (await rt.request('/e/summer/rpc', { method: 'POST',
-		body: JSON.stringify({ fn: 'submitFormRequest', args: [{ board: 'b_red', player: 'Mobile Mo', tile: 1, add: 2, note: 'phone' }] }) })).json();
-	ok(!rpc.error && /sent/i.test(rpc.result), 'form answered: ' + JSON.stringify(rpc));
+	const form = player => rt.request('/e/summer/rpc', { method: 'POST',
+		body: JSON.stringify({ fn: 'submitFormRequest', args: [{ board: 'b_red', player, tile: 1, add: 2, note: 'phone' }] }) })
+		.then(r => r.json());
+	const stranger = await form('Mobile Mo');
+	ok(/Pick your name/.test(stranger.error), 'a name nobody synced is refused: ' + JSON.stringify(stranger));
+	const rpc = await form('alice');
+	ok(!rpc.error && /sent/i.test(rpc.result), 'a team member is accepted, in any case: ' + JSON.stringify(rpc));
 	const requests = (await rt.admin('summer', { action: 'getTab', name: 'Requests' })).body.result;
-	is(requests[1][2], 'Mobile Mo', 'the request landed on the Requests tab');
+	is(requests[1][2], 'alice', 'the request landed on the Requests tab');
 	const bad = await (await rt.request('/e/summer/rpc', { method: 'POST', body: JSON.stringify({ fn: 'resetStoreData' }) })).json();
 	ok(!!bad.error, 'no other function is reachable from the portal');
 });
@@ -371,6 +375,9 @@ await test('a made-up event code shows nothing until an admin saves to it', asyn
 	is((await rt.admin('made-up', { action: 'overview' }, 'wrong')).status, 401, 'wrong password refused');
 	const preview = await rt.admin('made-up', { action: 'overview' });
 	ok(preview.status === 200 && preview.body.result.isNew, 'admin can look at the new event');
+	const tabs = await rt.admin('made-up', { action: 'tabs' });
+	ok(tabs.body.result.some(t => t.name === 'Teams'), 'its tabs can be listed before saving');
+	ok(Array.isArray((await rt.admin('made-up', { action: 'getTab', name: 'Teams' })).body.result), 'and read');
 	is(rt.storage.has('made-up') ? rt.storage.get('made-up').size : 0, 0, 'looking stored nothing');
 	await rt.admin('made-up', { action: 'saveTeams', teams: [{ code: 'red', name: 'Red Team', webhook: '' }] });
 	rt.restart();

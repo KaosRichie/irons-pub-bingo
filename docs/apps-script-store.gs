@@ -602,6 +602,10 @@ function submitFormRequest(payload)
 		{
 			throw new Error('Pick a board first.');
 		}
+		if (!isTeamMember(board, payload.player))
+		{
+			throw new Error('Pick your name from the list. Only players who have synced to this team can request credit.');
+		}
 		var row = recordRequest(board, {
 			player: payload.player, tile: payload.tile, goal: payload.goal,
 			add: payload.add, complete: payload.complete === true, note: payload.note,
@@ -766,6 +770,33 @@ function teamsWithMembers(boardKey)
 		teams[i].members = names;
 	}
 	return teams;
+}
+
+/** Whether a player name belongs to someone who has synced to this board's team. */
+function isTeamMember(board, player)
+{
+	var at = board.lastIndexOf('_');
+	var name = cleanPlayerName(player).toLowerCase();
+	if (at < 0 || !name)
+	{
+		return false;
+	}
+	var code = board.substring(at + 1);
+	var teams = teamsWithMembers(board.substring(0, at));
+	for (var i = 0; i < teams.length; i++)
+	{
+		if (teams[i].code === code)
+		{
+			for (var j = 0; j < (teams[i].members || []).length; j++)
+			{
+				if (String(teams[i].members[j]).toLowerCase() === name)
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 function hasTeam(teams, code)

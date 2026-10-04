@@ -340,7 +340,7 @@ export class BingoEvent
 		if (!this.created)
 		{
 			// Looking at a new event's admin page must not store its empty tabs yet.
-			return this.adminPreview(action);
+			return this.adminPreview(action, body || {});
 		}
 		const response = await this.run(() =>
 		{
@@ -407,7 +407,7 @@ export class BingoEvent
 	 * Read-only admin calls on an event nobody has saved to yet: answered from a throwaway
 	 * copy of the store, so the admin page can show the empty event without keeping it.
 	 */
-	adminPreview(action)
+	adminPreview(action, body)
 	{
 		const spreadsheet = new Spreadsheet();
 		const store = loadStore(createGoogle(spreadsheet, new Map(), new Map()));
@@ -418,6 +418,15 @@ export class BingoEvent
 			result = eventData(store, spreadsheet, true);
 			result.usage = { days: {} };
 			result.isNew = true;
+		}
+		else if (action === 'tabs')
+		{
+			result = spreadsheet.getSheets().map(sh => ({ name: sh.name, hidden: !!sh.hidden, rows: sh.data.length }));
+		}
+		else if (action === 'getTab')
+		{
+			const sheet = spreadsheet.getSheetByName(String(body.name || ''));
+			result = sheet ? sheet.data : null;
 		}
 		return json(JSON.stringify({ result, alerts: [] }));
 	}

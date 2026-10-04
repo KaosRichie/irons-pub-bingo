@@ -75,18 +75,18 @@ check('team red total is 33 kills', Object.values(red.members).reduce((s, m) => 
 const portal = await (await fetch(url + '/data')).json();
 check('portal shows the board', portal.event.name === 'Live check board', JSON.stringify(portal.event));
 const form = await (await fetch(url + '/rpc', { method: 'POST', body: JSON.stringify({ fn: 'submitFormRequest',
-	args: [{ board: 'id_live_red', player: 'Mobile Mo', tile: 1, add: 2, note: 'from my phone' }] }) })).json();
+	args: [{ board: 'id_live_red', player: 'Player0', tile: 1, add: 2, note: 'from my phone' }] }) })).json();
 check('portal form files a request', !form.error, form.error);
 
 // -- approving it from the admin page credits the team
 const requests = (await admin({ action: 'getTab', name: 'Requests' })).body.result;
-const row = requests.findIndex(r => r[2] === 'Mobile Mo');
+const row = requests.findIndex(r => r[2] === 'Player0');
 requests[row][9] = 'Done';
 await admin({ action: 'setTab', name: 'Requests', rows: requests });
 const after = (await sync({ board: 'id_live_red', rejoin: memberId(1), memberKey: keyFor(1), boardHash: hash, boardVersion: 1,
 	members: {} })).body;
-check('approved credit reaches the plugin', after.members['admin:mobile mo'] && after.members['admin:mobile mo'].tiles['0'].goals[0].n === 2,
-	JSON.stringify(after.members['admin:mobile mo']));
+check('approved credit reaches the plugin', after.members['admin:player0'] && after.members['admin:player0'].tiles['0'].goals[0].n === 2,
+	JSON.stringify(after.members['admin:player0']));
 const views = (await admin({ action: 'tabs' })).body.result.map(t => t.name);
 check('board views rendered per team', views.includes('Board red') && views.includes('Board blue'), views.join(', '));
 
