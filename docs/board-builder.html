@@ -219,6 +219,9 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 .icongrid button:hover { background: var(--panel-2); }
 .icongrid img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
 .iconsection { color: var(--muted); font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; margin-top: 10px; }
+.namewarn { color: var(--gold); font-size: 12.5px; margin-top: 3px; }
+.namewarn button { padding: 0 6px; font-size: 12.5px; margin-left: 4px; }
+.sugsrc { margin-left: auto; color: #888; font-size: 11.5px; }
 .sendbox { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .sendbox h3 { font-family: var(--display); font-size: 14px; color: var(--gold); margin: 0 0 4px; letter-spacing: .04em; }
 .sendbox .row input { width: 100%; }
@@ -1252,7 +1255,7 @@ function renderGoal(tile, goal, gi) {
       "Exact ids for items that share a name with something else."));
 
     attachItemSuggest(idsInput, pickIntoIdList);
-    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Zulrah"), "Leave empty for any monster/chest."));
+    box.appendChild(nameField("From sources (optional)", goal.sources, v => goal.sources = v, "Zulrah", "Leave empty for any monster/chest. Names as RuneLite's Loot Tracker shows them.", "source"));
     box.appendChild(lootMaskField(goal, gi));
     box.appendChild(checkbox("distinct" + gi, "Distinct, each different item counts once", !!goal.distinct, v => goal.distinct = v));
   }
@@ -1278,13 +1281,13 @@ function renderGoal(tile, goal, gi) {
     box.appendChild(checkbox("raiddistinct" + gi, "Distinct, each different unique counts once", !!goal.distinct, v => goal.distinct = v));
   }
   if (goal.type === "KC") {
-    box.appendChild(field("Bosses / activities", listInput(goal.npcs, v => goal.npcs = v, "Zulrah"), "Read from kill count chat messages. For regular monsters use NPC kills instead."));
+    box.appendChild(nameField("Bosses / activities", goal.npcs, v => goal.npcs = v, "Zulrah", "Read from kill count chat messages. For regular monsters use NPC kills instead.", "kc"));
   }
   if (goal.type === "KILL") {
-    box.appendChild(field("NPCs", listInput(goal.npcs, v => goal.npcs = v, "Man, Woman"), "A kill counts for whoever the game awards the loot to, so shared kills count once."));
+    box.appendChild(nameField("NPCs", goal.npcs, v => goal.npcs = v, "Man, Woman", "A kill counts for whoever the game awards the loot to, so shared kills count once.", "npc"));
   }
   if (goal.type === "PET") {
-    box.appendChild(field("Specific pets (optional)", listInput(goal.pets, v => goal.pets = v, "Pet snakeling"), "Leave empty for any pet."));
+    box.appendChild(nameField("Specific pets (optional)", goal.pets, v => goal.pets = v, "Pet snakeling", "Leave empty for any pet.", "pet"));
   }
   if (goal.type === "XP") {
     const sel = document.createElement("select");
@@ -1303,7 +1306,7 @@ function renderGoal(tile, goal, gi) {
   }
   if (goal.type === "VALUE") {
     box.appendChild(field("Minimum value of a single loot pile (gp)", numberInput(goal.amount, v => goal.amount = v)));
-    box.appendChild(field("From sources (optional)", listInput(goal.sources, v => goal.sources = v, "Revenant*"), "Leave empty for any source."));
+    box.appendChild(nameField("From sources (optional)", goal.sources, v => goal.sources = v, "Revenant*", "Leave empty for any source.", "source"));
     box.appendChild(lootMaskField(goal, gi));
   }
   if (goal.type === "LAP") {
@@ -1378,6 +1381,164 @@ function renderGoal(tile, goal, gi) {
     box.appendChild(checkbox("shot" + gi, "Screenshot progress to the Discord webhook", !!goal.screenshot, v => goal.screenshot = v));
   }
   return box;
+}
+
+// ---------- name pickers ----------
+// Names people often type that never match: what the game or the Loot Tracker calls it instead.
+const KC_TRAPS = {
+  "wintertodt": "subdued Wintertodt", "the hueycoatl": "Hueycoatl", "the leviathan": "Leviathan",
+  "the whisperer": "Whisperer", "the nightmare": "Nightmare", "jad": "TzTok-Jad", "fight caves": "TzTok-Jad",
+  "zuk": "TzKal-Zuk", "inferno": "TzKal-Zuk", "moons of peril": "Lunar Chest", "perilous moons": "Lunar Chest",
+  "bryophyta": "Bryophyta chests opened", "hunllef": "Gauntlet", "crystalline hunllef": "Gauntlet",
+  "corrupted hunllef": "Corrupted Gauntlet", "colosseum": "Sol Heredit", "fortis colosseum": "Sol Heredit",
+  "cox": "Chambers of Xeric", "tob": "Theatre of Blood", "toa": "Tombs of Amascut"
+};
+const SOURCE_TRAPS = {
+  "wintertodt": "Reward cart (Wintertodt)", "subdued wintertodt": "Reward cart (Wintertodt)",
+  "tempoross": "Reward pool (Tempoross)", "gauntlet": "Crystalline Hunllef", "corrupted gauntlet": "Corrupted Hunllef",
+  "hallowed sepulchre": "Hallowed Sack", "sol heredit": "Fortis Colosseum", "colosseum": "Fortis Colosseum",
+  "moons of peril": "Lunar Chest", "perilous moons": "Lunar Chest", "hueycoatl": "The Hueycoatl",
+  "leviathan": "The Leviathan", "whisperer": "The Whisperer", "nightmare": "The Nightmare",
+  "jad": "TzTok-Jad", "fight caves": "TzTok-Jad", "zuk": "TzKal-Zuk", "inferno": "TzKal-Zuk",
+  "cox": "Chambers of Xeric", "tob": "Theatre of Blood", "toa": "Tombs of Amascut",
+  "mahogany homes": "Supply crate (Mahogany Homes)", "volcanic mine": "Ore Pack (Volcanic Mine)",
+  "barbarian assault": "Barbarian Assault high gamble"
+};
+function dataList(key) { return (window.FORGE_DATA && window.FORGE_DATA[key]) || []; }
+function kcIcon(name) {
+  const hit = dataList("kc").find(k => k.name.toLowerCase() === String(name).toLowerCase());
+  return hit ? hit.icon : null;
+}
+/** The lists each name field suggests from: {name, icon, src}. */
+function nameEntries(kind) {
+  if (kind === "kc") return dataList("kc").map(k => ({ name: k.name, icon: k.icon, src: "kill count" }));
+  if (kind === "pet") return dataList("pets").map(k => ({ name: k.name, icon: k.icon, src: "pet" }));
+  // NPC kills and loot sources: the Loot Tracker's names, plus any wiki page as a fallback.
+  return dataList("lootSources").map(n => ({ name: n, icon: kcIcon(n), src: "loot tracker" }));
+}
+/** Problems with typed names, each with the name it should probably be. */
+function nameWarnings(kind, names) {
+  const out = [];
+  const lower = list => list.map(e => e.name.toLowerCase());
+  names.forEach(raw => {
+    const n = String(raw).trim(), key = n.toLowerCase();
+    if (!n || n.indexOf("*") >= 0) return;
+    if (kind === "source" || kind === "npc") {
+      const fix = SOURCE_TRAPS[key];
+      if (fix) out.push({ name: n, fix: fix, why: "the Loot Tracker calls it" });
+      return;
+    }
+    const known = lower(nameEntries(kind));
+    if (known.indexOf(key) >= 0) return;
+    let fix = kind === "kc" ? KC_TRAPS[key] : null;
+    if (!fix) {
+      const close = nameEntries(kind).find(e => e.name.toLowerCase().includes(key) || key.includes(e.name.toLowerCase()));
+      fix = close ? close.name : null;
+    }
+    out.push({ name: n, fix: fix, why: kind === "kc" ? "the kill count message says" : "the collection log says" });
+  });
+  return out;
+}
+/**
+ * A comma-separated name field with suggestions from the lists above (and the wiki for NPCs
+ * and sources), and a warning under it for names that would never match in game.
+ */
+function nameField(labelText, arr, setArr, placeholder, hint, kind) {
+  const input = listInput(arr, v => { setArr(v); drawWarnings(); }, placeholder);
+  const holder = document.createElement("div");
+  holder.appendChild(input);
+  const warn = document.createElement("div");
+  holder.appendChild(warn);
+  const wrap = field(labelText, holder, hint);
+  attachNameSuggest(input, kind);
+  function drawWarnings() {
+    warn.innerHTML = "";
+    const names = input.value.split(",").map(t => t.trim()).filter(Boolean);
+    nameWarnings(kind, names).forEach(w => {
+      const line = document.createElement("div");
+      line.className = "namewarn";
+      line.textContent = "\u26a0 \u201c" + w.name + "\u201d " + (w.fix ? "won't match: " + w.why + " \u201c" + w.fix + "\u201d." : "isn't a name the game uses here. Check the spelling.");
+      if (w.fix) {
+        const b = document.createElement("button");
+        b.type = "button"; b.textContent = "Use it";
+        b.addEventListener("click", () => {
+          input.value = names.map(t => t === w.name ? w.fix : t).join(", ");
+          input.dispatchEvent(new Event("input"));
+        });
+        line.appendChild(b);
+      }
+      warn.appendChild(line);
+    });
+  }
+  drawWarnings();
+  return wrap;
+}
+function attachNameSuggest(input, kind) {
+  const wrap = document.createElement("div");
+  wrap.style.position = "relative";
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const drop = document.createElement("div");
+  drop.style.cssText = "display:none;position:absolute;top:100%;left:0;right:0;max-height:240px;"
+    + "overflow-y:auto;background:#1d1d1d;border:1px solid #555;border-radius:4px;z-index:40";
+  wrap.appendChild(drop);
+  input.dataset.keepFocus = "1";
+  input.autocomplete = "off";
+  let wikiTimer = null, wikiFor = "";
+  const token = () => input.value.split(",").pop().trim();
+  function row(entry) {
+    const r = document.createElement("div");
+    r.style.cssText = "display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer";
+    r.addEventListener("mouseenter", () => r.style.background = "#3a3a3a");
+    r.addEventListener("mouseleave", () => r.style.background = "");
+    const img = document.createElement("img");
+    img.style.cssText = "width:22px;height:22px;object-fit:contain;image-rendering:pixelated;flex:0 0 auto";
+    if (entry.icon) img.src = "https://static.runelite.net/cache/item/icon/" + entry.icon + ".png";
+    else img.style.visibility = "hidden";
+    img.addEventListener("error", () => img.style.visibility = "hidden");
+    const label = document.createElement("span");
+    label.textContent = entry.name;
+    const src = document.createElement("span");
+    src.className = "sugsrc"; src.textContent = entry.src;
+    r.append(img, label, src);
+    r.addEventListener("mousedown", e => {
+      e.preventDefault();
+      const tokens = input.value.split(",").slice(0, -1).map(t => t.trim()).filter(Boolean);
+      tokens.push(entry.name);
+      input.value = tokens.join(", ");
+      input.dispatchEvent(new Event("input"));
+      drop.style.display = "none";
+    });
+    return r;
+  }
+  function refresh() {
+    const q = token().toLowerCase();
+    if (q.length < 2) { drop.style.display = "none"; return; }
+    const list = nameEntries(kind).filter(e => e.name.toLowerCase().includes(q));
+    list.sort((a, b) => (a.name.toLowerCase().startsWith(q) ? 0 : 1) - (b.name.toLowerCase().startsWith(q) ? 0 : 1) || a.name.localeCompare(b.name));
+    drop.innerHTML = "";
+    list.slice(0, 30).forEach(e => drop.appendChild(row(e)));
+    drop.style.display = list.length ? "block" : "none";
+    if (kind !== "npc" && kind !== "source") return;
+    clearTimeout(wikiTimer);
+    wikiFor = q;
+    wikiTimer = setTimeout(() => {
+      fetch("https://oldschool.runescape.wiki/api.php?action=opensearch&search=" + encodeURIComponent(token())
+        + "&limit=8&namespace=0&format=json&origin=*")
+        .then(r => r.json())
+        .then(j => {
+          if (wikiFor !== q || document.activeElement !== input) return;
+          const have = new Set(list.map(e => e.name.toLowerCase()));
+          (j[1] || []).filter(n => !have.has(n.toLowerCase()) && !/\(|disambiguation/i.test(n))
+            .forEach(n => drop.appendChild(row({ name: n, icon: null, src: "wiki" })));
+          drop.style.display = drop.children.length ? "block" : "none";
+        })
+        .catch(() => {});
+    }, 300);
+  }
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", refresh);
+  input.addEventListener("blur", () => setTimeout(() => { drop.style.display = "none"; }, 150));
 }
 
 // ---------- icon picker ----------
