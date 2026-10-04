@@ -148,7 +148,7 @@ var manualGoal=g&&g.manual;document.getElementById('cAmountWrap').style.display=
 var player=document.getElementById('cPlayer').value.trim(),amount=+document.getElementById('cAmount').value||0;
 if(!player||(!complete&&!manualGoal&&!amount)){document.getElementById('cPreview').innerHTML='<span class="muted">Fill in '+(!player?'who earned it':'an amount')+' to see exactly what this adds.</span>';return;}
 document.getElementById('cPreview').innerHTML=complete||manualGoal?'Marks <b>'+esc(tile.label)+'</b> complete for <b>'+esc(team().name)+'</b>, credited to '+esc(player)+'.'
-:'Adds <b>'+(amount>=0?'+':'')+amount+'</b> to <b>'+esc(g.label)+'</b> on <b>'+esc(tile.label)+'</b> for <b>'+esc(team().name)+'</b>, credited to '+esc(player)+'. New total: <b>'+fmt(g.total+amount)+' / '+fmt(g.target)+'</b>.';}
+:'Adds <b>'+(amount>=0?'+':'')+amount+'</b> to <b>'+esc(g.label)+'</b> on <b>'+esc(tile.label)+'</b> for <b>'+esc(team().name)+'</b>, credited to '+esc(player)+'. New total: <b>'+fmt(Math.max(0,Math.min(g.target||Infinity,g.raw+amount)))+' / '+fmt(g.target)+'</b>.';}
 teamSel.onchange=function(){fillTiles();};tileSel.onchange=fillGoals;goalSel.onchange=update;document.getElementById('cPlayer').oninput=update;document.getElementById('cAmount').oninput=update;
 fillTiles(pre.tile);
 document.getElementById('cAdd').onclick=function(){var complete=goalSel.value==='complete',tile=team().board.tiles[+tileSel.value],g=complete?null:tile.goals[+goalSel.value-1],manualGoal=g&&g.manual;

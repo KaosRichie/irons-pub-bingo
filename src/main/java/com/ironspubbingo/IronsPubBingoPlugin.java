@@ -167,8 +167,6 @@ public class IronsPubBingoPlugin extends Plugin
 	private final Map<String, String> storeTeamNames = new java.util.concurrent.ConcurrentHashMap<>();
 	/** Every team's points on this board, best first, from the store's Scores tab. */
 	private final List<BingoTeamStore.Standing> storeStandings = new java.util.concurrent.CopyOnWriteArrayList<>();
-	/** The store's frozen numbers of every completed tile: tile -> member id -> progress. */
-	private volatile Map<Integer, Map<String, TileProgress>> storeFrozen = new HashMap<>();
 	/** Members evicted from the current team scope; ignored in every merge, never relayed. */
 	private final Set<String> removedMembers = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	/** Tiles with XP-only changes waiting for the next throttled team broadcast. */
@@ -212,14 +210,12 @@ public class IronsPubBingoPlugin extends Plugin
 	/** A team-code change awaits the player's confirmation; store pushes pause meanwhile. */
 	private boolean teamSwitchPending;
 	/**
-	 * The team scope whose teammates, departures and frozen contributions are in memory.
+	 * The team scope whose teammates and departures are in memory.
 	 * Saves always go here, never to whatever the config names right now: between a
 	 * team code edit and its confirmation the config already names the new team.
 	 */
 	private String loadedTeamCode;
 	private boolean loadedStoreMode;
-	/** When progress on each tile changed, for the loaded team scope (see BingoProgressHistory). */
-	private BingoProgressHistory history = new BingoProgressHistory();
 	/** SHA-256 of the exact board code this client imported; null without a board. */
 	private String boardCodeHash;
 	/** Swallows the ConfigChanged fired by our own revert of a cancelled team switch. */
@@ -232,10 +228,6 @@ public class IronsPubBingoPlugin extends Plugin
 	 * member leaves), but a finished tile shouldn't keep reshuffling who did what.
 	 */
 	// Read from the panel's Swing thread as well as the client thread.
-	private final Map<Integer, Map<String, TileProgress>> frozenContributions = new java.util.concurrent.ConcurrentHashMap<>();
-	private static final Type FROZEN_TYPE = new TypeToken<Map<Integer, Map<String, TileProgress>>>()
-	{
-	}.getType();
 	/** A forced sync asked for while another was in flight; runs once that one returns. */
 	private boolean storeSyncQueued;
 	/**
@@ -808,17 +800,14 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Loads everything cached about one team scope: its members, its departures and its
-	 * frozen contributions, and remembers it as the scope saves go to.
+	 * Loads everything cached about one team scope: its members and its departures, and
+	 * remembers it as the scope saves go to.
 	 */
 	private void loadTeamCaches(String teamCode, boolean storeMode)
 	{
 		loadedTeamCode = teamCode;
 		loadedStoreMode = storeMode;
-		loadHistory();
 		teamProgress.clear();
-		frozenContributions.clear();
-		storeFrozen = new HashMap<>();
 		if (boardKey == null || configManager.getRSProfileKey() == null)
 		{
 			removedMembers.clear();
@@ -843,107 +832,14 @@ public class IronsPubBingoPlugin extends Plugin
 			// Verified credit belongs to the store; a party-only team never shows it.
 			teamProgress.keySet().removeIf(IronsPubBingoPlugin::isAdminMember);
 		}
-		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(teamCode, storeMode), FROZEN_TYPE);
-		if (frozen != null)
-		{
-			frozen.forEach((tile, snapshot) ->
-			{
-				if (board != null && tile != null && tile >= 0 && tile < board.getTiles().size() && snapshot != null)
-				{
-					capAtTargets(board.getTiles().get(tile), snapshot);
-					frozenContributions.put(tile, snapshot);
-				}
-			});
-		}
 		loadRemovedMembers();
 	}
 
-	/** The history file of the loaded team scope, or null with no board or profile. */
-	private java.io.File historyFile()
-	{
-		String profile = configManager.getRSProfileKey();
-		if (boardKey == null || profile == null)
-		{
-			return null;
-		}
-		String name = profile + "_" + boardKey + "_" + (loadedTeamCode == null ? "solo" : loadedTeamCode)
-			+ (loadedStoreMode ? "" : "_party");
-		return new java.io.File(new java.io.File(net.runelite.client.RuneLite.RUNELITE_DIR, "irons-pub-bingo"),
-			"history_" + name.replaceAll("[^A-Za-z0-9_-]", "_") + ".json");
-	}
-
-	/** Starts afresh and reads the scope's saved history off the client thread. */
-	private void loadHistory()
-	{
-		BingoProgressHistory fresh = new BingoProgressHistory();
-		history = fresh;
-		java.io.File file = historyFile();
-		if (file == null)
-		{
-			return;
-		}
-		executor.execute(() ->
-		{
-			if (!file.isFile())
-			{
-				return;
-			}
-			try
-			{
-				String json = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-				BingoProgressHistory saved = BingoProgressHistory.fromJson(gson, json);
-				clientThread.invoke(() ->
-				{
-					if (history == fresh)
-					{
-						fresh.absorb(saved);
-					}
-				});
-			}
-			catch (java.io.IOException e)
-			{
-				log.debug("Could not read the bingo progress history", e);
-			}
-		});
-	}
-
-	/** Writes the history if it changed, off the client thread. */
-	private void saveHistory()
-	{
-		java.io.File file = historyFile();
-		if (file == null || !history.dirty)
-		{
-			return;
-		}
-		history.dirty = false;
-		String json = gson.toJson(history);
-		executor.execute(() ->
-		{
-			try
-			{
-				file.getParentFile().mkdirs();
-				java.nio.file.Files.write(file.toPath(), json.getBytes(StandardCharsets.UTF_8));
-			}
-			catch (java.io.IOException e)
-			{
-				log.debug("Could not save the bingo progress history", e);
-			}
-		});
-	}
-
-	/** Writes the loaded team scope's members and frozen contributions. */
+	/** Writes the loaded team scope's members. */
 	private void saveTeamCaches()
 	{
-		saveHistory();
 		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
 			teamCacheKey(loadedTeamCode, loadedStoreMode), gson.toJson(teamProgress));
-		configManager.setRSProfileConfiguration(IronsPubBingoConfig.GROUP,
-			frozenKey(loadedTeamCode, loadedStoreMode), gson.toJson(frozenContributions));
-	}
-
-	private String frozenKey(String teamCode, boolean storeMode)
-	{
-		return "frozen" + (storeMode ? "_" : "p_") + boardKey + "_" + (teamCode == null ? "solo" : teamCode);
 	}
 
 	private static final Type STRING_LIST = new TypeToken<List<String>>()
@@ -1103,173 +999,11 @@ public class IronsPubBingoPlugin extends Plugin
 
 	/**
 	 * Per-member progress on a tile (own account first), keyed by display name - for
-	 * showing who contributed what in the tile detail view. A completed tile shows its
-	 * frozen numbers instead: each member's progress at the moment the members on the team
-	 * now completed it, never past a target. A team store works them out for everyone, so
-	 * the whole team sees the same numbers; without one, this client replays its own history.
+	 * showing who contributed what in the tile detail view.
 	 */
 	Map<String, TileProgress> memberProgressFor(int tileIndex)
 	{
-		Map<String, TileProgress> live = liveMemberProgressFor(tileIndex);
-		// The panel asks from the Swing thread; only the client thread changes the
-		// snapshot (and saves it).
-		boolean onClientThread = client.isClientThread();
-		if (!isTileComplete(tileIndex))
-		{
-			if (onClientThread)
-			{
-				frozenContributions.remove(tileIndex);
-			}
-			return live;
-		}
-		Map<String, TileProgress> frozen = frozenContributions.get(tileIndex);
-		if (!onClientThread)
-		{
-			return frozen != null ? frozen : live;
-		}
-		Map<String, TileProgress> fromStore = teamStore.isConfigured() ? storeFrozen.get(tileIndex) : null;
-		Map<String, TileProgress> shown;
-		if (fromStore != null)
-		{
-			shown = byName(fromStore, memberNamesFor(tileIndex));
-		}
-		else if (frozen != null && live.keySet().containsAll(frozen.keySet()) && snapshotCompletes(tileIndex, frozen))
-		{
-			shown = frozen;
-		}
-		else
-		{
-			// First look since completion, or someone in the snapshot has left while the tile
-			// stays complete (or the store has not answered yet): work it out from the history.
-			shown = reconstructFrozen(tileIndex, live);
-		}
-		if (frozen != null && gson.toJson(frozen).equals(gson.toJson(shown)))
-		{
-			return frozen; // the same numbers: keep the stored copy, which the panel compares by identity
-		}
-		frozenContributions.put(tileIndex, shown);
-		saveProgress(false);
-		return shown;
-	}
-
-	/**
-	 * This client's own idea of the frozen numbers, by display name: the members on the
-	 * team now, at the moment their progress completed the tile, never past a target.
-	 */
-	private Map<String, TileProgress> reconstructFrozen(int tileIndex, Map<String, TileProgress> live)
-	{
-		observeTile(tileIndex);
-		int goalCount = board.getTiles().get(tileIndex).goals.size();
-		Map<String, TileProgress> frozen = replaySnapshot(tileIndex, live);
-		if (frozen == null || !snapshotCompletes(tileIndex, frozen))
-		{
-			frozen = new java.util.LinkedHashMap<>();
-			for (Map.Entry<String, TileProgress> entry : live.entrySet())
-			{
-				frozen.put(entry.getKey(), entry.getValue().counts(goalCount));
-			}
-		}
-		capAtTargets(board.getTiles().get(tileIndex), frozen);
-		return frozen;
-	}
-
-	/**
-	 * A frozen goal never shows more than its target. The replay already stops at the
-	 * target; this catches the snapshots it could not build (no history), taking the
-	 * excess off whoever updated the tile last.
-	 */
-	static void capAtTargets(BingoTile tile, Map<String, TileProgress> snapshot)
-	{
-		int goalCount = tile.goals.size();
-		List<TileProgress> latestFirst = new ArrayList<>(snapshot.values());
-		latestFirst.removeIf(java.util.Objects::isNull);
-		latestFirst.sort((a, b) -> Long.compare(b.ts == null ? 0 : b.ts, a.ts == null ? 0 : a.ts));
-		for (int g = 0; g < goalCount; g++)
-		{
-			BingoGoal goal = tile.goals.get(g);
-			if (goal.goalType == GoalType.MANUAL || goal.usesMatchedSet())
-			{
-				continue;
-			}
-			long excess = -goal.target();
-			for (TileProgress tp : latestFirst)
-			{
-				excess += tp.goal(g, goalCount).n;
-			}
-			for (TileProgress tp : latestFirst)
-			{
-				if (excess <= 0)
-				{
-					break;
-				}
-				GoalProgress p = tp.goal(g, goalCount);
-				long cut = Math.min(excess, Math.max(0, p.n));
-				p.n -= cut;
-				excess -= cut;
-			}
-		}
-	}
-
-	/**
-	 * The store's member-id keyed numbers by display name, own account first. A member the
-	 * names don't cover is named from the team cache.
-	 */
-	private Map<String, TileProgress> byName(Map<String, TileProgress> byId, Map<String, String> names)
-	{
-		Map<String, TileProgress> out = new java.util.LinkedHashMap<>();
-		String self = localMemberId();
-		Set<String> placed = new HashSet<>();
-		for (Map.Entry<String, String> entry : names.entrySet())
-		{
-			String id = OWN_MEMBER.equals(entry.getKey()) ? self : entry.getKey();
-			TileProgress tp = id == null ? null : byId.get(id);
-			if (tp != null)
-			{
-				out.put(entry.getValue(), tp);
-				placed.add(id);
-			}
-		}
-		for (Map.Entry<String, TileProgress> entry : byId.entrySet())
-		{
-			if (!placed.contains(entry.getKey()))
-			{
-				TeamMemberState member = teamProgress.get(entry.getKey());
-				String name = member != null && member.name != null && !member.name.isEmpty() ? member.name : entry.getKey();
-				while (out.containsKey(name))
-				{
-					name += " *";
-				}
-				out.put(name, entry.getValue());
-			}
-		}
-		return out;
-	}
-
-	private boolean snapshotCompletes(int tileIndex, Map<String, TileProgress> snapshot)
-	{
-		BingoTile tile = board.getTiles().get(tileIndex);
-		return tile.isComplete(TileProgress.merge(tile.goals.size(), snapshot.values()));
-	}
-
-	/**
-	 * What the panels show for a tile. A completed tile shows the team's progress as it
-	 * stood the moment it completed, so an ANY tile's other goals stop moving on screen.
-	 * Tracking goes on underneath: if the tile stops being complete (a teammate left, a
-	 * credit was withdrawn) it shows live progress again, and completing again takes a
-	 * new snapshot at that moment.
-	 */
-	TileProgress displayProgressFor(int tileIndex)
-	{
-		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
-		{
-			return new TileProgress();
-		}
-		Map<String, TileProgress> members = memberProgressFor(tileIndex);
-		if (members != frozenContributions.get(tileIndex))
-		{
-			return mergedProgressFor(tileIndex);
-		}
-		return TileProgress.merge(board.getTiles().get(tileIndex).goals.size(), members.values());
+		return liveMemberProgressFor(tileIndex);
 	}
 
 	/** Whether any goal of the tile shows progress, for the amber "partial" tile color. */
@@ -1280,7 +1014,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return false;
 		}
 		BingoTile tile = board.getTiles().get(tileIndex);
-		TileProgress tp = displayProgressFor(tileIndex);
+		TileProgress tp = mergedProgressFor(tileIndex);
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
 			if (tile.goals.get(g).progressOf(tp.goal(g, tile.goals.size())) > 0)
@@ -1299,7 +1033,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return "";
 		}
 		BingoTile tile = board.getTiles().get(tileIndex);
-		TileProgress tp = displayProgressFor(tileIndex);
+		TileProgress tp = mergedProgressFor(tileIndex);
 		StringBuilder sb = new StringBuilder();
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
@@ -1308,42 +1042,10 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				sb.append("<br>");
 			}
-			sb.append(Math.min(goal.progressOf(tp.goal(g, tile.goals.size())), goal.target())).append('/').append(goal.target());
+			sb.append(Math.max(0, Math.min(goal.progressOf(tp.goal(g, tile.goals.size())), goal.target())))
+				.append('/').append(goal.target());
 		}
 		return sb.toString();
-	}
-
-	/**
-	 * Brings every tile's snapshot up to date: taken for tiles that are complete, dropped
-	 * for tiles that no longer are, retaken when someone in it left. Client thread, on
-	 * every panel refresh, so the panels (Swing thread) only ever read finished snapshots.
-	 */
-	private void updateSnapshots()
-	{
-		// Logged out, own progress is unloaded and every tile looks incomplete: touching
-		// the snapshots then would throw away the moment each tile completed.
-		if (board == null || localMemberId() == null)
-		{
-			return;
-		}
-		observeAllTiles();
-		for (int i = 0; i < board.getTiles().size(); i++)
-		{
-			memberProgressFor(i);
-		}
-	}
-
-	/** Snapshots the contributions of tiles that just completed, before more comes in. */
-	private void freezeContributions(Set<Integer> before, Set<Integer> after)
-	{
-		for (Integer idx : after)
-		{
-			if (!before.contains(idx))
-			{
-				frozenContributions.remove(idx);
-				memberProgressFor(idx);
-			}
-		}
 	}
 
 	private Map<String, TileProgress> liveMemberProgressFor(int tileIndex)
@@ -1367,14 +1069,13 @@ public class IronsPubBingoPlugin extends Plugin
 
 	/**
 	 * Member id -> display name for everyone with progress on a tile, own account first
-	 * (keyed OWN_MEMBER). The names key the contribution rows and snapshots.
+	 * (keyed OWN_MEMBER). The names key the contribution rows.
 	 */
 	private Map<String, String> memberNamesFor(int tileIndex)
 	{
 		Map<String, String> names = new java.util.LinkedHashMap<>();
 		Set<String> used = new HashSet<>();
-		// The saved name covers the first frames after login, before the game reports it:
-		// a different key would read as a member leaving and retake every snapshot.
+		// The saved name covers the first frames after login, before the game reports it.
 		String ownName = localPlayerName() != null ? localPlayerName() : lastKnownName;
 		ownName = ownName != null ? ownName : "You";
 		names.put(OWN_MEMBER, ownName);
@@ -1395,82 +1096,6 @@ public class IronsPubBingoPlugin extends Plugin
 			names.put(member.getKey(), name);
 		}
 		return names;
-	}
-
-	/** Records everyone's current state of a tile in the progress history. Client thread. */
-	private void observeTile(int tileIndex)
-	{
-		String self = localMemberId();
-		if (board == null || self == null || tileIndex >= board.getTiles().size())
-		{
-			return;
-		}
-		int goalCount = board.getTiles().get(tileIndex).goals.size();
-		history.record(tileIndex, self, progressFor(tileIndex), goalCount);
-		for (Map.Entry<String, TeamMemberState> member : teamProgress.entrySet())
-		{
-			TileProgress tp = member.getValue().tilesMap().get(tileIndex);
-			if (tp != null && !member.getKey().equals(self))
-			{
-				history.record(tileIndex, member.getKey(), tp, goalCount);
-			}
-		}
-	}
-
-	private void observeAllTiles()
-	{
-		if (board != null)
-		{
-			for (int i = 0; i < board.getTiles().size(); i++)
-			{
-				observeTile(i);
-			}
-		}
-	}
-
-	/**
-	 * The tile's snapshot replayed from the history for the members on the team now,
-	 * keyed by display name, or null when the history can't place the completion.
-	 */
-	private Map<String, TileProgress> replaySnapshot(int tileIndex, Map<String, TileProgress> live)
-	{
-		String self = localMemberId();
-		if (self == null)
-		{
-			return null;
-		}
-		Map<String, String> names = memberNamesFor(tileIndex);
-		List<String> ids = new ArrayList<>();
-		for (String id : names.keySet())
-		{
-			ids.add(OWN_MEMBER.equals(id) ? self : id);
-		}
-		BingoTile tile = board.getTiles().get(tileIndex);
-		Map<String, TileProgress> replayed = history.snapshot(tileIndex, tile, ids);
-		if (replayed == null)
-		{
-			return null;
-		}
-		Map<String, TileProgress> snapshot = new java.util.LinkedHashMap<>();
-		for (Map.Entry<String, String> entry : names.entrySet())
-		{
-			TileProgress state = replayed.get(OWN_MEMBER.equals(entry.getKey()) ? self : entry.getKey());
-			TileProgress current = live.get(entry.getValue());
-			if (state != null && current != null && current.goals != null)
-			{
-				// The history keeps counts, not the received-items list: carry that over.
-				for (int g = 0; g < tile.goals.size(); g++)
-				{
-					GoalProgress now = current.goal(g, tile.goals.size());
-					if (now.got != null)
-					{
-						state.goal(g, tile.goals.size()).got = new LinkedHashMap<>(now.got);
-					}
-				}
-			}
-			snapshot.put(entry.getValue(), state != null ? state : new TileProgress());
-		}
-		return snapshot;
 	}
 
 	/**
@@ -2768,9 +2393,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
-		observeAllTiles();
 		Set<Integer> after = completedTiles();
-		freezeContributions(before, after);
 		String by = changedMembers == 1 && lastChangedName != null ? " (by " + lastChangedName + ")" : " (team)";
 		for (Integer idx : after)
 		{
@@ -2970,7 +2593,6 @@ public class IronsPubBingoPlugin extends Plugin
 				// The store's copy of our own tiles wins when it is newer than ours.
 				dropped |= adoptOwnCopy(payload.members.get(localMemberId()));
 				applyMemberStates(payload.members);
-				storeFrozen = payload.frozen == null ? new HashMap<>() : payload.frozen;
 				if (dropped)
 				{
 					saveProgress(true);
@@ -4085,7 +3707,6 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			TileProgress changed = progressFor(tileIndex);
 			changed.ts = nextTs(changed.ts, now);
-			observeTile(tileIndex);
 		}
 
 		Set<Integer> completedAfter = completedTiles();
@@ -4157,7 +3778,6 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 		}
 
-		freezeContributions(completedBefore, completedAfter);
 		String bonus = bonusAnnouncement(completedBefore, completedAfter);
 		for (String label : newlyCompleted)
 		{
@@ -4207,10 +3827,6 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void refreshPanel()
 	{
-		if (client.isClientThread())
-		{
-			updateSnapshots();
-		}
 		IronsPubBingoPanel p = panel;
 		BingoBoardWindow window = boardWindow;
 		SwingUtilities.invokeLater(() ->

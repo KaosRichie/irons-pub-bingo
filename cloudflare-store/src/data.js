@@ -45,8 +45,6 @@ export function eventData(store, admin)
 		entry.points = standing ? standing.points : null;
 
 		const totals = store.tileTotals(scope.board, meta);
-		const frozen = store.frozenFor(scope.board);
-		const names = memberNames(store, scope.board);
 		const sameBoard = official && official.tiles.length === meta.tiles.length ? official : null;
 		entry.board = {
 			key: scope.board,
@@ -65,16 +63,19 @@ export function eventData(store, admin)
 					icon: source.icon == null ? null : String(source.icon),
 					description: source.description ? String(source.description) : null,
 					points: source.points == null ? null : Number(source.points),
-					goals: (tile.goals || []).map((goal, g) => Object.assign({
+					goals: (tile.goals || []).map((goal, g) => ({
 						label: String(goal.label || (goal.manual ? 'Manual tick' : 'Goal ' + (g + 1))),
 						target: Number(goal.target || 0),
 						manual: !!goal.manual,
-						total: (totals.tracked[t][g] || 0) + (totals.verified[t][g] || 0),
+						// A goal's number never shows past its target, nor below zero.
+						total: Math.max(0, Math.min(Number(goal.target || 0) || Infinity,
+							(totals.tracked[t][g] || 0) + (totals.verified[t][g] || 0))),
+						raw: (totals.tracked[t][g] || 0) + (totals.verified[t][g] || 0),
 						verified: totals.verified[t][g] || 0,
 						contributors: Object.entries(totals.contrib[t][g] || {})
 							.map(([name, amount]) => ({ name, amount }))
 							.sort((a, b) => b.amount - a.amount)
-					}, frozen[t] ? frozenGoal(frozen[t], g, goal, names) : {}))
+					}))
 				};
 			})
 		};
@@ -136,50 +137,6 @@ export function eventData(store, admin)
 	out.settings = { pollSeconds: store.config.pollSeconds || 120 };
 	out.boardCode = { text: store.config.boardCode, summary: summarizeBoard(store.config.boardCode) };
 	return out;
-}
-
-/** Member id -> display name for a team scope, admin credit included. */
-function memberNames(store, board)
-{
-	const names = {};
-	for (const row of store.members.values())
-	{
-		if (row.board === board)
-		{
-			names[row.member] = row.name || row.member;
-		}
-	}
-	for (const credit of store.credits.values())
-	{
-		names['admin:' + String(credit.player || '').trim().toLowerCase()] = String(credit.player || '').trim() + ' (verified)';
-	}
-	return names;
-}
-
-/** A completed goal's frozen total, credit and contributors, as the plugin shows them. */
-function frozenGoal(frozenTile, g, goal, names)
-{
-	let total = 0;
-	let verified = 0;
-	const distinct = new Set();
-	const contributors = [];
-	for (const [id, state] of Object.entries(frozenTile))
-	{
-		const entry = (state.goals || [])[g] || {};
-		const matched = goal.distinct && entry.matched ? entry.matched : [];
-		matched.forEach(name => distinct.add(String(name).toLowerCase()));
-		const amount = Number(entry.n || 0) + matched.length;
-		total += Number(entry.n || 0);
-		if (id.startsWith('admin:'))
-		{
-			verified += amount;
-		}
-		if (amount > 0)
-		{
-			contributors.push({ name: names[id] || id, amount });
-		}
-	}
-	return { total: total + distinct.size, verified, contributors: contributors.sort((a, b) => b.amount - a.amount) };
 }
 
 /** What the admin page shows beside the board code: name, id, size, or what is wrong. */

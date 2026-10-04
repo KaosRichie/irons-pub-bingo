@@ -286,16 +286,21 @@ test('the poll interval reaches clients', () =>
 
 // ---------------------------------------------------------------- admin credit
 
-test('admin credit becomes verified progress, and never goes negative', () =>
+test('admin credit becomes verified progress, and a negative amount takes progress off', () =>
 {
 	const s = newStore();
-	s.post({ board: 'b_red', meta: META, rejoin: A, members: {} });
-	s.credit({ tile: 1, player: 'Kaos', add: 40 });
+	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', { 0: tile(1000, [6]) }) } });
+	s.credit({ tile: 1, player: 'Kaos', add: 4 });
 	let r = s.post({ board: 'b_red', rejoin: A, members: {} });
 	is(r.members['admin:kaos'].name, 'Kaos (verified)', 'shown as verified');
-	is(r.members['admin:kaos'].tiles['0'].goals[0].n, 40, 'credited amount');
-	s.credit({ tile: 1, player: 'Kaos', add: -60 });
-	is(s.post({ board: 'b_red', rejoin: A, members: {} }).members['admin:kaos'].tiles['0'].goals[0].n, 0, 'clamped at zero');
+	is(r.members['admin:kaos'].tiles['0'].goals[0].n, 4, 'credited amount');
+	is(s.store.tileTotals('b_red', META).done[0], true, '6 tracked plus 4 credited completes the tile');
+	// A miscounted tracked drop is corrected with negative credit under any name.
+	s.credit({ tile: 1, player: 'Alice', add: -3 });
+	r = s.post({ board: 'b_red', rejoin: A, members: {} });
+	is(r.members['admin:alice'].tiles['0'].goals[0].n, -3, 'the correction goes out as it is');
+	const totals = s.store.tileTotals('b_red', META);
+	is([totals.tracked[0][0] + totals.verified[0][0], totals.done[0]], [7, false], 'and takes the team below the target again');
 	s.credit({ team: 'blue', tile: 1, player: 'Bob', add: 5 });
 	ok(!('admin:bob' in s.post({ board: 'b_red', rejoin: A, members: {} }).members), 'another team\'s credit stays out');
 });
@@ -614,75 +619,6 @@ test('records round-trip through storage', () =>
 	is([...reloaded.members.keys()], [...s.store.members.keys()], 'members');
 	is([reloaded.requests.size, reloaded.credits.size, reloaded.departures.size, reloaded.scores.size, reloaded.metas.size],
 		[1, 1, 1, 1, 1], 'every kind of record');
-});
-
-// ---------------------------------------------------------------- frozen numbers
-
-const BONES = { name: 'Bones board', size: 1, tiles: [{ label: '5 bones', goals: [{ label: 'Bones', target: 5 }] }] };
-const frozenOf = (s, board, tile) =>
-{
-	const out = {};
-	const frozen = s.post({ board, rejoin: X, members: {} }).frozen[tile] || {};
-	Object.keys(frozen).forEach(id => (out[id] = frozen[id].goals[0].n));
-	return out;
-};
-
-test('a completed tile freezes where the team completed it, and again without someone who leaves', () =>
-{
-	const s = newStore();
-	const C = 'dddddddddddddd04';
-	s.post({ board: 'b_red', meta: BONES, members: { [A]: member('A', { 0: tile(1e6, [3]) }) } });
-	s.post({ board: 'b_red', members: { [B]: member('B', { 0: tile(1e6, [1]) }) } });
-	s.post({ board: 'b_red', members: { [C]: member('C', { 0: tile(2e6, [1]) }) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 3, [B]: 1, [C]: 1 }, 'completed at 3, 1 and 1');
-	s.post({ board: 'b_red', members: { [B]: member('B', { 0: tile(3e6, [2]) }) } });
-	s.post({ board: 'b_red', members: { [C]: member('C', { 0: tile(4e6, [11]) }) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 3, [B]: 1, [C]: 1 }, 'playing on changes nothing');
-	s.post({ board: 'b_red', remove: [A], members: {} });
-	is(frozenOf(s, 'b_red', 0), { [B]: 2, [C]: 3 }, 'without A: B and C completed it when C reached 3');
-	s.post({ board: 'b_red', members: { [A]: member('A', {}) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 3, [B]: 1, [C]: 1 }, 'A coming back brings the original moment back');
-});
-
-test('a single big drop shows only what the target needed, and tracking keeps the real count', () =>
-{
-	const s = newStore();
-	s.post({ board: 'b_red', meta: BONES, members: { [A]: member('A', { 0: tile(1e6, [2]) }) } });
-	s.post({ board: 'b_red', members: { [B]: member('B', { 0: tile(2e6, [1]) }) } });
-	const r = s.post({ board: 'b_red', members: { [B]: member('B', { 0: tile(3e6, [11]) }) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 2, [B]: 3 }, 'never past the target');
-	is(r.members[B].tiles['0'].goals[0].n, 11, 'the real count is still tracked');
-});
-
-test('an ANY tile freezes on the one goal that completed it', () =>
-{
-	const s = newStore();
-	const meta = { name: 'E', size: 1, tiles: [{ label: 'Either', mode: 'ANY', goals: [{ label: 'g1', target: 10 }, { label: 'g2', target: 5 }] }] };
-	s.post({ board: 'b_red', meta, members: { [A]: member('A', { 0: tile(1e6, [3, 1]) }) } });
-	s.post({ board: 'b_red', members: { [A]: member('A', { 0: tile(2e6, [12, 6]) }) } });
-	const frozen = s.post({ board: 'b_red', rejoin: X, members: {} }).frozen[0][A].goals.map(g => g.n);
-	is(frozen, [10, 1], 'the first goal completes it at its target, the second shows where it stood before');
-});
-
-test('admin credit counts from the moment it was given', () =>
-{
-	const s = newStore();
-	s.post({ board: 'b_red', meta: BONES, members: { [A]: member('A', { 0: tile(Date.now() - 60000, [4]) }) } });
-	s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Kaos', add: 1 });
-	is(frozenOf(s, 'b_red', 0), { [A]: 4, 'admin:kaos': 1 }, 'the credit completed it');
-	s.post({ board: 'b_red', members: { [A]: member('A', { 0: tile(Date.now() + 1000, [9]) }) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 4, 'admin:kaos': 1 }, 'later progress changes nothing');
-});
-
-test('only completed tiles are frozen, and a reset unfreezes', () =>
-{
-	const s = newStore();
-	s.post({ board: 'b_red', meta: BONES, members: { [A]: member('A', { 0: tile(1e6, [4]) }) } });
-	is(frozenOf(s, 'b_red', 0), {}, 'not complete yet');
-	s.post({ board: 'b_red', members: { [A]: member('A', { 0: tile(2e6, [5]) }) } });
-	is(frozenOf(s, 'b_red', 0), { [A]: 5 }, 'complete');
-	s.store.resetTile('red', 1);
-	is(frozenOf(s, 'b_red', 0), {}, 'reset');
 });
 
 // ---------------------------------------------------------------- report

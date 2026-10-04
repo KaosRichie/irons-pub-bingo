@@ -76,7 +76,7 @@ class BingoTileDetail extends JPanel
 
 		BingoTile tile = board.getTiles().get(selectedTile);
 		// A completed tile shows the snapshot from the moment it completed.
-		TileProgress merged = plugin.displayProgressFor(selectedTile);
+		TileProgress merged = plugin.mergedProgressFor(selectedTile);
 		TileProgress own = plugin.progressFor(selectedTile);
 		boolean teamView = plugin.hasTeamData();
 		Map<String, TileProgress> members = teamView ? plugin.memberProgressFor(selectedTile) : null;
@@ -167,7 +167,8 @@ class BingoTileDetail extends JPanel
 			}
 
 			long target = goal.target();
-			long tracked = Math.min(goal.progressOf(p), target);
+			// A goal's number never shows past its target, nor below zero (negative credit).
+			long tracked = Math.max(0, Math.min(goal.progressOf(p), target));
 			long value = ticked ? target : tracked;
 			// Keep the real numbers visible on an overridden bar.
 			String centerLabel = ticked && tracked < target

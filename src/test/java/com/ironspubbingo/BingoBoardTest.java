@@ -376,40 +376,6 @@ public class BingoBoardTest
 		assertTrue(!cached.apply("Alice", java.util.Map.of(99, bogus), 9));
 	}
 
-	private static TileProgress count(long n)
-	{
-		TileProgress tp = new TileProgress();
-		tp.goal(0, 1).n = n;
-		return tp;
-	}
-
-	@Test
-	public void theStoresFrozenNumbersAreReadFromASyncReply()
-	{
-		BingoTeamStore.StorePayload payload = gson.fromJson("{\"frozen\":{\"0\":{\"aaaaaaaaaaaaaa01\":{\"goals\":[{\"n\":3}]},"
-			+ "\"admin:kaos\":{\"goals\":[{\"n\":2}],\"manual\":false}}}}", BingoTeamStore.StorePayload.class);
-		assertEquals(3, payload.frozen.get(0).get("aaaaaaaaaaaaaa01").goal(0, 1).n);
-		assertEquals(2, payload.frozen.get(0).get("admin:kaos").goal(0, 1).n);
-	}
-
-	@Test
-	public void aFrozenGoalNeverShowsMoreThanItsTarget()
-	{
-		BingoTile tile = BingoBoard.parse(gson, "{\"name\":\"t\",\"size\":1,\"tiles\":[{\"label\":\"Bones\","
-			+ "\"goals\":[{\"type\":\"DROP\",\"items\":[\"Bones\"],\"count\":5}]}]}").getTiles().get(0);
-		TileProgress alice = count(2);
-		alice.ts = 1000L;
-		TileProgress bob = count(11);
-		bob.ts = 2000L;
-		java.util.Map<String, TileProgress> snapshot = new java.util.LinkedHashMap<>();
-		snapshot.put("Alice", alice.counts(1));
-		snapshot.put("Bob", bob.toShare(1));
-		IronsPubBingoPlugin.capAtTargets(tile, snapshot);
-		assertEquals(2, snapshot.get("Alice").goal(0, 1).n);
-		assertEquals("the last to update gives up the excess", 3, snapshot.get("Bob").goal(0, 1).n);
-		assertEquals("tracking keeps the real count", 11, bob.goal(0, 1).n);
-	}
-
 	@Test
 	public void matchedNamesKeepGameCasingAndDedupeIgnoringCase()
 	{

@@ -5,8 +5,7 @@
 // (takeOutbox). A Durable Object runs one request at a time, so nothing here needs a lock.
 //
 // Records, stored one per key:
-//   member:<board>|<id>   a player's own progress on one team scope, owned by a member key,
-//                         with a short history per tile for the frozen numbers below
+//   member:<board>|<id>   a player's own progress on one team scope, owned by a member key
 //   meta:<board>          the board summary (labels, targets) for one team scope
 //   score:<board>         a team's self-reported points, for the standings
 //   left:<board>|<id>     a member who left that team scope (their progress stays parked)
@@ -16,10 +15,6 @@
 //
 // A team scope ("board") is "<board key>_<team code>": every team on the same board shares
 // the board key, which is how standings and team switches find each other.
-//
-// A completed tile shows frozen numbers: each member's progress at the moment the members on
-// the team now completed it, never past a target. The store works them out from the history
-// and hands the same numbers to every client, the portal and the admin page.
 import { sha256 } from './sha256.js';
 
 // Largest sync accepted. A real one is a few kilobytes.
@@ -30,10 +25,6 @@ const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MEMBER_ID = /^[0-9a-f]{16}$/;
 const DISCORD_WEBHOOK = /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//;
 export const REQUEST_STATUSES = ['Pending', 'Done', 'Rejected'];
-// The per-tile history: changes closer together than this merge, and each member keeps at
-// most HISTORY_MAX records per tile (the closest pair merges first).
-const HISTORY_MERGE_MS = 60000;
-const HISTORY_MAX = 40;
 const KINDS = { member: 'members', meta: 'metas', score: 'scores', left: 'departures', request: 'requests', credit: 'credits' };
 
 export class EventStore
@@ -50,9 +41,6 @@ export class EventStore
 		this.config = { teams: [], boardCode: '', pollSeconds: 0, epoch: 1, boardHash: null, boardSigs: null };
 		this.changes = new Map();
 		this.outbox = [];
-		// Frozen numbers per team scope, worked out again whenever a record changes.
-		this.version = 0;
-		this.frozenCache = new Map();
 		for (const [key, value] of records || [])
 		{
 			if (key === 'config')
@@ -73,7 +61,6 @@ export class EventStore
 
 	set(kind, id, value)
 	{
-		this.version++;
 		this[KINDS[kind]].set(id, value);
 		this.changes.set(kind + ':' + id, value);
 	}
@@ -82,7 +69,6 @@ export class EventStore
 	{
 		if (this[KINDS[kind]].delete(id))
 		{
-			this.version++;
 			this.changes.set(kind + ':' + id, undefined);
 		}
 	}
@@ -228,7 +214,6 @@ export class EventStore
 		const key = board + '|' + memberId;
 		const row = this.members.get(key);
 		const tiles = row ? Object.assign({}, row.tiles) : {};
-		const history = row && row.history ? JSON.parse(JSON.stringify(row.history)) : {};
 		const incomingTiles = incoming.tiles || {};
 		const maxTs = Date.now() + MAX_CLOCK_SKEW_MS;
 		let changed = false;
@@ -248,7 +233,6 @@ export class EventStore
 			if (!current || (next.ts || 0) > (current.ts || 0))
 			{
 				tiles[tile] = next;
-				recordHistory(history, tile, next);
 				changed = true;
 			}
 		}
@@ -256,7 +240,7 @@ export class EventStore
 		if (!row || changed || name !== row.name)
 		{
 			this.set('member', key, { board, member: memberId, name, updated: new Date().toISOString(),
-				tiles, history, key: row ? row.key : keyHash });
+				tiles, key: row ? row.key : keyHash });
 		}
 	}
 
@@ -297,8 +281,7 @@ export class EventStore
 			removed: Object.keys(left),
 			pollSeconds: this.config.pollSeconds || 0,
 			epoch: this.config.epoch,
-			standings: this.standingsFor(board),
-			frozen: this.frozenFor(board)
+			standings: this.standingsFor(board)
 		};
 	}
 
@@ -577,110 +560,12 @@ export class EventStore
 		return { tracked, verified, done, verifiedManual, contrib, manualBy };
 	}
 
-	// ------------------------------------------------------------------ frozen numbers
-
-	/**
-	 * The frozen numbers of every completed tile of a team scope: tile -> member id ->
-	 * { goals: [{ n, matched }], manual }. Admin credit appears as its "admin:" members.
-	 */
-	frozenFor(board)
-	{
-		const cached = this.frozenCache.get(board);
-		if (cached && cached.version === this.version)
-		{
-			return cached.frozen;
-		}
-		const frozen = {};
-		const meta = this.metaFor(board);
-		if (meta && meta.tiles)
-		{
-			const done = this.tileTotals(board, meta).done;
-			meta.tiles.forEach((tile, t) =>
-			{
-				if (done[t])
-				{
-					frozen[t] = this.frozenTile(board, meta, t);
-				}
-			});
-		}
-		this.frozenCache.set(board, { version: this.version, frozen });
-		return frozen;
-	}
-
-	/** One completed tile's frozen numbers, from every current member's history. */
-	frozenTile(board, meta, t)
-	{
-		const tile = meta.tiles[t];
-		const left = this.leftMembers(board);
-		const timelines = {};
-		for (const row of this.members.values())
-		{
-			if (row.board !== board || left[row.member])
-			{
-				continue;
-			}
-			const recorded = row.history && row.history[String(t)];
-			const current = row.tiles && row.tiles[String(t)];
-			if (recorded && recorded.length)
-			{
-				timelines[row.member] = recorded;
-			}
-			else if (current)
-			{
-				timelines[row.member] = [snapOf(current, Number(current.ts) || 0)];
-			}
-		}
-		Object.assign(timelines, this.creditTimelines(board, meta, t));
-		const frozen = replayCompletion(tile, timelines) || currentStates(tile, timelines);
-		capAtTargets(tile, frozen, timelines);
-		const out = {};
-		for (const id of Object.keys(frozen))
-		{
-			const state = frozen[id];
-			if (state.manual || state.n.some(n => n !== 0) || state.m.some(m => m && m.length))
-			{
-				out[id] = { manual: state.manual, goals: state.n.map((n, g) => (state.m[g] && state.m[g].length
-					? { n, matched: state.m[g] } : { n })) };
-			}
-		}
-		return out;
-	}
-
-	/** Admin credit for one tile as timelines: each credit adds up from the moment it was given. */
-	creditTimelines(board, meta, t)
-	{
-		const team = teamOf(board);
-		const goalCount = Math.max(1, (meta.tiles[t].goals || []).length);
-		const timelines = {};
-		const credits = [...this.credits.values()].sort((a, b) => String(a.added).localeCompare(String(b.added)));
-		for (const credit of credits)
-		{
-			const parsed = parseCredit(credit, meta);
-			if (parsed.issues.length || parsed.tile - 1 !== t || (parsed.team && team && parsed.team !== team))
-			{
-				continue;
-			}
-			const id = 'admin:' + parsed.player.toLowerCase();
-			const list = timelines[id] = timelines[id] || [];
-			const last = list.length ? list[list.length - 1] : { n: new Array(goalCount).fill(0), manual: false };
-			const n = last.n.slice();
-			n[parsed.goal - 1] = (n[parsed.goal - 1] || 0) + parsed.add;
-			list.push({ t: Date.parse(credit.added) || 0, n, m: new Array(goalCount).fill(null),
-				manual: last.manual || parsed.complete });
-		}
-		for (const list of Object.values(timelines))
-		{
-			list.forEach(snap => (snap.n = snap.n.map(v => Math.max(0, v))));
-		}
-		return timelines;
-	}
-
 	// ------------------------------------------------------------------ admin credit
 
 	/**
 	 * Admin credit as synthetic members the plugin merges like teammates, one per player,
 	 * named "<player> (verified)". Credit adds up, and a negative amount corrects a
-	 * mistake. Totals never go below zero.
+	 * mistake: it takes progress off the team's total, tracked progress included.
 	 */
 	creditMembers(board, meta)
 	{
@@ -704,13 +589,6 @@ export class EventStore
 			}
 			tile.goals[parsed.goal - 1].n += parsed.add;
 			tile.manual = tile.manual || parsed.complete;
-		}
-		for (const member of Object.values(members))
-		{
-			for (const tile of Object.values(member.tiles))
-			{
-				tile.goals.forEach(goal => (goal.n = Math.max(0, goal.n)));
-			}
 		}
 		return members;
 	}
@@ -1089,13 +967,11 @@ export class EventStore
 				continue;
 			}
 			const tiles = Object.assign({}, row.tiles);
-			const history = row.history ? JSON.parse(JSON.stringify(row.history)) : {};
 			for (const index of tileIndexes)
 			{
 				tiles[String(index)] = { goals: [], manual: false, ts: stamp };
-				recordHistory(history, String(index), tiles[String(index)]);
 			}
-			this.set('member', key, Object.assign({}, row, { tiles, history, updated: new Date().toISOString() }));
+			this.set('member', key, Object.assign({}, row, { tiles, updated: new Date().toISOString() }));
 			wiped++;
 		}
 		return wiped;
@@ -1322,7 +1198,7 @@ function tileLabel(item, scope)
 /** "+40 on goal 1 (Kills: Man)", or "tile complete". */
 function creditText(item, scope)
 {
-	const what = item.complete ? 'tile complete' : '+' + item.add;
+	const what = item.complete ? 'tile complete' : (item.add < 0 ? '' : '+') + item.add;
 	const goal = parseInt(item.goal, 10);
 	if (isNaN(goal) || goal < 1)
 	{
@@ -1351,229 +1227,6 @@ function noteAndProof(item)
 		lines += '\nProof: ' + item.links.join('  ');
 	}
 	return lines;
-}
-
-// ---------------------------------------------------------------------- tile history
-
-/** A tile's values as one history record at time t. */
-function snapOf(tile, t)
-{
-	const goals = tile.goals || [];
-	return {
-		t,
-		n: goals.map(g => Number((g && g.n) || 0)),
-		m: goals.map(g => (g && g.matched && g.matched.length ? g.matched.slice() : null)),
-		manual: !!tile.manual
-	};
-}
-
-/** Adds a member's new tile state to their history, merging changes close together. */
-function recordHistory(history, tileKey, tile)
-{
-	const list = history[tileKey] = history[tileKey] || [];
-	const snap = snapOf(tile, Number(tile.ts) || Date.now());
-	const last = list[list.length - 1];
-	if (last && JSON.stringify([last.n, last.m, last.manual]) === JSON.stringify([snap.n, snap.m, snap.manual]))
-	{
-		return;
-	}
-	if (last && snap.t < last.t)
-	{
-		snap.t = last.t; // a record never goes back in time
-	}
-	if (last && list.length > 1 && snap.t - last.t < HISTORY_MERGE_MS)
-	{
-		list[list.length - 1] = snap;
-	}
-	else
-	{
-		list.push(snap);
-	}
-	while (list.length > HISTORY_MAX)
-	{
-		// Every record holds the full values, so dropping one loses nothing after it.
-		let best = 1;
-		for (let i = 1; i < list.length - 1; i++)
-		{
-			if (list[i + 1].t - list[i].t < list[best + 1].t - list[best].t)
-			{
-				best = i;
-			}
-		}
-		list.splice(best, 1);
-	}
-}
-
-/** A member's state at time t: their last record at or before it, or nothing yet. */
-function stateAt(list, t, goalCount)
-{
-	let state = { n: new Array(goalCount).fill(0), m: new Array(goalCount).fill(null), manual: false };
-	for (const snap of list)
-	{
-		if (snap.t > t)
-		{
-			break;
-		}
-		state = {
-			n: Array.from({ length: goalCount }, (_, g) => Number(snap.n[g] || 0)),
-			m: Array.from({ length: goalCount }, (_, g) => (snap.m && snap.m[g] ? snap.m[g].slice() : null)),
-			manual: !!snap.manual
-		};
-	}
-	return state;
-}
-
-function statesAt(timelines, t, goalCount)
-{
-	const out = {};
-	for (const id of Object.keys(timelines))
-	{
-		out[id] = stateAt(timelines[id], t, goalCount);
-	}
-	return out;
-}
-
-/** One goal's team value: counters add up, a distinct goal counts each name once. */
-function goalValue(states, g, goalMeta)
-{
-	let n = 0;
-	const names = new Set();
-	for (const state of Object.values(states))
-	{
-		n += state.n[g];
-		(goalMeta && goalMeta.distinct && state.m[g] ? state.m[g] : []).forEach(name => names.add(String(name).toLowerCase()));
-	}
-	return n + names.size;
-}
-
-function tileDone(tile, states)
-{
-	if (Object.values(states).some(s => s.manual))
-	{
-		return true;
-	}
-	const goals = tile.goals || [];
-	if (!goals.length)
-	{
-		return false;
-	}
-	const values = goals.map((goal, g) => goalValue(states, g, goal));
-	return tileReached(tile, values, values.map(() => 0));
-}
-
-function goalDone(goal, value)
-{
-	return !goal.manual && Number(goal.target || 0) > 0 && value >= Number(goal.target);
-}
-
-/**
- * The members' states at the start of the tile's current, unbroken completion, or null
- * when the history never shows it complete. The plugin's rules: an ANY tile completes on
- * exactly one goal (the others show where they stood just before), and the change that
- * completed a goal counts only as far as its target needed.
- */
-function replayCompletion(tile, timelines)
-{
-	const goalCount = Math.max(1, (tile.goals || []).length);
-	const times = [...new Set([].concat(...Object.values(timelines).map(list => list.map(s => s.t))))].sort((a, b) => a - b);
-	let runStart = null;
-	let beforeRun = -Infinity;
-	let previous = -Infinity;
-	let inRun = false;
-	for (const t of times)
-	{
-		const done = tileDone(tile, statesAt(timelines, t, goalCount));
-		if (done && !inRun)
-		{
-			runStart = t;
-			beforeRun = previous;
-		}
-		inRun = done;
-		previous = t;
-	}
-	if (!inRun)
-	{
-		return null;
-	}
-	const at = statesAt(timelines, runStart, goalCount);
-	const before = statesAt(timelines, beforeRun, goalCount);
-	const goals = tile.goals || [];
-	if (tile.mode === 'ANY')
-	{
-		const chosen = goals.findIndex((goal, g) => goalDone(goal, goalValue(at, g, goal)) && !goalDone(goal, goalValue(before, g, goal)));
-		const ticked = Object.values(at).some(s => s.manual);
-		if (chosen >= 0 || ticked)
-		{
-			for (const id of Object.keys(at))
-			{
-				for (let g = 0; g < goalCount; g++)
-				{
-					if (g !== chosen)
-					{
-						at[id].n[g] = before[id].n[g];
-						at[id].m[g] = before[id].m[g];
-					}
-				}
-			}
-		}
-	}
-	goals.forEach((goal, g) =>
-	{
-		if (goal.manual || goal.distinct || !goalDone(goal, goalValue(at, g, goal)) || goalDone(goal, goalValue(before, g, goal)))
-		{
-			return;
-		}
-		let excess = goalValue(at, g, goal) - Number(goal.target);
-		for (const id of Object.keys(at))
-		{
-			if (excess <= 0)
-			{
-				break;
-			}
-			if (!timelines[id].some(s => s.t === runStart))
-			{
-				continue;
-			}
-			const cut = Math.min(excess, at[id].n[g] - before[id].n[g]);
-			if (cut > 0)
-			{
-				at[id].n[g] -= cut;
-				excess -= cut;
-			}
-		}
-	});
-	return at;
-}
-
-/** Everyone's latest values: for a completed tile whose history shows no completion. */
-function currentStates(tile, timelines)
-{
-	return statesAt(timelines, Infinity, Math.max(1, (tile.goals || []).length));
-}
-
-/** No frozen goal shows more than its target: the excess comes off whoever changed last. */
-function capAtTargets(tile, states, timelines)
-{
-	const lastChange = id => (timelines[id] && timelines[id].length ? timelines[id][timelines[id].length - 1].t : 0);
-	const latestFirst = Object.keys(states).sort((a, b) => lastChange(b) - lastChange(a));
-	(tile.goals || []).forEach((goal, g) =>
-	{
-		if (goal.manual || goal.distinct)
-		{
-			return;
-		}
-		let excess = goalValue(states, g, goal) - Number(goal.target || 0);
-		for (const id of latestFirst)
-		{
-			if (excess <= 0)
-			{
-				break;
-			}
-			const cut = Math.min(excess, Math.max(0, states[id].n[g]));
-			states[id].n[g] -= cut;
-			excess -= cut;
-		}
-	});
 }
 
 // ---------------------------------------------------------------------- board summaries
