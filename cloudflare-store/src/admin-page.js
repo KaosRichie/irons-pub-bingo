@@ -44,7 +44,7 @@ textarea.code{min-height:320px;font:12.5px/1.5 ui-monospace,Consolas,monospace}
 </style></head><body>
 <header class="top"><div class="wrap">
 <div class="brand"><img src="/assets/logo.png" alt="Irons Pub"><div><h1>Irons Pub Bingo</h1><div class="sub" id="sub">Admin</div></div></div>
-<div class="spacer"></div><span class="chip gold" id="eventChip"></span>
+<div class="spacer"></div><a class="btn sm ghost" href="/admin">&#8592; All events</a><span class="chip gold" id="eventChip"></span>
 <a class="btn sm" id="portalLink" target="_blank" rel="noopener">Open portal &#8599;</a>
 <button class="btn sm ghost" id="signOut" hidden>Sign out</button>
 </div></header>

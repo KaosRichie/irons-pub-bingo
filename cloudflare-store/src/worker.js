@@ -7,6 +7,8 @@
 //   POST /e/<code>/rpc          the portal's request form
 //   GET  /e/<code>/admin        the admin page
 //   POST /e/<code>/admin/api    admin actions (Authorization: Bearer <ADMIN_TOKEN>)
+//   GET  /admin                 the top-level admin page: every event
+//   POST /admin/api             its list of events (Authorization: Bearer <ADMIN_TOKEN>)
 //   GET  /assets/logo.png, /assets/icon.png
 //
 // A Durable Object handles one request at a time, so concurrent syncs simply queue for a
@@ -14,9 +16,12 @@
 // this file loads those records once and saves the ones a request changed.
 import { EventStore } from './store.js';
 import { adminPage } from './admin-page.js';
+import { topAdminPage } from './top-admin-page.js';
 import { portalPage } from './portal-page.js';
 import { eventData, summarizeBoard } from './data.js';
 import { LOGO_PNG, ICON_PNG } from './generated/assets.js';
+
+export { EventRegistry } from './registry.js';
 
 const EVENT_CODE = /^[a-z0-9-]{3,40}$/;
 // Pages allowed to call the admin API from a browser: Bingo Forge's "Send to store" on
@@ -27,6 +32,8 @@ const ASSETS = { '/assets/logo.png': LOGO_PNG, '/assets/icon.png': ICON_PNG };
 const USAGE_DAYS = 14;
 // Storage keys the Durable Object keeps for itself, next to the store's records.
 const OWN_KEYS = ['created', 'usage'];
+// An event in use reports its numbers to the registry at most this often.
+const REPORT_MS = 5 * 60 * 1000;
 
 export default {
 	async fetch(request, env)
@@ -37,6 +44,20 @@ export default {
 			const bytes = Uint8Array.from(atob(ASSETS[url.pathname]), c => c.charCodeAt(0));
 			return new Response(bytes, { headers: { 'content-type': 'image/png',
 				'cache-control': 'public, max-age=604800' } });
+		}
+		if (url.pathname === '/admin' || url.pathname === '/admin/')
+		{
+			return html(topAdminPage());
+		}
+		if (url.pathname === '/admin/api' && request.method === 'POST')
+		{
+			await request.text();
+			if (!authorized(request, env))
+			{
+				return json({ error: 'Wrong admin token' }, 401);
+			}
+			const list = await registry(env).fetch('https://registry/list');
+			return json({ result: await list.json() });
 		}
 		const match = url.pathname.match(/^\/e\/([^/]+)(\/.*)?$/);
 		if (!match)
@@ -87,7 +108,9 @@ export class BingoEvent
 		this.ready = this.ready || this.load();
 		await this.ready;
 		const url = new URL(request.url);
-		const rest = (url.pathname.match(/^\/e\/[^/]+(\/.*)?$/) || [])[1] || '';
+		const parts = url.pathname.match(/^\/e\/([^/]+)(\/.*)?$/) || [];
+		this.code = String(parts[1] || '').toLowerCase();
+		const rest = parts[2] || '';
 		// An event exists once an admin has saved something to it. Until then only its
 		// admin page answers, so a made-up code shows nothing and stores nothing.
 		if (!this.created && rest !== '/admin' && rest !== '/admin/api')
@@ -137,7 +160,7 @@ export class BingoEvent
 			{
 				// Read the body first: the runtime complains about an unread one.
 				const text = await request.text();
-				if (!this.authorized(request))
+				if (!authorized(request, this.env))
 				{
 					return json({ error: 'Wrong admin token' }, 401);
 				}
@@ -168,7 +191,48 @@ export class BingoEvent
 		const result = call();
 		await this.save();
 		this.sendOutbox();
+		this.report(false);
 		return json(result, 200, headers);
+	}
+
+	/**
+	 * Tells the registry this event's numbers for the top-level admin page: right away when
+	 * forced (created, changed by an admin, deleted), otherwise at most every REPORT_MS.
+	 */
+	report(force, deleted)
+	{
+		const now = Date.now();
+		if (!deleted && (!this.created || (!force && now - (this.lastReport || 0) < REPORT_MS)))
+		{
+			return;
+		}
+		this.lastReport = now;
+		const store = this.store;
+		const official = store.officialBoard();
+		const firstMeta = [...store.metas.values()].find(entry => entry.meta && entry.meta.name);
+		const players = new Set();
+		for (const row of store.members.values())
+		{
+			if (!store.departures.has(row.board + '|' + row.member))
+			{
+				players.add(row.member);
+			}
+		}
+		const summary = {
+			name: (official && official.name) || (firstMeta && firstMeta.meta.name) || null,
+			teams: store.config.teams.length,
+			players: players.size,
+			pending: [...store.requests.values()].filter(r => r.status === 'Pending').length,
+			requestsToday: this.usage.days[new Date().toISOString().slice(0, 10)] || 0,
+			lastActivity: new Date(now).toISOString()
+		};
+		const send = registry(this.env).fetch('https://registry/report', { method: 'POST',
+			body: JSON.stringify(deleted ? { code: this.code, deleted: true } : { code: this.code, summary }) })
+			.catch(err => console.error('Registry report failed', err));
+		if (this.state.waitUntil)
+		{
+			this.state.waitUntil(send);
+		}
 	}
 
 	/**
@@ -240,22 +304,6 @@ export class BingoEvent
 
 	// ------------------------------------------------------------------ admin
 
-	authorized(request)
-	{
-		const expected = String(this.env.ADMIN_TOKEN || '');
-		const given = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-		if (!expected || given.length !== expected.length)
-		{
-			return false;
-		}
-		let diff = 0;
-		for (let i = 0; i < expected.length; i++)
-		{
-			diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
-		}
-		return diff === 0;
-	}
-
 	/** Admin actions. Answers { result, alerts }: alerts are messages for the admin. */
 	async admin(body)
 	{
@@ -268,7 +316,17 @@ export class BingoEvent
 			result.isNew = true;
 			return json({ result, alerts: [] });
 		}
-		if (!this.created && action !== 'overview')
+		if (action === 'deleteEvent')
+		{
+			await this.state.storage.deleteAll();
+			this.created = false;
+			this.usage = { days: {} };
+			this.store = new EventStore([]);
+			this.report(true, true);
+			return json({ result: { ok: true }, alerts: [] });
+		}
+		const creating = !this.created;
+		if (creating)
 		{
 			this.created = true;
 			await this.state.storage.put({ created: true });
@@ -316,8 +374,35 @@ export class BingoEvent
 			}
 		});
 		const result = await response.json();
+		if (creating || ['saveTeams', 'saveBoardCode', 'resetStore', 'setRequestStatus', 'addAdjustment', 'deleteAdjustment'].indexOf(action) >= 0)
+		{
+			this.report(true);
+		}
 		return json({ result, alerts });
 	}
+}
+
+/** The one registry of events (see registry.js). */
+function registry(env)
+{
+	return env.EVENT_REGISTRY.get(env.EVENT_REGISTRY.idFromName('registry'));
+}
+
+/** Whether the request carries the admin password, compared in constant time. */
+function authorized(request, env)
+{
+	const expected = String(env.ADMIN_TOKEN || '');
+	const given = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+	if (!expected || given.length !== expected.length)
+	{
+		return false;
+	}
+	let diff = 0;
+	for (let i = 0; i < expected.length; i++)
+	{
+		diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+	}
+	return diff === 0;
 }
 
 function json(value, status, extra)

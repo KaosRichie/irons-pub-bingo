@@ -10,9 +10,17 @@ command = "node build.mjs"
 name = "BINGO_EVENT"
 class_name = "BingoEvent"
 
+[[durable_objects.bindings]]
+name = "EVENT_REGISTRY"
+class_name = "EventRegistry"
+
 # SQLite-backed Durable Objects are the kind the Workers free plan includes.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["BingoEvent"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["EventRegistry"]
 
 # The admin page's password. Set it once with:  npx wrangler secret put ADMIN_TOKEN

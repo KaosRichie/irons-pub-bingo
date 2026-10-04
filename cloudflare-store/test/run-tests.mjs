@@ -1,6 +1,6 @@
 // Runs the Worker module under Node with an in-memory stand-in for Durable Object storage.
 // No Cloudflare account, no network: node build.mjs && node test/run-tests.mjs
-import worker, { BingoEvent } from '../src/worker.js';
+import worker, { BingoEvent, EventRegistry } from '../src/worker.js';
 import { sha256 } from '../src/sha256.js';
 import { createHash } from 'node:crypto';
 
@@ -38,14 +38,23 @@ class FakeStorage
 		}
 	}
 
-	async list()
+	async list(options)
 	{
+		const prefix = (options && options.prefix) || '';
 		const out = new Map();
 		for (const key of [...this.map.keys()].sort())
 		{
-			out.set(key, structuredClone(this.map.get(key)));
+			if (key.startsWith(prefix))
+			{
+				out.set(key, structuredClone(this.map.get(key)));
+			}
 		}
 		return out;
+	}
+
+	async deleteAll()
+	{
+		this.map.clear();
 	}
 }
 
@@ -58,8 +67,15 @@ function createRuntime()
 	const storage = new Map(); // event code -> Map
 	let instances = new Map();
 	const webhooks = [];
+	const background = [];
+	const registryState = { storage: new FakeStorage(new Map()) };
+	const registryObject = new EventRegistry(registryState);
 	const env = {
 		ADMIN_TOKEN: TOKEN,
+		EVENT_REGISTRY: {
+			idFromName: name => name,
+			get: () => ({ fetch: (input, init) => registryObject.fetch(new Request(input, init)) })
+		},
 		BINGO_EVENT: {
 			idFromName: name => name,
 			get: id => ({
@@ -71,7 +87,7 @@ function createRuntime()
 						{
 							storage.set(id, new Map());
 						}
-						const state = { storage: new FakeStorage(storage.get(id)), waitUntil() {} };
+						const state = { storage: new FakeStorage(storage.get(id)), waitUntil: p => background.push(p) };
 						instances.set(id, new BingoEvent(state, env));
 					}
 					return instances.get(id).fetch(request);
@@ -91,6 +107,11 @@ function createRuntime()
 		restart()
 		{
 			instances = new Map();
+		},
+		/** Waits for the background work (registry reports) requests have left running. */
+		async settle()
+		{
+			await Promise.all(background.splice(0));
 		},
 		async request(path, init)
 		{
@@ -390,6 +411,40 @@ await test('Bingo Forge may call the admin API from its own pages only', async (
 	is(post.headers.get('access-control-allow-origin'), forge, 'admin answers carry the header for Forge');
 	const portal = await rt.request('/e/summer/data', { headers: { origin: forge } });
 	is(portal.headers.get('access-control-allow-origin'), null, 'other routes stay same-origin');
+});
+
+await test('the top-level admin page lists the events, and an event can be deleted', async () =>
+{
+	const rt = createRuntime();
+	ok((await (await rt.request('/admin')).text()).includes('All events'), 'the page is served');
+	const list = async token =>
+	{
+		await rt.settle();
+		const r = await rt.request('/admin/api', { method: 'POST', headers: { authorization: 'Bearer ' + (token === undefined ? TOKEN : token) },
+			body: JSON.stringify({ action: 'list' }) });
+		return { status: r.status, body: await r.json() };
+	};
+	is((await list('nope')).status, 401, 'the list needs the password');
+	is((await list()).body.result, [], 'no events yet');
+	await rt.admin('made-up', { action: 'overview' });
+	is((await list()).body.result, [], 'looking at a new event does not list it');
+
+	await setupEvent(rt, 'summer');
+	await rt.admin('summer', { action: 'saveBoardCode', code: '{"name":"Summer Bingo","id":"s","size":1,"tiles":[{"label":"x"}]}' });
+	await rt.post('summer', { board: 'id_s_red', rejoin: A, boardHash: createHash('sha256').update('{"name":"Summer Bingo","id":"s","size":1,"tiles":[{"label":"x"}]}').digest('hex'),
+		members: { [A]: member('Alice', { 0: tile(1000, [1]) }) }, request: { member: A, player: 'Alice', tile: 1, add: 1 } });
+	await setupEvent(rt, 'winter');
+	let events = (await list()).body.result;
+	is(events.map(e => e.code).sort(), ['summer', 'winter'], 'both events are listed');
+	const summer = events.find(e => e.code === 'summer');
+	is([summer.name, summer.teams], ['Summer Bingo', 2], 'with their board name and teams');
+
+	is((await rt.admin('winter', { action: 'deleteEvent' })).body.result, { ok: true }, 'deleted');
+	events = (await list()).body.result;
+	is(events.map(e => e.code), ['summer'], 'and gone from the list');
+	is((await rt.request('/e/winter')).status, 404, 'its address shows nothing again');
+	is(rt.storage.get('winter').size, 0, 'and nothing of it is stored');
+	is((await rt.admin('summer', { action: 'deleteEvent' }, 'nope')).status, 401, 'deleting needs the password');
 });
 
 // ---------------------------------------------------------------- report
