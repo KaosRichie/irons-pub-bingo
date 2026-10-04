@@ -25,7 +25,6 @@ nav.side .ic{width:20px;text-align:center}nav.side .badge{margin-left:auto}
 .reqrow .acts{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .reqrow .acts .row{gap:6px}.who b{display:block;overflow-wrap:anywhere}.what{overflow-wrap:anywhere}
 .boardwrap{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr);gap:18px;align-items:start}
-.goal{padding:10px 0;border-top:1px solid var(--line)}.goal:first-child{border-top:0}.goal .bar{margin:7px 0 8px}.contrib{display:flex;flex-wrap:wrap;gap:6px}
 .preview{padding:12px 14px;border-radius:10px;background:rgba(226,173,72,.08);border:1px solid var(--gold3);color:var(--ink);margin-top:14px}
 .teamrow{display:grid;grid-template-columns:130px minmax(0,1fr) minmax(0,1.4fr) 40px;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
 .teamrow:first-child{border-top:0}.pw{position:relative}.pw input{padding-right:40px}.pw button{position:absolute;right:4px;top:4px}

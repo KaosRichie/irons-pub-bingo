@@ -12,8 +12,6 @@ export function portalPage()
 .team .pts{font:700 12px var(--sans);color:var(--muted)}.team.on .pts{color:var(--gold)}
 .medal{font-size:15px}
 .stats{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 14px;color:var(--ink2)}.stats b{color:var(--gold2);font:700 18px var(--serif)}
-.goal{padding:10px 0;border-top:1px solid var(--line)}.goal:first-child{border-top:0}
-.goal .bar{margin:7px 0 8px}.contrib{display:flex;flex-wrap:wrap;gap:6px}
 .detail h2{margin-bottom:6px;overflow-wrap:anywhere}
 .stand{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}.stand:first-child{border-top:0}
 .stand .n{width:26px;text-align:center;font:700 14px var(--serif);color:var(--muted)}

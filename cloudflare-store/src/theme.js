@@ -78,6 +78,7 @@ label.field{display:block}label.field>span{display:block;font-size:12.5px;font-w
 .link span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.link:hover{background:rgba(226,173,72,.2);color:#fff3c8}
 .empty{padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line2);border-radius:var(--radius)}
 .toast{position:fixed;right:18px;bottom:18px;z-index:99;display:flex;flex-direction:column;gap:8px;max-width:min(440px,calc(100vw - 36px))}
+.goal{padding:10px 0;border-top:1px solid var(--line)}.goal:first-child{border-top:0}.goal .bar{margin:7px 0 8px}.contrib{display:flex;flex-wrap:wrap;gap:6px}
 .toast div{background:var(--panel2);border:1px solid var(--line2);border-left:4px solid var(--gold);border-radius:10px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.45);white-space:pre-wrap;overflow-wrap:anywhere;animation:in .2s ease-out}
 .toast div.bad{border-left-color:var(--red)}.toast div.ok{border-left-color:var(--ok)}
 @keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}

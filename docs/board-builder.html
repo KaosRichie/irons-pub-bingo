@@ -564,8 +564,6 @@ function validateTile(t) {
   return errs;
 }
 
-// ---------- export / import ----------
-function cleanList(v) { return (v || []).map(s => s.trim()).filter(Boolean); }
 // ---------- item icons (RuneLite's public cache dump; best effort, offline-safe) ----------
 let itemNameMap = null;      // lowercased name -> lowest item id (icon previews)
 let itemIdsByName = null;    // lowercased name -> {name, ids: every id carrying it}
@@ -613,6 +611,8 @@ function iconImg(icon, size) {
   return img;
 }
 
+// ---------- export / import ----------
+function cleanList(v) { return (v || []).map(s => s.trim()).filter(Boolean); }
 function cleanIntList(list) {
   return (list || []).map(v => parseInt(v, 10)).filter(v => v > 0);
 }

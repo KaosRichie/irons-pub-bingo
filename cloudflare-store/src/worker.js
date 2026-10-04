@@ -528,7 +528,7 @@ export class BingoEvent
 		const rows = [];
 		for (const team of teams)
 		{
-			const code = String(team.code || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+			const code = this.store.teamCodeOf(team.code);
 			if (!code)
 			{
 				continue;

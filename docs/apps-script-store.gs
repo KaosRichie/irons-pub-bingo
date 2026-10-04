@@ -716,14 +716,19 @@ function readTeamRows()
 	return cachedConfig('teams', loadTeamRows);
 }
 
+/** A Teams tab code as the plugin normalizes team codes. */
+function teamCodeOf(cell)
+{
+	return String(cell || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+}
+
 function loadTeamRows()
 {
 	var values = getSheet(TEAMS_SHEET, TEAMS_HEADERS).getDataRange().getValues();
 	var teams = [];
 	for (var i = 1; i < values.length; i++)
 	{
-		var code = String(values[i][0] || '').trim().toLowerCase()
-			.replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+		var code = teamCodeOf(values[i][0]);
 		if (code)
 		{
 			teams.push({ code: code, name: String(values[i][1] || '').trim() });
@@ -745,7 +750,7 @@ function teamsWithMembers(boardKey)
 		return teams;
 	}
 	var rows = readRows(getSheet(STORE_SHEET, STORE_HEADERS));
-	var marks = allDepartures();
+	var marks = readDepartures().marks;
 	for (var i = 0; i < teams.length; i++)
 	{
 		var suffix = '_' + teams[i].code;
@@ -812,12 +817,6 @@ function hasTeam(teams, code)
 	return false;
 }
 
-/** Every departure mark in the sheet, keyed "board|member" - one read for all scopes. */
-function allDepartures()
-{
-	return readDepartures().marks;
-}
-
 /**
  * The Removed tab in one read: marks ("board|member" -> true) and, for the "left"
  * marks a rejoin may clear, their sheet row numbers.
@@ -846,11 +845,11 @@ function readDepartures()
 
 /**
  * Member ids that left this board scope; their data is kept but stops counting.
- * Pass preloaded allDepartures() marks to avoid re-reading the Removed tab.
+ * Pass preloaded readDepartures().marks marks to avoid re-reading the Removed tab.
  */
 function removedFor(board, marks)
 {
-	marks = marks || allDepartures();
+	marks = marks || readDepartures().marks;
 	var removed = {};
 	var prefix = board + '|';
 	for (var key in marks)
@@ -1223,8 +1222,7 @@ function teamInfoFor(teamCode)
 	var values = getSheet(TEAMS_SHEET, TEAMS_HEADERS).getDataRange().getValues();
 	for (var i = 1; i < values.length; i++)
 	{
-		var code = String(values[i][0] || '').trim().toLowerCase()
-			.replace(/[^a-z0-9-]+/g, '-').replace(/(^-+|-+$)/g, '');
+		var code = teamCodeOf(values[i][0]);
 		if (code && code === teamCode)
 		{
 			var url = String(values[i][2] || '').trim();
