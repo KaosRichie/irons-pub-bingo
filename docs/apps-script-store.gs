@@ -1268,9 +1268,9 @@ function announceApproval(row, scope, tileIndex, doneBefore)
 				doneCount += doneAfter[t] ? 1 : 0;
 			}
 			content = ':tada: **' + row[2] + '** completed **' + tileLabelOf(row, scope, tileIndex)
-				+ '** (admin verified) for team **' + teamName + '** — '
-				+ (scope.meta.name || 'Bingo board')
-				+ ' (' + doneCount + '/' + scope.meta.tiles.length + ' tiles)'
+				+ '** (admin verified) for team **' + teamName + '**'
+				+ '\n' + (scope.meta.name || 'Bingo board') + ': '
+				+ doneCount + '/' + scope.meta.tiles.length + ' tiles'
 				+ '\nCredit: ' + creditText(row, scope);
 			var bonus = bonusLineFor(scope.meta, doneBefore, doneAfter);
 			if (bonus)

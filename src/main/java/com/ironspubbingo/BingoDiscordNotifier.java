@@ -311,7 +311,7 @@ class BingoDiscordNotifier
 		StringBuilder content = new StringBuilder();
 		content.append(":tada: **").append(player == null ? "Someone" : player).append("** completed **")
 			.append(String.join("**, **", tileLabels)).append("**").append(teamSuffix(team));
-		content.append(" — ").append(boardName).append(" (").append(completed).append('/').append(total).append(" tiles)");
+		content.append("\n").append(boardName).append(": ").append(completed).append('/').append(total).append(" tiles");
 		if (lootDetail != null)
 		{
 			content.append("\n:package: ").append(lootDetail);
