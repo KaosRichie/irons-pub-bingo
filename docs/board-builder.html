@@ -222,6 +222,10 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 .namewarn { color: var(--gold); font-size: 12.5px; margin-top: 3px; }
 .namewarn button { padding: 0 6px; font-size: 12.5px; margin-left: 4px; }
 .sugsrc { margin-left: auto; color: #888; font-size: 11.5px; }
+.tester { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 4px; padding: 8px; }
+.tester input { width: 100%; }
+.tester .verdict { font-size: 13px; margin-top: 4px; }
+.tester mark { background: rgba(245,184,61,.35); color: var(--ink); border-radius: 2px; }
 .sendbox { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .sendbox h3 { font-family: var(--display); font-size: 14px; color: var(--gold); margin: 0 0 4px; letter-spacing: .04em; }
 .sendbox .row input { width: 100%; }
@@ -458,6 +462,7 @@ function templatePicker(onPick) {
   return box;
 }
 let templatesOpen = false;
+const chatSamples = {};   // goal index -> the message typed into the chat tester (not saved)
 
 function randomId() {
   const bytes = new Uint8Array(4);
@@ -1322,9 +1327,58 @@ function renderGoal(tile, goal, gi) {
     box.appendChild(field("Agility course", sel, "Laps count like RuneLite's lap counter."));
   }
   if (goal.type === "CHAT") {
-    box.appendChild(field("Game message pattern (regex)",
-      textInput(goal.pattern, v => goal.pattern = v, "Corrupted challenge duration: [0-6]:[0-5][0-9]"),
-      "Counts once per matching game message."));
+    const templates = dataList("chatTemplates");
+    if (templates.length) {
+      const pick = document.createElement("select");
+      pick.innerHTML = "<option value=''>Start from a common message...</option>"
+        + templates.map((t, i) => "<option value='" + i + "'>" + t.label.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</option>").join("");
+      pick.addEventListener("change", () => {
+        const t = templates[+pick.value];
+        if (!t) return;
+        goal.pattern = t.pattern;
+        if (!goal.name) goal.name = t.label;
+        chatSamples[gi] = t.sample;
+        saveDraft(); renderEditor(); renderGrid();
+      });
+      box.appendChild(field("Ready-made patterns", pick));
+    }
+    const patternInput = textInput(goal.pattern, v => { goal.pattern = v; runTest(); }, "Corrupted challenge duration: [0-6]:[0-5][0-9]");
+    box.appendChild(field("Game message pattern (regex)", patternInput, "Counts once per matching game message."));
+    // Tester: a sample message, checked against the pattern as the plugin would (tags removed,
+    // match anywhere in the line). Browser regex is close to Java's for patterns like these.
+    const tester = document.createElement("div");
+    tester.className = "tester";
+    const sample = document.createElement("input");
+    sample.type = "text";
+    sample.placeholder = "Paste a game message to test, e.g. Corrupted challenge duration: 6:41";
+    sample.value = chatSamples[gi] || "";
+    const verdict = document.createElement("div");
+    verdict.className = "verdict";
+    tester.append(sample, verdict);
+    function runTest() {
+      const text = sample.value.replace(/<[^>]*>/g, "").trim();
+      chatSamples[gi] = sample.value;
+      verdict.innerHTML = "";
+      if (!goal.pattern) { verdict.textContent = "Write a pattern first."; verdict.style.color = "var(--muted)"; return; }
+      let re;
+      try { re = new RegExp(goal.pattern); }
+      catch (e) { verdict.textContent = "The pattern has an error: " + e.message; verdict.style.color = "var(--red)"; return; }
+      if (!text) { verdict.textContent = "Paste a message above to check the pattern."; verdict.style.color = "var(--muted)"; return; }
+      const m = re.exec(text);
+      if (!m) { verdict.textContent = "\u2717 No match. This message would not count."; verdict.style.color = "var(--red)"; return; }
+      verdict.style.color = "var(--green)";
+      verdict.append("\u2713 Matches, this counts: ");
+      const shown = document.createElement("span");
+      shown.style.color = "var(--ink)";
+      shown.append(text.slice(0, m.index));
+      const mk = document.createElement("mark");
+      mk.textContent = m[0];
+      shown.append(mk, text.slice(m.index + m[0].length));
+      verdict.append(shown);
+    }
+    sample.addEventListener("input", runTest);
+    runTest();
+    box.appendChild(field("Test the pattern", tester));
     const regionInput = listInput((goal.regions || []).map(String),
       v => { goal.regions = v.map(tok => {
         const pair = tok.match(/^(\d+)\s+(\d+)$/);
