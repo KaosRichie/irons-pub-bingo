@@ -212,6 +212,13 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 .rchip b { font-family: var(--mono); font-weight: 500; color: var(--gold); font-size: 12px; }
 .rchip button { border: 0; background: transparent; padding: 0 4px; color: var(--muted); font-size: 14px; line-height: 1; }
 .rchip button:hover { color: var(--red); }
+#iconDialog { width: min(720px, 94vw); }
+#iconDialog input[type=text] { width: 100%; }
+.icongrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; margin-top: 8px; max-height: 360px; overflow-y: auto; }
+.icongrid button { aspect-ratio: 1; padding: 2px; display: flex; align-items: center; justify-content: center; background: var(--inset); }
+.icongrid button:hover { background: var(--panel-2); }
+.icongrid img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
+.iconsection { color: var(--muted); font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; margin-top: 10px; }
 .sendbox { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .sendbox h3 { font-family: var(--display); font-size: 14px; color: var(--gold); margin: 0 0 4px; letter-spacing: .04em; }
 .sendbox .row input { width: 100%; }
@@ -317,6 +324,19 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   </div>
 </details>
 
+<dialog id="iconDialog">
+  <h2>Pick an icon</h2>
+  <input type="text" id="iconSearch" placeholder="Search items: whip, pet, cape..." autocomplete="off">
+  <div id="iconSuggest"></div>
+  <div class="iconsection" id="iconResultsHead"></div>
+  <div class="icongrid" id="iconResults"></div>
+  <div class="dactions">
+    <span class="hint" id="iconHover" style="margin-right:auto"></span>
+    <button id="btnIconClear" class="ghost">No icon</button>
+    <button id="btnIconClose" class="ghost">Close</button>
+  </div>
+</dialog>
+
 <dialog id="mapDialog">
   <div class="maphead">
     <h2>Pick map regions</h2>
@@ -350,6 +370,7 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   </div>
 </dialog>
 
+<script src="forge-data.js"></script>
 <script>
 'use strict';
 
@@ -390,7 +411,7 @@ const TEMPLATES = [
   { label: "10 superior slayer monsters", icon: "Enchanted gem", goals: [{ type: "CHAT",
     pattern: "A superior foe has appeared", regions: [], count: 10 }] },
   { label: "5 elite clues", icon: "Clue scroll (elite)", goals: [{ type: "CHAT",
-    pattern: "You have completed \\d+ elite Treasure Trail", regions: [], count: 5 }] },
+    pattern: "You have completed [\\d,]+ elite Treasure Trail", regions: [], count: 5 }] },
   { label: "Whip or trident (either)", icon: "Abyssal whip", mode: "ANY", goals: [
     { type: "DROP", items: ["Abyssal whip"], sources: [], count: 1 },
     { type: "DROP", items: ["Kraken tentacle", "Trident of the seas (full)"], sources: ["Kraken"], count: 1 }] },
@@ -1103,10 +1124,21 @@ function renderEditor() {
     else if (itemNameMap) { iconPreview.textContent = "?"; }
   }
   refreshIconPreview();
+  iconPreview.style.cursor = "pointer";
+  iconPreview.title = "Browse icons";
+  iconPreview.addEventListener("click", () => openIconPicker(tile, id => {
+    tile.icon = id ? String(id) : "";
+    saveDraft(); renderGrid(); renderEditor();
+  }));
+  const browse = document.createElement("button");
+  browse.type = "button"; browse.className = "sm"; browse.textContent = "Browse";
+  browse.style.alignSelf = "center";
+  browse.addEventListener("click", () => iconPreview.click());
   const pointsField = field("Points", numberInput(tile.points, v => tile.points = v, 0),
     "0 = no points");
   iconRow.appendChild(iconField);
   iconRow.appendChild(iconPreview);
+  iconRow.appendChild(browse);
   iconRow.appendChild(pointsField);
   editor.appendChild(iconRow);
 
@@ -1347,6 +1379,93 @@ function renderGoal(tile, goal, gi) {
   }
   return box;
 }
+
+// ---------- icon picker ----------
+let iconOnPick = null;
+/** Icons that fit the tile: its items, pets and bosses, as item ids. */
+function suggestedIcons(tile) {
+  const out = [];
+  const add = id => { if (id && out.indexOf(id) < 0) out.push(id); };
+  const byName = n => itemNameMap && !/[*]/.test(n) ? itemNameMap[String(n).toLowerCase()] : null;
+  const data = window.FORGE_DATA || {};
+  tile.goals.forEach(g => {
+    (g.itemIds || []).forEach(add);
+    (g.items || []).forEach(n => add(byName(n)));
+    (g.pets || []).forEach(n => add(byName(n)));
+    (g.npcs || []).forEach(n => {
+      const kc = (data.kc || []).find(k => k.name.toLowerCase() === String(n).toLowerCase());
+      if (kc) add(kc.icon);
+    });
+  });
+  const words = (tile.label || "").toLowerCase().split(/[^a-z']+/).filter(w => w.length > 3);
+  if (itemNameMap && words.length) {
+    Object.keys(itemNameMap).filter(k => words.some(w => k.split(/[ (]/).some(part => part === w || part === w + "'s"))).slice(0, 12)
+      .forEach(k => add(itemNameMap[k]));
+  }
+  return out.slice(0, 24);
+}
+function iconButton(id, name) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.title = (name || "") + " (" + id + ")";
+  const img = document.createElement("img");
+  img.src = "https://static.runelite.net/cache/item/icon/" + id + ".png";
+  img.loading = "lazy";
+  img.addEventListener("error", () => b.remove());
+  b.appendChild(img);
+  b.addEventListener("mouseenter", () => { $("iconHover").textContent = b.title; });
+  b.addEventListener("click", () => { if (iconOnPick) iconOnPick(id); $("iconDialog").close(); });
+  return b;
+}
+function nameForId(id) {
+  if (!itemIdsByName) return "";
+  for (const k in itemIdsByName) if (itemIdsByName[k].ids.indexOf(id) >= 0) return itemIdsByName[k].name;
+  return "";
+}
+function openIconPicker(tile, onPick) {
+  iconOnPick = onPick;
+  ensureItemNames();
+  $("iconSearch").value = "";
+  $("iconHover").textContent = "";
+  const sug = $("iconSuggest");
+  sug.innerHTML = "";
+  const ids = suggestedIcons(tile);
+  if (ids.length) {
+    const h = document.createElement("div");
+    h.className = "iconsection"; h.textContent = "Suggested for this tile";
+    const g = document.createElement("div");
+    g.className = "icongrid";
+    ids.forEach(id => g.appendChild(iconButton(id, nameForId(id))));
+    sug.appendChild(h); sug.appendChild(g);
+  }
+  searchIcons();
+  $("iconDialog").showModal();
+  $("iconSearch").focus();
+}
+function searchIcons() {
+  const q = $("iconSearch").value.trim().toLowerCase();
+  const grid = $("iconResults");
+  grid.innerHTML = "";
+  if (q.length < 2) { $("iconResultsHead").textContent = "Type to search every item"; return; }
+  if (!itemIdsByName) {
+    $("iconResultsHead").textContent = "Loading the item list...";
+    setTimeout(() => { if ($("iconDialog").open) searchIcons(); }, 600);
+    return;
+  }
+  const keys = Object.keys(itemIdsByName).filter(k => k.includes(q));
+  keys.sort((a, b) => (a === q ? 0 : a.startsWith(q) ? 1 : 2) - (b === q ? 0 : b.startsWith(q) ? 1 : 2) || a.localeCompare(b));
+  let shown = 0;
+  for (const k of keys) {
+    // One icon per name: the variants of an item almost always share the picture.
+    grid.appendChild(iconButton(itemIdsByName[k].ids[0], itemIdsByName[k].name));
+    if (++shown >= 120) break;
+  }
+  $("iconResultsHead").textContent = shown ? (keys.length > shown ? "First " + shown + " of " + keys.length + " matches" : shown + " matches") : "No items match";
+}
+$("iconSearch").addEventListener("input", searchIcons);
+$("btnIconClose").addEventListener("click", () => $("iconDialog").close());
+$("btnIconClear").addEventListener("click", () => { if (iconOnPick) iconOnPick(null); $("iconDialog").close(); });
+$("iconDialog").addEventListener("close", () => { iconOnPick = null; });
 
 // ---------- region map ----------
 // Place names the map reported for regions, kept on this computer to label the chips.
