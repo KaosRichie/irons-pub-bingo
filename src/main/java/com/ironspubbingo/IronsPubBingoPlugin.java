@@ -171,6 +171,9 @@ public class IronsPubBingoPlugin extends Plugin
 	private final Set<String> removedMembers = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	/** Tiles with XP-only changes waiting for the next throttled team broadcast. */
 	private final Set<Integer> pendingBroadcast = new HashSet<>();
+	/** When we last asked the store whether a departed teammate is back (see REJOIN_CHECK_MS). */
+	private long lastRejoinCheckMs;
+	private static final long REJOIN_CHECK_MS = 10_000;
 	private long lastSaveMs;
 	private long lastBroadcastMs;
 	private long lastStorePostMs;
@@ -2248,6 +2251,17 @@ public class IronsPubBingoPlugin extends Plugin
 					refreshPanel();
 				}
 				return;
+			}
+			if (removedMembers.contains(update.member) && teamStore.isConfigured()
+				&& System.currentTimeMillis() - lastRejoinCheckMs > REJOIN_CHECK_MS)
+			{
+				// Someone we think left is sending on the team's party: they most likely came
+				// back. Only the store can clear a departure, so ask it now instead of hiding
+				// them until the next poll.
+				lastRejoinCheckMs = System.currentTimeMillis();
+				syncStore(true);
+				// Their own rejoin may reach the store a moment after this: look once more.
+				executor.schedule(() -> clientThread.invokeLater(() -> syncStore(true)), 5, TimeUnit.SECONDS);
 			}
 			applyMemberStates(Map.of(update.member, memberState(update.name, update.tiles)));
 		});
