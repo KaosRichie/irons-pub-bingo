@@ -45,6 +45,8 @@ class BingoBoardWindow extends JFrame
 	private final JScrollPane detailScroll;
 	private final JPanel detailCards = new JPanel(new java.awt.CardLayout());
 	private final JLabel detailHint = new JLabel();
+	private final javax.swing.JButton detailsToggle = new javax.swing.JButton();
+	private boolean detailsShown;
 	/** Below this body width the detail moves under the board instead of beside it. */
 	private static final int SIDE_BY_SIDE_MIN_WIDTH = 720;
 	private final List<BingoTileCell> cells = new ArrayList<>();
@@ -114,6 +116,7 @@ class BingoBoardWindow extends JFrame
 		body.setOpaque(false);
 		body.add(grid);
 		body.add(detailCards);
+		detailCards.setVisible(detailsShown);
 		content.add(body, BorderLayout.CENTER);
 		setContentPane(content);
 
@@ -200,6 +203,23 @@ class BingoBoardWindow extends JFrame
 		repaint();
 	}
 
+	private void setDetailsShown(boolean shown)
+	{
+		detailsShown = shown;
+		plugin.setPopOutDetailsShown(shown);
+		updateDetailsToggle();
+		detailCards.setVisible(shown);
+		detailCards.getParent().revalidate();
+		detailCards.getParent().repaint();
+	}
+
+	private void updateDetailsToggle()
+	{
+		detailsToggle.setText(detailsShown ? "Hide details" : "Show details");
+		detailsToggle.setToolTipText(detailsShown ? "Give the whole window to the board"
+			: "Show the selected tile's goals, contributors and actions");
+	}
+
 	private void showDetail(boolean tileSelected)
 	{
 		((java.awt.CardLayout) detailCards.getLayout()).show(detailCards, tileSelected ? "detail" : "hint");
@@ -221,7 +241,11 @@ class BingoBoardWindow extends JFrame
 			int h = parent.getHeight();
 			int detailWidth = DETAIL_WIDTH + 22 + detailScroll.getVerticalScrollBar().getPreferredSize().width;
 			java.awt.Rectangle boardArea;
-			if (w >= SIDE_BY_SIDE_MIN_WIDTH)
+			if (!detailsShown)
+			{
+				boardArea = new java.awt.Rectangle(0, 0, w, h);
+			}
+			else if (w >= SIDE_BY_SIDE_MIN_WIDTH)
 			{
 				detailCards.setBounds(w - detailWidth, 0, detailWidth, h);
 				boardArea = new java.awt.Rectangle(0, 0, w - detailWidth - GAP, h);
@@ -285,7 +309,18 @@ class BingoBoardWindow extends JFrame
 		header.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createMatteBorder(0, 0, 1, 0, BingoUi.COLOR_GOLD.darker()),
 			BorderFactory.createEmptyBorder(2, 2, 10, 2)));
-		header.add(text, BorderLayout.NORTH);
+		detailsShown = plugin.popOutDetailsShown();
+		detailsToggle.setFocusable(false);
+		detailsToggle.addActionListener(e -> setDetailsShown(!detailsShown));
+		updateDetailsToggle();
+		JPanel toggleHolder = new JPanel(new BorderLayout());
+		toggleHolder.setOpaque(false);
+		toggleHolder.add(detailsToggle, BorderLayout.NORTH);
+		JPanel top = new JPanel(new BorderLayout(10, 0));
+		top.setOpaque(false);
+		top.add(text, BorderLayout.CENTER);
+		top.add(toggleHolder, BorderLayout.EAST);
+		header.add(top, BorderLayout.NORTH);
 		header.add(chips, BorderLayout.CENTER);
 		return header;
 	}

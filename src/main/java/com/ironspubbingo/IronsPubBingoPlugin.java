@@ -369,6 +369,17 @@ public class IronsPubBingoPlugin extends Plugin
 		return config.popOutAlwaysOnTop();
 	}
 
+	/** Whether the pop-out shows its tile detail pane; remembered between sessions. */
+	boolean popOutDetailsShown()
+	{
+		return !"false".equals(configManager.getConfiguration(IronsPubBingoConfig.GROUP, "popOutDetails"));
+	}
+
+	void setPopOutDetailsShown(boolean shown)
+	{
+		configManager.setConfiguration(IronsPubBingoConfig.GROUP, "popOutDetails", String.valueOf(shown));
+	}
+
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
