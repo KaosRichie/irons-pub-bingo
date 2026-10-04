@@ -199,6 +199,19 @@ dialog h2 { font-family: var(--display); color: var(--gold); font-size: 17px; ma
 dialog textarea { width: 100%; height: 300px; resize: vertical; }
 dialog .dactions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; align-items: center; }
 dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
+#mapDialog { width: min(1100px, 95vw); height: min(760px, 90vh); padding: 0; overflow: hidden; }
+#mapDialog[open] { display: flex; flex-direction: column; }
+#mapDialog .maphead { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+#mapDialog .maphead h2 { margin: 0; flex: 1; }
+#mapDialog iframe { flex: 1; border: 0; width: 100%; background: #000; }
+.regionchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: center; }
+.rchip {
+  display: inline-flex; align-items: center; gap: 5px; background: var(--inset); border: 1px solid var(--line);
+  border-radius: 99px; padding: 1px 4px 1px 9px; font-size: 13px;
+}
+.rchip b { font-family: var(--mono); font-weight: 500; color: var(--gold); font-size: 12px; }
+.rchip button { border: 0; background: transparent; padding: 0 4px; color: var(--muted); font-size: 14px; line-height: 1; }
+.rchip button:hover { color: var(--red); }
 .sendbox { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .sendbox h3 { font-family: var(--display); font-size: 14px; color: var(--gold); margin: 0 0 4px; letter-spacing: .04em; }
 .sendbox .row input { width: 100%; }
@@ -303,6 +316,15 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     <p><b>Teams:</b> players who connect with the same team code combine progress. Counts add up across members ("2 uniques" can be one each from two people), "distinct" item lists count each different item once per team, and XP/kill counts sum. Give each team its own code and (optionally) its own Discord webhook for completion screenshots.</p>
   </div>
 </details>
+
+<dialog id="mapDialog">
+  <div class="maphead">
+    <h2>Pick map regions</h2>
+    <span class="hint" id="mapCount"></span>
+    <button id="btnMapDone" class="primary">Done</button>
+  </div>
+  <iframe id="mapFrame" title="Region map"></iframe>
+</dialog>
 
 <dialog id="ioDialog">
   <h2 id="dialogTitle">Board code</h2>
@@ -1268,20 +1290,49 @@ function renderGoal(tile, goal, gi) {
     box.appendChild(field("Game message pattern (regex)",
       textInput(goal.pattern, v => goal.pattern = v, "Corrupted challenge duration: [0-6]:[0-5][0-9]"),
       "Counts once per matching game message."));
-    box.appendChild(field("Map region ids (optional)", listInput((goal.regions || []).map(String),
-      v => goal.regions = v.map(tok => {
+    const regionInput = listInput((goal.regions || []).map(String),
+      v => { goal.regions = v.map(tok => {
         const pair = tok.match(/^(\d+)\s+(\d+)$/);
         if (pair) return Math.floor(pair[1] / 64) * 256 + Math.floor(pair[2] / 64);
         return parseInt(tok, 10);
-      }).filter(x => x > 0), "6038  or  2571 2240"),
-      (() => {
-        const hint = document.createElement("span");
-        const link = document.createElement("a");
-        link.href = "region-map.html"; link.target = "_blank"; link.textContent = "region map";
-        hint.append("Only count the message in these regions. Find ids on the ", link,
-          ", or paste x y tile coordinates.");
-        return hint;
-      })()));
+      }).filter(x => x > 0); drawChips(); }, "6038  or  2571 2240");
+    const chips = document.createElement("div");
+    chips.className = "regionchips";
+    function drawChips() {
+      chips.innerHTML = "";
+      const pick = document.createElement("button");
+      pick.type = "button"; pick.className = "sm"; pick.textContent = "Pick on map";
+      pick.addEventListener("click", () => openRegionMap(goal, ids => {
+        goal.regions = ids;
+        regionInput.value = ids.join(", ");
+        saveDraft(); drawChips();
+      }));
+      chips.appendChild(pick);
+      (goal.regions || []).forEach(id => {
+        const c = document.createElement("span");
+        c.className = "rchip";
+        const num = document.createElement("b");
+        num.textContent = id;
+        c.appendChild(num);
+        const name = regionNames()[id];
+        if (name) c.appendChild(document.createTextNode(name));
+        const x = document.createElement("button");
+        x.type = "button"; x.textContent = "×"; x.title = "Remove this region";
+        x.addEventListener("click", () => {
+          goal.regions = goal.regions.filter(r => r !== id);
+          regionInput.value = goal.regions.join(", ");
+          saveDraft(); drawChips();
+        });
+        c.appendChild(x);
+        chips.appendChild(c);
+      });
+    }
+    drawChips();
+    const regionWrap = document.createElement("div");
+    regionWrap.appendChild(regionInput);
+    regionWrap.appendChild(chips);
+    box.appendChild(field("Map region ids (optional)", regionWrap,
+      "Only count the message in these regions. Pick them on the map, type ids, or paste x y tile coordinates."));
   }
   if (goal.type === "MANUAL") {
     const p = document.createElement("p");
@@ -1296,6 +1347,33 @@ function renderGoal(tile, goal, gi) {
   }
   return box;
 }
+
+// ---------- region map ----------
+// Place names the map reported for regions, kept on this computer to label the chips.
+function regionNames() {
+  try { return JSON.parse(localStorage.getItem("bingo-forge-region-names") || "{}"); } catch (e) { return {}; }
+}
+let mapOnPick = null;
+function openRegionMap(goal, onPick) {
+  mapOnPick = onPick;
+  const have = (goal.regions || []).join(",");
+  $("mapFrame").src = "region-map.html?pick=1" + (have ? "&have=" + have : "");
+  $("mapCount").textContent = regionCountText((goal.regions || []).length);
+  $("mapDialog").showModal();
+}
+function regionCountText(n) { return n ? n + (n === 1 ? " region picked" : " regions picked") : "Click regions on the map"; }
+window.addEventListener("message", e => {
+  const d = e.data;
+  if (!d || d.type !== "bingo-regions" || e.source !== $("mapFrame").contentWindow || !mapOnPick) return;
+  const ids = (d.regions || []).map(v => parseInt(v, 10)).filter(v => v > 0);
+  const names = regionNames();
+  Object.keys(d.names || {}).forEach(k => { names[k] = String(d.names[k]).slice(0, 60); });
+  try { localStorage.setItem("bingo-forge-region-names", JSON.stringify(names)); } catch (err) {}
+  $("mapCount").textContent = regionCountText(ids.length);
+  mapOnPick(ids);
+});
+$("btnMapDone").addEventListener("click", () => $("mapDialog").close());
+$("mapDialog").addEventListener("close", () => { mapOnPick = null; $("mapFrame").src = "about:blank"; });
 
 // ---------- dialogs ----------
 let dialogMode = "export";
