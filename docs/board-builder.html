@@ -233,8 +233,6 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 .icongrid button:hover { background: var(--panel-2); }
 .icongrid img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
 .iconsection { color: var(--muted); font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; margin-top: 10px; }
-.namewarn { color: var(--gold); font-size: 12.5px; margin-top: 3px; }
-.namewarn button { padding: 0 6px; font-size: 12.5px; margin-left: 4px; }
 .sugsrc { margin-left: auto; color: #888; font-size: 11.5px; }
 .tester { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 4px; padding: 8px; }
 .tester input { width: 100%; }
@@ -1458,26 +1456,6 @@ function renderGoal(tile, goal, gi) {
 }
 
 // ---------- name pickers ----------
-// Names people often type that never match: what the game or the Loot Tracker calls it instead.
-const KC_TRAPS = {
-  "wintertodt": "subdued Wintertodt", "the hueycoatl": "Hueycoatl", "the leviathan": "Leviathan",
-  "the whisperer": "Whisperer", "the nightmare": "Nightmare", "jad": "TzTok-Jad", "fight caves": "TzTok-Jad",
-  "zuk": "TzKal-Zuk", "inferno": "TzKal-Zuk", "moons of peril": "Lunar Chest", "perilous moons": "Lunar Chest",
-  "bryophyta": "Bryophyta chests opened", "hunllef": "Gauntlet", "crystalline hunllef": "Gauntlet",
-  "corrupted hunllef": "Corrupted Gauntlet", "colosseum": "Sol Heredit", "fortis colosseum": "Sol Heredit",
-  "cox": "Chambers of Xeric", "tob": "Theatre of Blood", "toa": "Tombs of Amascut"
-};
-const SOURCE_TRAPS = {
-  "wintertodt": "Reward cart (Wintertodt)", "subdued wintertodt": "Reward cart (Wintertodt)",
-  "tempoross": "Reward pool (Tempoross)", "gauntlet": "Crystalline Hunllef", "corrupted gauntlet": "Corrupted Hunllef",
-  "hallowed sepulchre": "Hallowed Sack", "sol heredit": "Fortis Colosseum", "colosseum": "Fortis Colosseum",
-  "moons of peril": "Lunar Chest", "perilous moons": "Lunar Chest", "hueycoatl": "The Hueycoatl",
-  "leviathan": "The Leviathan", "whisperer": "The Whisperer", "nightmare": "The Nightmare",
-  "jad": "TzTok-Jad", "fight caves": "TzTok-Jad", "zuk": "TzKal-Zuk", "inferno": "TzKal-Zuk",
-  "cox": "Chambers of Xeric", "tob": "Theatre of Blood", "toa": "Tombs of Amascut",
-  "mahogany homes": "Supply crate (Mahogany Homes)", "volcanic mine": "Ore Pack (Volcanic Mine)",
-  "barbarian assault": "Barbarian Assault high gamble"
-};
 function dataList(key) { return (window.FORGE_DATA && window.FORGE_DATA[key]) || []; }
 function kcIcon(name) {
   const hit = dataList("kc").find(k => k.name.toLowerCase() === String(name).toLowerCase());
@@ -1490,61 +1468,13 @@ function nameEntries(kind) {
   // NPC kills and loot sources: the Loot Tracker's names, plus any wiki page as a fallback.
   return dataList("lootSources").map(n => ({ name: n, icon: kcIcon(n), src: "loot tracker" }));
 }
-/** Problems with typed names, each with the name it should probably be. */
-function nameWarnings(kind, names) {
-  const out = [];
-  const lower = list => list.map(e => e.name.toLowerCase());
-  names.forEach(raw => {
-    const n = String(raw).trim(), key = n.toLowerCase();
-    if (!n || n.indexOf("*") >= 0) return;
-    if (kind === "source" || kind === "npc") {
-      const fix = SOURCE_TRAPS[key];
-      if (fix) out.push({ name: n, fix: fix, why: "the Loot Tracker calls it" });
-      return;
-    }
-    const known = lower(nameEntries(kind));
-    if (known.indexOf(key) >= 0) return;
-    let fix = kind === "kc" ? KC_TRAPS[key] : null;
-    if (!fix) {
-      const close = nameEntries(kind).find(e => e.name.toLowerCase().includes(key) || key.includes(e.name.toLowerCase()));
-      fix = close ? close.name : null;
-    }
-    out.push({ name: n, fix: fix, why: kind === "kc" ? "the kill count message says" : "the collection log says" });
-  });
-  return out;
-}
-/**
- * A comma-separated name field with suggestions from the lists above (and the wiki for NPCs
- * and sources), and a warning under it for names that would never match in game.
- */
+/** A comma-separated name field with suggestions from the lists above (and the wiki for NPCs and sources). */
 function nameField(labelText, arr, setArr, placeholder, hint, kind) {
-  const input = listInput(arr, v => { setArr(v); drawWarnings(); }, placeholder);
+  const input = listInput(arr, setArr, placeholder);
   const holder = document.createElement("div");
   holder.appendChild(input);
-  const warn = document.createElement("div");
-  holder.appendChild(warn);
   const wrap = field(labelText, holder, hint);
   attachNameSuggest(input, kind);
-  function drawWarnings() {
-    warn.innerHTML = "";
-    const names = input.value.split(",").map(t => t.trim()).filter(Boolean);
-    nameWarnings(kind, names).forEach(w => {
-      const line = document.createElement("div");
-      line.className = "namewarn";
-      line.textContent = "\u26a0 \u201c" + w.name + "\u201d " + (w.fix ? "won't match: " + w.why + " \u201c" + w.fix + "\u201d." : "isn't a name the game uses here. Check the spelling.");
-      if (w.fix) {
-        const b = document.createElement("button");
-        b.type = "button"; b.textContent = "Use it";
-        b.addEventListener("click", () => {
-          input.value = names.map(t => t === w.name ? w.fix : t).join(", ");
-          input.dispatchEvent(new Event("input"));
-        });
-        line.appendChild(b);
-      }
-      warn.appendChild(line);
-    });
-  }
-  drawWarnings();
   return wrap;
 }
 function attachNameSuggest(input, kind) {
