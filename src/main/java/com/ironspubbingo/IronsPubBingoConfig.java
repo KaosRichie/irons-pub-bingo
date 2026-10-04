@@ -1,5 +1,6 @@
 package com.ironspubbingo;
 
+import java.awt.Color;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -33,13 +34,25 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "lineDisplay",
 		name = "Line style",
-		description = "How completed bingo lines are shown: strokes drawn through the tiles (Lines), or gold tile borders (Highlight)",
+		description = "How completed bingo lines are shown: strokes drawn through the tiles (Lines), or tile borders (Highlight)",
 		section = generalSection,
-		position = 13
+		position = 12
 	)
 	default LineDisplay lineDisplay()
 	{
 		return LineDisplay.LINES;
+	}
+
+	@ConfigItem(
+		keyName = "lineColor",
+		name = "Line color",
+		description = "Color of completed bingo lines: the strokes in Lines style, the tile borders in Highlight style",
+		section = generalSection,
+		position = 13
+	)
+	default Color lineColor()
+	{
+		return BingoUi.COLOR_GOLD;
 	}
 
 	@ConfigItem(

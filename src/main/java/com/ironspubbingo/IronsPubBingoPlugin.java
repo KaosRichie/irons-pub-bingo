@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
+import java.awt.Color;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -2680,6 +2681,11 @@ public class IronsPubBingoPlugin extends Plugin
 	LineDisplay lineDisplay()
 	{
 		return config.lineDisplay();
+	}
+
+	Color lineColor()
+	{
+		return config.lineColor() == null ? BingoUi.COLOR_GOLD : config.lineColor();
 	}
 
 	boolean progressFill()

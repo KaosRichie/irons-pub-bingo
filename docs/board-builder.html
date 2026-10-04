@@ -106,7 +106,7 @@ input[type=checkbox]:checked::after {
   padding: 4px; font-size: 12px; line-height: 1.2;
   color: var(--ink); text-align: center;
   display: flex; align-items: center; justify-content: center;
-  overflow: hidden; word-break: break-word;
+  overflow: hidden; overflow-wrap: anywhere;
   position: relative;
 }
 .cell:hover { border-color: var(--gold-deep); }
@@ -129,7 +129,7 @@ button:disabled:hover { border-color: var(--line); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
 }
 .ctxmenu .head { padding: 4px 10px 6px; color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--line-soft); margin-bottom: 3px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  overflow-wrap: anywhere; max-width: 260px; }
 .ctxmenu button {
   display: flex; width: 100%; gap: 10px; align-items: center; text-align: left;
   background: transparent; border: 0; border-radius: 3px; padding: 6px 10px; font-size: 14px;
@@ -152,7 +152,7 @@ button:disabled:hover { border-color: var(--line); }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   padding: 4px; text-align: center; font-size: 12px; line-height: 1.15; color: #fff;
   background: linear-gradient(180deg, #2c2c2c, #222); border: 1px solid #3e3e3e;
-  overflow: hidden; word-break: break-word; user-select: none;
+  overflow: hidden; overflow-wrap: anywhere; user-select: none;
 }
 .pv:hover { border-color: #6e6e6e; }
 .pv.partial { background: linear-gradient(180deg, #96701a, #785812); }
@@ -820,7 +820,7 @@ function renderPreview(totalPoints) {
     const img = iconImg(t.icon, 28);
     if (img) { img.style.cssText = ""; cell.appendChild(img); }
     const name = document.createElement("div");
-    name.textContent = t.label ? shorten(t.label, 60) : "";
+    name.textContent = t.label || "";
     cell.appendChild(name);
     if (t.points > 0) {
       const pts = document.createElement("div");
@@ -906,12 +906,12 @@ function renderGrid() {
     const cellIcon = iconImg(t.icon, 22);
     if (cellIcon) {
       const wrap = document.createElement("div");
-      wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px";
+      wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;max-width:100%";
       wrap.appendChild(cellIcon);
-      wrap.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+      wrap.appendChild(document.createTextNode(t.label || "empty"));
       cell.appendChild(wrap);
     } else {
-      cell.appendChild(document.createTextNode(t.label ? shorten(t.label, 44) : "empty"));
+      cell.appendChild(document.createTextNode(t.label || "empty"));
     }
     cell.addEventListener("click", () => { selected = i; templatesOpen = false; renderGrid(); renderEditor(); });
     cell.addEventListener("contextmenu", e => { e.preventDefault(); openTileMenu(i, e.clientX, e.clientY); });

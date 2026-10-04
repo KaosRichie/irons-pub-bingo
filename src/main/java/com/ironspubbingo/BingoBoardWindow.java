@@ -179,7 +179,7 @@ class BingoBoardWindow extends JFrame
 		boolean drawLines = plugin.lineDisplay() == LineDisplay.LINES;
 		boolean fillMode = plugin.progressFill();
 		int selected = plugin.selectedTileIndex();
-		grid.setLines(size, drawLines ? plugin.completedLineSegments() : java.util.Collections.emptyList());
+		grid.setLines(size, drawLines ? plugin.completedLineSegments() : java.util.Collections.emptyList(), plugin.lineColor());
 		java.util.Set<Integer> lineCells = drawLines ? java.util.Collections.emptySet() : plugin.completedLineCells();
 		for (int i = 0; i < cells.size(); i++)
 		{
@@ -189,7 +189,7 @@ class BingoBoardWindow extends JFrame
 			// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
 			boolean partial = !complete && !fillMode && plugin.tileHasProgress(i);
 			cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
-				i == selected, lineCells.contains(i));
+				i == selected, lineCells.contains(i), plugin.lineColor());
 			cellLabels.get(i).setWrapWidth(textWidth);
 			String tooltip = "<html><b>" + BingoUi.escapeHtml(tile.label) + "</b><br>"
 				+ (complete ? "Complete" : plugin.tileGoalSummaryHtml(i)) + "</html>";

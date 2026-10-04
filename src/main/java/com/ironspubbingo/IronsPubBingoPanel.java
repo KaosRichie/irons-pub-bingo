@@ -734,7 +734,7 @@ class IronsPubBingoPanel extends PluginPanel
 			boolean drawLines = plugin.lineDisplay() == LineDisplay.LINES;
 			boolean fillMode = plugin.progressFill();
 			gridContainer.setLines(board.getSize(),
-				drawLines ? plugin.completedLineSegments() : java.util.Collections.emptyList());
+				drawLines ? plugin.completedLineSegments() : java.util.Collections.emptyList(), plugin.lineColor());
 			Set<Integer> lineCells = drawLines ? java.util.Collections.emptySet() : plugin.completedLineCells();
 			for (int i = 0; i < cells.size(); i++)
 			{
@@ -744,7 +744,7 @@ class IronsPubBingoPanel extends PluginPanel
 				// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
 				boolean partial = !complete && !fillMode && plugin.tileHasProgress(i);
 				cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
-					i == selectedTile, lineCells.contains(i));
+					i == selectedTile, lineCells.contains(i), plugin.lineColor());
 				String description = tile.description == null ? "" : tile.description.trim();
 				cell.setToolTipText("<html><b>" + (i + 1) + ". " + BingoUi.escapeHtml(tile.label) + "</b>"
 					+ (tile.pointsValue() > 0 ? " (" + tile.pointsValue() + " pts)" : "")

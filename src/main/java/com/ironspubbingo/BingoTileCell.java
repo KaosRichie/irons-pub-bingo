@@ -35,6 +35,7 @@ class BingoTileCell extends JPanel
 	private float fillFraction;
 	private boolean selected;
 	private boolean inLine;
+	private Color lineColor = BingoUi.COLOR_GOLD;
 	private boolean hovered;
 
 	BingoTileCell()
@@ -48,11 +49,13 @@ class BingoTileCell extends JPanel
 	 * Sets everything the cell shows in one go. partial colors the whole tile amber (the
 	 * classic look); a fill fraction above zero paints amber up from the bottom instead.
 	 */
-	void setState(boolean complete, boolean partial, float fillFraction, boolean selected, boolean inLine)
+	void setState(boolean complete, boolean partial, float fillFraction, boolean selected, boolean inLine,
+		Color lineColor)
 	{
 		if (this.complete != complete || this.partial != partial || this.fillFraction != fillFraction
-			|| this.selected != selected || this.inLine != inLine)
+			|| this.selected != selected || this.inLine != inLine || !this.lineColor.equals(lineColor))
 		{
+			this.lineColor = lineColor;
 			this.complete = complete;
 			this.partial = partial;
 			this.fillFraction = fillFraction;
@@ -118,7 +121,7 @@ class BingoTileCell extends JPanel
 
 		float stroke = selected || inLine ? 2f : 1f;
 		g.setStroke(new BasicStroke(stroke));
-		g.setColor(selected ? Color.WHITE : inLine ? BingoUi.COLOR_LINE : hovered ? EDGE_HOVER
+		g.setColor(selected ? Color.WHITE : inLine ? lineColor : hovered ? EDGE_HOVER
 			: complete ? COMPLETE_TOP.brighter() : EDGE);
 		float inset = stroke / 2f + 0.5f;
 		g.draw(new RoundRectangle2D.Float(inset, inset, w - 2 * inset, h - 2 * inset, arc, arc));
