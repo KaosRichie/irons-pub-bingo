@@ -100,7 +100,7 @@ transition:transform .12s,border-color .12s,box-shadow .12s}
 .tile .prog{position:absolute;left:8px;right:8px;bottom:7px;height:4px;border-radius:9px;background:rgba(0,0,0,.45);overflow:hidden}
 .tile .prog i{display:block;height:100%;background:linear-gradient(90deg,var(--gold3),var(--gold2))}
 .lines{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.lines line{stroke:var(--gold2);stroke-width:2.5;stroke-linecap:round;opacity:.55;filter:drop-shadow(0 0 4px rgba(247,214,131,.5))}
+.lines line{stroke:#ff0000;stroke-width:2.5;stroke-linecap:round;opacity:.55;filter:drop-shadow(0 0 4px rgba(255,0,0,.5))}
 @media (max-width:640px){.tile{padding:4px 4px 10px;gap:3px;border-radius:8px}.tile .name{font-size:10px;line-height:1.2;-webkit-line-clamp:2}.tile .num{display:none}.tile .check{width:14px;height:14px;font-size:9px;line-height:14px;top:3px;right:3px}.tile .prog{bottom:4px;left:5px;right:5px;height:3px}.tile img{width:30%}.board{gap:4px}.wrap{padding:0 12px}.card{padding:14px}}
 `;
 
