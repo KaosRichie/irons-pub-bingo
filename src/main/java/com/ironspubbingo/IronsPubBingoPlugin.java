@@ -2685,7 +2685,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	Color lineColor()
 	{
-		return config.lineColor() == null ? BingoUi.COLOR_GOLD : config.lineColor();
+		return config.lineColor() == null ? BingoUi.COLOR_LINE : config.lineColor();
 	}
 
 	boolean progressFill()

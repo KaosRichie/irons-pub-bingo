@@ -35,7 +35,7 @@ class BingoTileCell extends JPanel
 	private float fillFraction;
 	private boolean selected;
 	private boolean inLine;
-	private Color lineColor = BingoUi.COLOR_GOLD;
+	private Color lineColor = BingoUi.COLOR_LINE;
 	private boolean hovered;
 
 	BingoTileCell()

@@ -21,7 +21,7 @@ class BingoGridPanel extends JPanel
 	private int boardSize;
 	/** Completed lines as {firstCellIndex, lastCellIndex} pairs. */
 	private List<int[]> lineSegments = Collections.emptyList();
-	private Color lineColor = BingoUi.COLOR_GOLD;
+	private Color lineColor = BingoUi.COLOR_LINE;
 
 	void setLines(int boardSize, List<int[]> lineSegments, Color color)
 	{

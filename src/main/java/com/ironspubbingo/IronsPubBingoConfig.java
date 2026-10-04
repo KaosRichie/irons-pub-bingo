@@ -52,7 +52,7 @@ public interface IronsPubBingoConfig extends Config
 	)
 	default Color lineColor()
 	{
-		return BingoUi.COLOR_GOLD;
+		return BingoUi.COLOR_LINE;
 	}
 
 	@ConfigItem(
