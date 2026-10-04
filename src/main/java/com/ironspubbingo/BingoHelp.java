@@ -171,17 +171,19 @@ final class BingoHelp
 				+ ul("<b>Sync now</b> syncs right away. <b>Portal</b> opens the team's page in your browser.",
 					"Each team keeps its own progress. Switching teams parks yours, switching back restores it.")));
 		pages.put("Credit requests", page("Credit requests",
-			p("The tracker can miss progress, for example on mobile or while the client was closed.")
+			p("The tracker can miss progress, for example on mobile or while the client was closed. "
+				+ "Requests need the team store.")
 				+ ol("Click the tile, open <b>Actions</b> and press <b>Request admin credit</b>.",
 					"Enter the amount, or tick that the whole tile is complete.",
-					"Add a note and proof. With a Discord webhook set, tick the screenshot option "
-						+ "and the plugin posts the proof for you.")
+					"Add a note and a proof link. With a Discord webhook set, the plugin can take "
+						+ "the screenshot, post it and attach its link for you.")
 				+ p("An admin reviews the request. Approved credit counts for the whole team. "
 					+ "The portal shows every request and its status.")));
 		pages.put("Discord", page("Discord",
-			p("Set a webhook URL in the plugin settings to post to your team's Discord channel.")
-				+ ul("Completed tiles post with a screenshot, plus any bingo lines or blackout.",
-					"Goals your host flagged post every step of progress with a screenshot.",
+			p("Set a <b>Webhook URL</b> in the plugin settings to post to your team's Discord channel.")
+				+ ul("With <b>Post completions to Discord</b> on, completed tiles post with a screenshot, "
+						+ "plus any bingo lines or blackout.",
+					"With it on, goals your host flagged also post every step of progress with a screenshot.",
 					"Credit requests can post a proof screenshot and attach its link.",
 					"Posts name your team and say when you are on an outdated board.")));
 		pages.put("Tips", page("Tips",
@@ -195,8 +197,8 @@ final class BingoHelp
 		pages.put("Hosting", page("Hosting",
 			p("Build the board in <a href='" + FORGE_URL + "'>Bingo Forge</a>, which runs in your browser, "
 				+ "and export its code.")
-				+ p("The <a href='" + README_URL + "'>full README</a> covers the team store, the board format "
-					+ "and every goal type.")));
+				+ p("The <a href='" + README_URL + "'>full README</a> covers setting up a team store "
+					+ "on a Google Sheet or on Cloudflare, the board format and every goal type.")));
 		return pages;
 	}
 
