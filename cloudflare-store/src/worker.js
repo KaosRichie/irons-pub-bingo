@@ -24,6 +24,8 @@ const EVENT_CODE = /^[a-z0-9-]{3,40}$/;
 const ASSETS = { '/assets/logo.png': LOGO_PNG, '/assets/icon.png': ICON_PNG };
 // Days of request counts kept for the admin page's Usage view.
 const USAGE_DAYS = 14;
+// Admin actions that only look: they never bring an event into existence.
+const READ_ONLY_ACTIONS = ['tabs', 'getTab', 'overview'];
 // Admin actions that map onto the store's own menu functions.
 const TAB_EDIT_ACTIONS = ['Teams', 'Board code', 'Settings', 'Adjustments', 'Requests'];
 
@@ -66,9 +68,15 @@ export class BingoEvent
 	{
 		this.ready = this.ready || this.load();
 		await this.ready;
-		this.countRequest();
 		const url = new URL(request.url);
 		const rest = (url.pathname.match(/^\/e\/[^/]+(\/.*)?$/) || [])[1] || '';
+		// An event exists once an admin has saved something to it. Until then only its
+		// admin page answers, so a made-up code shows nothing and stores nothing.
+		if (!this.created && rest !== '/admin' && rest !== '/admin/api')
+		{
+			return notFound(request.method === 'GET' && (rest === '' || rest === '/') && !url.search);
+		}
+		this.countRequest();
 		try
 		{
 			if (rest === '' || rest === '/')
@@ -170,6 +178,8 @@ export class BingoEvent
 			this.properties.set(key, props[key]);
 		}
 		this.propsText = JSON.stringify(props);
+		// Events from before the created flag have stored tabs: those count as set up.
+		this.created = !!(await this.state.storage.get('created')) || tabs.length > 0;
 		this.google = createGoogle(this.spreadsheet, this.properties, this.cache);
 		this.store = loadStore(this.google);
 	}
@@ -322,6 +332,16 @@ export class BingoEvent
 	{
 		const action = body && body.action;
 		let result = null;
+		if (!this.created && READ_ONLY_ACTIONS.indexOf(action) < 0)
+		{
+			this.created = true;
+			await this.state.storage.put({ created: true });
+		}
+		if (!this.created)
+		{
+			// Looking at a new event's admin page must not store its empty tabs yet.
+			return this.adminPreview(action);
+		}
 		const response = await this.run(() =>
 		{
 			const store = this.store;
@@ -381,6 +401,25 @@ export class BingoEvent
 			}
 		}, () => null);
 		return json(JSON.stringify({ result, alerts: this.google.alerts.slice() }));
+	}
+
+	/**
+	 * Read-only admin calls on an event nobody has saved to yet: answered from a throwaway
+	 * copy of the store, so the admin page can show the empty event without keeping it.
+	 */
+	adminPreview(action)
+	{
+		const spreadsheet = new Spreadsheet();
+		const store = loadStore(createGoogle(spreadsheet, new Map(), new Map()));
+		store.onOpen();
+		let result = null;
+		if (action === 'overview')
+		{
+			result = eventData(store, spreadsheet, true);
+			result.usage = { days: {} };
+			result.isNew = true;
+		}
+		return json(JSON.stringify({ result, alerts: [] }));
 	}
 
 	/** Approves, rejects or reopens a request found by its id, so a moved row can't mislead. */
@@ -553,6 +592,21 @@ function json(text, status, extra)
 {
 	return new Response(text, { status: status || 200,
 		headers: Object.assign({ 'content-type': 'application/json; charset=utf-8' }, extra || {}) });
+}
+
+/** The answer for an event code nobody has set up: a short page for people, JSON for the rest. */
+function notFound(asPage)
+{
+	if (!asPage)
+	{
+		return json(JSON.stringify({ error: 'No event with this code' }), 404);
+	}
+	return new Response('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+		+ '<title>No event here</title><body style="margin:0;background:#17130f;color:#e8dcc4;font:16px system-ui,sans-serif;'
+		+ 'display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center">'
+		+ '<div><img src="/assets/logo.png" alt="" width="120"><h1 style="color:#e2ad48;font-size:22px">No event here</h1>'
+		+ '<p>Check the link with your event host.</p></div>',
+		{ status: 404, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
 function html(text)

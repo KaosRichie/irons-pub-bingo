@@ -66,7 +66,7 @@ function api(body){return fetch(base+'/admin/api',{method:'POST',headers:{'conte
 function confirmBox(title,text,okLabel,danger){return new Promise(function(resolve){var root=document.getElementById('modalRoot');
 root.innerHTML='<div class="modal" id="cm"><div class="card"><h2>'+esc(title)+'</h2><p style="color:var(--ink2);white-space:pre-wrap">'+esc(text)+'</p><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="cmNo">Cancel</button><button class="btn '+(danger?'bad':'gold')+'" id="cmYes">'+esc(okLabel)+'</button></div></div></div>';
 document.getElementById('cmNo').onclick=function(){root.innerHTML='';resolve(false);};document.getElementById('cmYes').onclick=function(){root.innerHTML='';resolve(true);};});}
-function load(){return api({action:'overview'}).then(function(r){data=r;document.getElementById('signOut').hidden=false;
+function load(){return api({action:'overview'}).then(function(r){data=r;if(data.isNew&&view==='requests'){view='teams';}document.getElementById('signOut').hidden=false;
 document.getElementById('sub').textContent='Admin \\u00b7 '+(data.event.name||'No board yet');render();}).catch(function(e){if(e.auth){showLogin(e.message);}else{toast(e.message,'bad');}});}
 function showLogin(error){document.getElementById('signOut').hidden=true;document.getElementById('app').innerHTML='<div class="card login"><h2>Admin sign in</h2><p class="muted">Enter the admin password for this store.</p>'
 +'<label class="field"><span>Admin password</span><input type="password" id="pw" autocomplete="current-password"></label>'+(error?'<p style="color:var(--red)">'+esc(error)+'</p>':'')
@@ -80,7 +80,10 @@ function render(){var pending=data.requests.filter(function(r){return r.status==
 document.getElementById('app').innerHTML='<div class="shell"><nav class="side" id="nav"></nav><div class="view" id="view"></div></div>';
 var nav=document.getElementById('nav');NAV.forEach(function(n){var b=document.createElement('button');b.className=n[0]===view?'on':'';
 b.innerHTML='<span class="ic">'+n[1]+'</span>'+n[2]+(n[0]==='requests'&&pending?'<span class="badge">'+pending+'</span>':'');b.onclick=function(){view=n[0];render();};nav.appendChild(b);});
-({requests:renderRequests,board:renderBoards,credit:renderCredit,teams:renderTeams,code:renderCode,settings:renderSettings,usage:renderUsage})[view](document.getElementById('view'));}
+var vw=document.getElementById('view');({requests:renderRequests,board:renderBoards,credit:renderCredit,teams:renderTeams,code:renderCode,settings:renderSettings,usage:renderUsage})[view](vw);
+if(data.isNew){var nb=document.createElement('section');nb.className='card';nb.style.borderColor='var(--gold3)';
+nb.innerHTML='<h2 style="color:var(--gold2)">New event</h2><p class="muted" style="margin:0">Nothing is saved for <b>'+esc(eventCode)+'</b> yet. Its portal and store URL show &ldquo;not found&rdquo; until you save something here. Add the teams or paste the board code to create it.</p>';
+vw.insertBefore(nb,vw.firstChild);}}
 /* ---------------- requests */
 function renderRequests(el){var list=data.requests.filter(function(r){return (reqFilter==='All'||r.status===reqFilter)&&(!reqTeam||r.team===reqTeam)
 &&(!reqSearch||(r.player+' '+r.tileLabel+' '+(r.goalLabel||'')+' '+r.note).toLowerCase().indexOf(reqSearch.toLowerCase())>=0);});

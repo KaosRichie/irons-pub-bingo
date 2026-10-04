@@ -361,6 +361,22 @@ await test('credit from the admin page is announced on Discord, and so is taking
 	ok(/withdrawn/.test(rt.webhooks[2].body), 'removing credit is announced: ' + rt.webhooks[2].body);
 });
 
+await test('a made-up event code shows nothing until an admin saves to it', async () =>
+{
+	const rt = createRuntime();
+	is((await rt.request('/e/made-up')).status, 404, 'portal of an unknown event');
+	is((await rt.request('/e/made-up/data')).status, 404, 'data of an unknown event');
+	is((await rt.request('/e/made-up', { method: 'POST', body: '{}' })).status, 404, 'sync to an unknown event');
+	is((await rt.request('/e/made-up/admin')).status, 200, 'its admin page still answers');
+	is((await rt.admin('made-up', { action: 'overview' }, 'wrong')).status, 401, 'wrong password refused');
+	const preview = await rt.admin('made-up', { action: 'overview' });
+	ok(preview.status === 200 && preview.body.result.isNew, 'admin can look at the new event');
+	is(rt.storage.has('made-up') ? rt.storage.get('made-up').size : 0, 0, 'looking stored nothing');
+	await rt.admin('made-up', { action: 'saveTeams', teams: [{ code: 'red', name: 'Red Team', webhook: '' }] });
+	rt.restart();
+	is((await rt.request('/e/made-up')).status, 200, 'saving brought the event into existence, and it lasts');
+});
+
 // ---------------------------------------------------------------- report
 
 if (failures.length)
