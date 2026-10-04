@@ -51,10 +51,10 @@
 <div id="zoomer" class="panel"><button id="zin">+</button><button id="zout">&minus;</button><button id="grid" class="on" title="Region grid and ids">#</button></div>
 <div id="about" class="panel">
   Hover for the map region id, click to copy it. Drag to pan, scroll to zoom. Dungeons
-  and instances sit north of the surface at their real coordinates; the search box finds
+  and instances sit north of the surface at their real coordinates. The search box finds
   the wiki-rendered maps and any wiki place name. Tiles come straight from the
   <a href="https://maps.runescape.wiki" target="_blank" rel="noopener">OSRS Wiki's map server</a>,
-  which keeps up with new game content; the newest published version is detected
+  which keeps up with new game content. The newest published version is found
   automatically. Paste ids into a Chat goal's <i>Map region ids</i> field in Bingo Forge.
 </div>
 <div id="copied">Region id copied</div>
@@ -62,8 +62,7 @@
 "use strict";
 
 /* Tile scheme (maps.runescape.wiki): versions/<v>/tiles/rendered/0/<zoom>/<plane>_<tx>_<ty>.png
-   zoom 0-3, a 256px tile spans 2^(8-zoom) game tiles, tile y counts up from the south.
-   No libraries on purpose: sandboxed previews block CDN scripts, so everything is inline. */
+   zoom 0-3, a 256px tile spans 2^(8-zoom) game tiles, tile y counts up from the south. */
 const FALLBACK_VERSION = "2026-08-12_a";
 const BASE = "https://maps.runescape.wiki/osrs/versions/";
 const MAX_TILE_ZOOM = 3;
@@ -111,7 +110,7 @@ if (PICK) {
   document.getElementById("about").innerHTML = "Click regions to add or remove them. Picked regions are shaded gold. "
     + "Drag to pan, scroll to zoom, and use the search box to find a place. Close the map when you are done.";
 }
-const tiles = new Map();            // url -> {img, ok}
+const tiles = new Map();            // url -> {img, ok, url, attempts}
 
 function probe(url) {
   return new Promise(resolve => {
@@ -160,7 +159,7 @@ let tileWins = 0;
 /* Zoomed out, one frame can want hundreds of tiles (every visible map at zoom 0).
    Firing them all at once gets some dropped by the server, and a dropped request
    cached as "missing" leaves a permanent hole - so loads go through a small queue,
-   and a failure retries twice before the tile is written off. */
+   and a failed tile gets one retry before it is written off. */
 const MAX_INFLIGHT = 24;
 let inflight = 0;
 const pendingTiles = [];
@@ -223,11 +222,11 @@ function draw() {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, w, h);
   if (!view.version) return;
-  ctx.imageSmoothingEnabled = view.zoom < MAX_TILE_ZOOM || view.zoom < 0;
+  ctx.imageSmoothingEnabled = view.zoom < MAX_TILE_ZOOM;
 
   // The server's mapId -1 "Full Map" is the whole world pre-composited - surface,
   // every underground and instance at their true coordinates. Drawing ONLY it
-  // sidesteps every overlap problem hand-compositing 220 maps had (quest-variant
+  // avoids the overlap problems of compositing the individual maps (quest-variant
   // tiles blanketing neighbours with their black padding, order-dependent wins).
   const tileZ = Math.max(0, Math.min(view.zoom, MAX_TILE_ZOOM));
   const span = Math.pow(2, 8 - tileZ);              // game units per tile

@@ -15,7 +15,6 @@ class FakeStorage
 	constructor(map)
 	{
 		this.map = map;
-		this.puts = 0;
 	}
 
 	async get(key)
@@ -28,7 +27,6 @@ class FakeStorage
 		for (const key of Object.keys(entries))
 		{
 			this.map.set(key, structuredClone(entries[key]));
-			this.puts++;
 		}
 	}
 

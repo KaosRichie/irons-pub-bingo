@@ -26,9 +26,6 @@ nav.side .ic{width:20px;text-align:center}nav.side .badge{margin-left:auto}
 .reqrow .acts .row{gap:6px}.who b{display:block;overflow-wrap:anywhere}.what{overflow-wrap:anywhere}
 .boardwrap{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,1fr);gap:18px;align-items:start}
 .goal{padding:10px 0;border-top:1px solid var(--line)}.goal:first-child{border-top:0}.goal .bar{margin:7px 0 8px}.contrib{display:flex;flex-wrap:wrap;gap:6px}
-table.list{width:100%;border-collapse:collapse;table-layout:fixed}
-table.list th{font:600 11.5px var(--sans);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:0 10px 8px;border-bottom:1px solid var(--line)}
-table.list td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
 .preview{padding:12px 14px;border-radius:10px;background:rgba(226,173,72,.08);border:1px solid var(--gold3);color:var(--ink);margin-top:14px}
 .teamrow{display:grid;grid-template-columns:130px minmax(0,1fr) minmax(0,1.4fr) 40px;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
 .teamrow:first-child{border-top:0}.pw{position:relative}.pw input{padding-right:40px}.pw button{position:absolute;right:4px;top:4px}
@@ -85,9 +82,7 @@ if(data.isNew){var nb=document.createElement('section');nb.className='card';nb.s
 nb.innerHTML='<h2 style="color:var(--gold2)">New event</h2><p class="muted" style="margin:0">Nothing is saved for <b>'+esc(eventCode)+'</b> yet. Its portal and store URL show &ldquo;not found&rdquo; until you save something here. Add the teams or paste the board code to create it.</p>';
 vw.insertBefore(nb,vw.firstChild);}}
 /* ---------------- requests */
-function renderRequests(el){var list=data.requests.filter(function(r){return (reqFilter==='All'||r.status===reqFilter)&&(!reqTeam||r.team===reqTeam)
-&&(!reqSearch||(r.player+' '+r.tileLabel+' '+(r.goalLabel||'')+' '+r.note).toLowerCase().indexOf(reqSearch.toLowerCase())>=0);});
-var counts={};data.requests.forEach(function(r){counts[r.status]=(counts[r.status]||0)+1;});
+function renderRequests(el){var counts={};data.requests.forEach(function(r){counts[r.status]=(counts[r.status]||0)+1;});
 el.innerHTML='<section class="card"><h2>Credit requests</h2><div class="toolbar"><div class="seg" id="rf"></div>'
 +'<select id="rt"><option value="">All teams</option>'+data.teams.map(function(t){return '<option value="'+esc(t.code)+'"'+(t.code===reqTeam?' selected':'')+'>'+esc(t.name)+'</option>';}).join('')+'</select>'
 +'<input class="search" id="rs" placeholder="Search player, tile, note" value="'+esc(reqSearch)+'"></div><div class="reqs" id="rl"></div></section>';

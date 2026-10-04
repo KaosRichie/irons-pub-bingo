@@ -67,9 +67,9 @@ label { color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transf
 }
 .topbar .field { display: flex; flex-direction: column; }
 .topbar input[type=text] { min-width: 220px; }
-.topbar select { box-sizing: border-box; height: 32px; }
+.topbar select { height: 32px; }
 input[type=checkbox] {
-  appearance: none; -webkit-appearance: none; box-sizing: border-box; padding: 0;
+  appearance: none; -webkit-appearance: none; padding: 0;
   width: 16px; height: 16px; margin: 0; position: relative; cursor: pointer;
   flex: 0 0 auto;
   background: var(--inset); border: 1px solid var(--line); border-radius: 3px;
@@ -326,12 +326,12 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
       <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list". Pickpocketed loot counts too, with the NPC as its source. Untick <i>loot from</i> kinds to count only kills, only pickpockets, or exclude chest loot. For items that share a name with something else (the moon key halves vs the crystal ones), list exact <i>item ids</i>. Use the name the item has when it drops. Some drop in another form, like <i>Giantsoul amulet (uncharged)</i>, and a * matches every form: <code>Giantsoul amulet*</code>.</td></tr>
       <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples"). Tick <i>distinct</i> to count different uniques once each ("3 different ToB uniques").</td></tr>
       <tr><th>Boss kill count</th><td>Kill count gained since the player imported the board, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Kills the player had before importing don't count.</td></tr>
-      <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage, ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones); the rare monsters with empty drop tables can't be counted.</td></tr>
+      <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage, ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones). The rare monsters with empty drop tables can't be counted.</td></tr>
       <tr><th>Pet</th><td>Any pet, or specific pets. Players need the collection log chat notification for specific pets. On any-pet tiles it names the pet.</td></tr>
       <tr><th>XP</th><td>XP gained in a skill, counted from the moment the player imports the board.</td></tr>
       <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source. They're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
       <tr><th>Loot value</th><td>A single loot pile worth at least X gp at GE prices ("a 4m+ drop").</td></tr>
-      <tr><th>Chat message</th><td>A game message matching a regex: speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar; set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places - the moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
+      <tr><th>Chat message</th><td>A game message matching a regex: speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar. Set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places. The moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
       <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players tick the tile off by hand.</td></tr>
     </table></div>
     <p>A tile with several goals completes when <b>all</b> of them are done, or switch it to <b>any</b> for "X or Y" tiles.</p>
@@ -512,14 +512,13 @@ function defaultGoal(type) {
   const g = { type: type || "DROP", count: 1, screenshot: false };
   if (g.type === "DROP") { g.items = []; g.sources = []; g.itemIds = []; g.loot = ["KILL", "PICKPOCKET", "OTHER"]; g.distinct = false; }
   if (g.type === "RAID_PURPLE") { g.raids = ["COX", "TOB", "TOA"]; g.distinct = false; }
-  if (g.type === "CHAT") { g.regions = []; }
+  if (g.type === "CHAT") { g.regions = []; g.pattern = ""; }
   if (g.type === "KC") { g.npcs = []; }
   if (g.type === "KILL") { g.npcs = []; }
   if (g.type === "PET") { g.pets = []; }
   if (g.type === "XP") { g.skill = "SLAYER"; g.amount = 1000000; }
   if (g.type === "LAP") { g.course = "CANIFIS"; }
   if (g.type === "VALUE") { g.amount = 1000000; g.sources = []; g.loot = ["KILL", "PICKPOCKET", "OTHER"]; }
-  if (g.type === "CHAT") { g.pattern = ""; }
   return g;
 }
 function resizeTiles() {
@@ -886,10 +885,9 @@ function renderGrid() {
     + (board.blackoutPoints > 0 ? Math.round(board.blackoutPoints) : 0);
   $("boardHeader").textContent = totalPoints > 0 ? "Board · " + totalPoints + " pts total" : "Board";
   $("reorderHint").style.display = (board.id || "").trim() && !previewMode ? "" : "none";
-  $("boardHint").textContent = previewMode
-    ? "This is how players see the board. Click tiles to try out progress and completed lines. Nothing here is saved."
-    : "";
-  if (!previewMode) {
+  if (previewMode) {
+    $("boardHint").textContent = "This is how players see the board. Click tiles to try out progress and completed lines. Nothing here is saved.";
+  } else {
     $("boardHint").innerHTML = 'Click a tile to edit it, right-click it to copy, paste, duplicate or clear, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.';
   }
   if (previewMode) { renderPreview(totalPoints); return; }
@@ -1126,7 +1124,6 @@ function renderEditor() {
   const tile = board.tiles[selected];
   $("editorTitle").textContent = "Tile " + (selected + 1);
 
-  // Copy, paste, duplicate and clear live on the tile's right-click menu.
   if (isEmptyTile(tile) || templatesOpen) {
     editor.appendChild(templatePicker(t => {
       board.tiles[selected] = t;

@@ -2,8 +2,6 @@
 // tile and goal names instead of row and column numbers, contributors per goal, requests
 // with their proof links split out, and (for admins) the credit ledger and settings.
 
-const REQUEST_COLUMNS = 12;
-
 /** The pasted board code, parsed, or null. Used for tile icons, descriptions and points. */
 function officialBoard(store)
 {
@@ -234,5 +232,3 @@ export function summarizeBoard(code)
 		tiles: parsed.tiles.length
 	};
 }
-
-export { REQUEST_COLUMNS };
