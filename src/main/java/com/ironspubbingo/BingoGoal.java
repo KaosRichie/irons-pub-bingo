@@ -119,13 +119,13 @@ public class BingoGoal
 				}
 				break;
 			case RAID_PURPLE:
-				raidSet = EnumSet.noneOf(Raid.class);
 				if (raids == null || raids.isEmpty())
 				{
 					raidSet = EnumSet.allOf(Raid.class);
 				}
 				else
 				{
+					raidSet = EnumSet.noneOf(Raid.class);
 					for (String r : raids)
 					{
 						try

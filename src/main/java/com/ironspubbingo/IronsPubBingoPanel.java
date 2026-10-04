@@ -736,7 +736,7 @@ class IronsPubBingoPanel extends PluginPanel
 				BingoTileCell cell = cells.get(i);
 				boolean complete = plugin.isTileComplete(i);
 				// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
-				boolean partial = !complete && !fillMode && hasProgress(tile, i);
+				boolean partial = !complete && !fillMode && plugin.tileHasProgress(i);
 				cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
 					i == selectedTile, lineCells.contains(i));
 				String description = tile.description == null ? "" : tile.description.trim();
@@ -744,7 +744,7 @@ class IronsPubBingoPanel extends PluginPanel
 					+ (tile.pointsValue() > 0 ? " (" + tile.pointsValue() + " pts)" : "")
 					+ (description.isEmpty() ? "" : "<br><i>" + BingoUi.escapeHtml(
 						description.length() > 120 ? description.substring(0, 117) + "..." : description) + "</i>")
-					+ "<br>" + (complete ? "Complete" : goalSummary(tile, i)) + "</html>");
+					+ "<br>" + (complete ? "Complete" : plugin.tileGoalSummaryHtml(i)) + "</html>");
 			}
 		}
 
@@ -1019,36 +1019,6 @@ class IronsPubBingoPanel extends PluginPanel
 		g.fill(new java.awt.geom.Ellipse2D.Float(2.1f, 1.7f, 1.7f, 1.2f));
 		g.dispose();
 		return new ImageIcon(image);
-	}
-
-	private boolean hasProgress(BingoTile tile, int tileIndex)
-	{
-		TileProgress tp = plugin.displayProgressFor(tileIndex);
-		for (int g = 0; g < tile.goals.size(); g++)
-		{
-			if (tile.goals.get(g).progressOf(tp.goal(g, tile.goals.size())) > 0)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private String goalSummary(BingoTile tile, int tileIndex)
-	{
-		TileProgress tp = plugin.displayProgressFor(tileIndex);
-		StringBuilder sb = new StringBuilder();
-		for (int g = 0; g < tile.goals.size(); g++)
-		{
-			BingoGoal goal = tile.goals.get(g);
-			if (g > 0)
-			{
-				sb.append("<br>");
-			}
-			GoalProgress p = tp.goal(g, tile.goals.size());
-			sb.append(Math.min(goal.progressOf(p), goal.target())).append('/').append(goal.target());
-		}
-		return sb.toString();
 	}
 
 	// ---------------------------------------------------------------- tile detail

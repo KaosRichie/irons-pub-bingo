@@ -187,12 +187,12 @@ class BingoBoardWindow extends JFrame
 			BingoTileCell cell = cells.get(i);
 			boolean complete = plugin.isTileComplete(i);
 			// Amber for any progress in the classic look; in fill mode the amber rises from the bottom.
-			boolean partial = !complete && !fillMode && hasProgress(tile, i);
+			boolean partial = !complete && !fillMode && plugin.tileHasProgress(i);
 			cell.setState(complete, partial, complete || !fillMode ? 0f : (float) plugin.tileProgressFraction(i),
 				i == selected, lineCells.contains(i));
 			cellLabels.get(i).setWrapWidth(textWidth);
 			String tooltip = "<html><b>" + BingoUi.escapeHtml(tile.label) + "</b><br>"
-				+ (complete ? "Complete" : summary(tile, i)) + "</html>";
+				+ (complete ? "Complete" : plugin.tileGoalSummaryHtml(i)) + "</html>";
 			cell.setToolTipText(tooltip);
 			cellIcons.get(i).setToolTipText(tooltip);
 			cellLabels.get(i).setToolTipText(tooltip);
@@ -448,35 +448,5 @@ class BingoBoardWindow extends JFrame
 		}
 		grid.revalidate();
 		grid.repaint();
-	}
-
-	private boolean hasProgress(BingoTile tile, int tileIndex)
-	{
-		TileProgress tp = plugin.displayProgressFor(tileIndex);
-		for (int g = 0; g < tile.goals.size(); g++)
-		{
-			if (tile.goals.get(g).progressOf(tp.goal(g, tile.goals.size())) > 0)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private String summary(BingoTile tile, int tileIndex)
-	{
-		TileProgress tp = plugin.displayProgressFor(tileIndex);
-		StringBuilder sb = new StringBuilder();
-		for (int g = 0; g < tile.goals.size(); g++)
-		{
-			BingoGoal goal = tile.goals.get(g);
-			if (g > 0)
-			{
-				sb.append("<br>");
-			}
-			GoalProgress p = tp.goal(g, tile.goals.size());
-			sb.append(Math.min(goal.progressOf(p), goal.target())).append('/').append(goal.target());
-		}
-		return sb.toString();
 	}
 }

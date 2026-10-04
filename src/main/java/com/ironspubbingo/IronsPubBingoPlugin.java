@@ -1167,6 +1167,47 @@ public class IronsPubBingoPlugin extends Plugin
 		return TileProgress.merge(board.getTiles().get(tileIndex).goals.size(), members.values());
 	}
 
+	/** Whether any goal of the tile shows progress, for the amber "partial" tile color. */
+	boolean tileHasProgress(int tileIndex)
+	{
+		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
+		{
+			return false;
+		}
+		BingoTile tile = board.getTiles().get(tileIndex);
+		TileProgress tp = displayProgressFor(tileIndex);
+		for (int g = 0; g < tile.goals.size(); g++)
+		{
+			if (tile.goals.get(g).progressOf(tp.goal(g, tile.goals.size())) > 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Each goal's "progress/target", one per line, for tile tooltips. */
+	String tileGoalSummaryHtml(int tileIndex)
+	{
+		if (board == null || tileIndex < 0 || tileIndex >= board.getTiles().size())
+		{
+			return "";
+		}
+		BingoTile tile = board.getTiles().get(tileIndex);
+		TileProgress tp = displayProgressFor(tileIndex);
+		StringBuilder sb = new StringBuilder();
+		for (int g = 0; g < tile.goals.size(); g++)
+		{
+			BingoGoal goal = tile.goals.get(g);
+			if (g > 0)
+			{
+				sb.append("<br>");
+			}
+			sb.append(Math.min(goal.progressOf(tp.goal(g, tile.goals.size())), goal.target())).append('/').append(goal.target());
+		}
+		return sb.toString();
+	}
+
 	/**
 	 * Brings every tile's snapshot up to date: taken for tiles that are complete, dropped
 	 * for tiles that no longer are, retaken when someone in it left. Client thread, on
@@ -3292,7 +3333,7 @@ public class IronsPubBingoPlugin extends Plugin
 					// "Any pet" goals count in countPetDrop, at the end of the tick.
 					if (!active || goal.petPatterns.isEmpty() || collectionLogItem == null
 						|| !Wildcards.anyMatch(goal.petPatterns, collectionLogItem)
-						|| !addMatched(p, collectionLogItem))
+						|| !p.addName(collectionLogItem))
 					{
 						return false;
 					}
@@ -3522,7 +3563,7 @@ public class IronsPubBingoPlugin extends Plugin
 						{
 							if (goal.isDistinct())
 							{
-								any |= addMatched(p, names[idx]);
+								any |= p.addName(names[idx]);
 							}
 							else if (bump(p, quantities[idx]))
 							{
@@ -3551,7 +3592,7 @@ public class IronsPubBingoPlugin extends Plugin
 					{
 						if (raid.isUnique(name))
 						{
-							any |= goal.isDistinct() ? addMatched(p, name) : bump(p, 1);
+							any |= goal.isDistinct() ? p.addName(name) : bump(p, 1);
 						}
 					}
 					return any;
@@ -3652,11 +3693,6 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		p.n += delta;
 		return true;
-	}
-
-	private static boolean addMatched(GoalProgress p, String name)
-	{
-		return p.addName(name);
 	}
 
 	/**
