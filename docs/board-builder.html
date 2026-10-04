@@ -131,6 +131,31 @@ button:disabled:hover { border-color: var(--line); }
 }
 .templates img { width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; flex: 0 0 auto; }
 .templates .noicon { width: 24px; flex: 0 0 auto; text-align: center; color: var(--muted); }
+/* Player preview: the board as the plugin paints it */
+#grid.preview { gap: 4px; background: #282828; padding: 8px; border-radius: 6px; }
+.pv {
+  aspect-ratio: 1; width: 100%; border-radius: 9px; position: relative; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 4px; text-align: center; font-size: 12px; line-height: 1.15; color: #fff;
+  background: linear-gradient(180deg, #2c2c2c, #222); border: 1px solid #3e3e3e;
+  overflow: hidden; word-break: break-word; user-select: none;
+}
+.pv:hover { border-color: #6e6e6e; }
+.pv.partial { background: linear-gradient(180deg, #96701a, #785812); }
+.pv.complete { background: linear-gradient(180deg, #42843a, #2d6228); border-color: #5aa14f; }
+.pv.line { border: 2px solid #e2ad48; }
+.pv img { width: 28px; height: 28px; object-fit: contain; image-rendering: pixelated; }
+.pv .pts { color: #c8c8c8; font-size: 11px; }
+.pvhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.pvhead .title { font-weight: 700; color: #fff; margin-right: 6px; }
+.chip {
+  display: inline-block; background: #282828; border: 1px solid #404040; border-radius: 99px;
+  padding: 2px 10px; font-size: 12.5px; color: #fff;
+}
+.chip .cap { color: #a0a0a0; }
+.chip.gold { color: #e2ad48; }
+.chip.orange { color: #ff981f; }
+button.on { border-color: var(--gold); color: var(--gold); }
 .tplbox { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 4px; padding: 10px; }
 .tplbox h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; font-weight: 500; }
 
@@ -231,9 +256,11 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   <section class="pane">
     <div class="panehead">
       <h2 id="boardHeader">Board</h2>
+      <button id="btnPreview" class="sm" title="See the board the way players see it in the plugin">Player preview</button>
       <button id="btnUndo" class="sm" title="Undo (Ctrl+Z)">&#8630; Undo</button>
       <button id="btnRedo" class="sm" title="Redo (Ctrl+Y)">&#8631; Redo</button>
     </div>
+    <div id="pvHead" class="pvhead" style="display:none"></div>
     <div id="grid"></div>
     <p class="hint" id="boardHint">Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
     <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID: tile positions carry the players' progress, so only swap tiles around <b>before</b> the event goes live.</p>
@@ -684,14 +711,106 @@ function renderTopbar() {
     sel.appendChild(o);
   }
 }
+// Player preview: tile states only for looking, never saved into the board.
+let previewMode = false;
+const previewStates = {};   // tile index -> "partial" | "complete"
+function previewLines() {
+  const n = board.size, done = i => previewStates[i] === "complete", lines = [];
+  for (let r = 0; r < n; r++) { const row = []; for (let c = 0; c < n; c++) row.push(r * n + c); lines.push(row); }
+  for (let c = 0; c < n; c++) { const col = []; for (let r = 0; r < n; r++) col.push(r * n + c); lines.push(col); }
+  if (board.diagonals !== false) {
+    const a = [], b = [];
+    for (let i = 0; i < n; i++) { a.push(i * n + i); b.push(i * n + (n - 1 - i)); }
+    lines.push(a, b);
+  }
+  return lines.filter(l => l.every(done));
+}
+function renderPreview(totalPoints) {
+  const grid = $("grid");
+  grid.className = "preview";
+  grid.style.gridTemplateColumns = "repeat(" + board.size + ", 1fr)";
+  grid.innerHTML = "";
+  board.tiles.forEach((t, i) => {
+    const cell = document.createElement("div");
+    cell.className = "pv";
+    cell.title = "Click to cycle: no progress, some progress, complete";
+    const img = iconImg(t.icon, 28);
+    if (img) { img.style.cssText = ""; cell.appendChild(img); }
+    const name = document.createElement("div");
+    name.textContent = t.label ? shorten(t.label, 60) : "";
+    cell.appendChild(name);
+    if (t.points > 0) {
+      const pts = document.createElement("div");
+      pts.className = "pts"; pts.textContent = Math.round(t.points) + " pts";
+      cell.appendChild(pts);
+    }
+    // Clicks only restyle the tiles: rebuilding them would make the icons blink.
+    cell.addEventListener("click", () => {
+      const state = previewStates[i] || "";
+      previewStates[i] = state === "" ? "partial" : state === "partial" ? "complete" : "";
+      if (!previewStates[i]) delete previewStates[i];
+      updatePreview(totalPoints);
+    });
+    grid.appendChild(cell);
+  });
+  updatePreview(totalPoints);
+}
+function updatePreview(totalPoints) {
+  const lines = previewLines();
+  const inLine = new Set([].concat.apply([], lines));
+  let done = 0, earned = 0;
+  Array.prototype.forEach.call($("grid").children, (cell, i) => {
+    const state = previewStates[i] || "";
+    const t = board.tiles[i];
+    if (state === "complete") { done++; earned += t.points > 0 ? Math.round(t.points) : 0; }
+    cell.className = "pv" + (state ? " " + state : "") + (inLine.has(i) ? " line" : "");
+  });
+  earned += lines.length * (board.linePoints > 0 ? board.linePoints : 0);
+  if (done === board.tiles.length && board.tiles.length && board.blackoutPoints > 0) earned += Math.round(board.blackoutPoints);
+  const head = $("pvHead");
+  head.style.display = "";
+  head.innerHTML = "";
+  const title = document.createElement("span");
+  title.className = "title";
+  title.textContent = (board.name || "Untitled board") + (board.version ? " (v" + board.version + ")" : "");
+  head.appendChild(title);
+  const chip = (value, cap, cls) => {
+    const c = document.createElement("span");
+    c.className = "chip" + (cls ? " " + cls : "");
+    c.textContent = value;
+    if (cap) { const k = document.createElement("span"); k.className = "cap"; k.textContent = " " + cap; c.appendChild(k); }
+    head.appendChild(c);
+  };
+  chip(done + " / " + board.tiles.length, "tiles");
+  chip(String(lines.length), lines.length === 1 ? "line" : "lines", lines.length ? "gold" : "");
+  if (totalPoints > 0) chip(earned + " / " + totalPoints, "pts");
+  const now = Date.now(), start = board.start ? Date.parse(board.start) : NaN, end = board.end ? Date.parse(board.end) : NaN;
+  if (!isNaN(start) && now < start) chip("Starts in " + countdown(start - now), null, "orange");
+  else if (!isNaN(end) && now > end) chip("Event ended", null, "orange");
+  else if (!isNaN(end)) chip(countdown(end - now), "left", "orange");
+}
+function countdown(ms) {
+  const t = Math.floor(ms / 1000), p = n => String(n).padStart(2, "0");
+  return Math.floor(t / 86400) + ":" + p(Math.floor(t % 86400 / 3600)) + ":" + p(Math.floor(t % 3600 / 60)) + ":" + p(t % 60);
+}
+
 function renderGrid() {
   const tilePoints = board.tiles.reduce((sum, t) => sum + (t.points > 0 ? Math.round(t.points) : 0), 0);
   const maxLines = 2 * board.size + (board.diagonals === false ? 0 : 2);
   const totalPoints = tilePoints + (board.linePoints > 0 ? board.linePoints * maxLines : 0)
     + (board.blackoutPoints > 0 ? Math.round(board.blackoutPoints) : 0);
   $("boardHeader").textContent = totalPoints > 0 ? "Board · " + totalPoints + " pts total" : "Board";
-  $("reorderHint").style.display = (board.id || "").trim() ? "" : "none";
+  $("reorderHint").style.display = (board.id || "").trim() && !previewMode ? "" : "none";
+  $("boardHint").textContent = previewMode
+    ? "This is how players see the board. Click tiles to try out progress and completed lines. Nothing here is saved."
+    : "";
+  if (!previewMode) {
+    $("boardHint").innerHTML = 'Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.';
+  }
+  if (previewMode) { renderPreview(totalPoints); return; }
+  $("pvHead").style.display = "none";
   const grid = $("grid");
+  grid.className = "";
   grid.style.gridTemplateColumns = "repeat(" + board.size + ", 1fr)";
   grid.innerHTML = "";
   board.tiles.forEach((t, i) => {
@@ -1253,6 +1372,12 @@ $("btnNew").addEventListener("click", () => {
   }
   btn.textContent = "Replace draft?";
   newArmedTimer = setTimeout(() => { btn.textContent = "New"; newArmedTimer = null; }, 3000);
+});
+$("btnPreview").addEventListener("click", () => {
+  previewMode = !previewMode;
+  $("btnPreview").classList.toggle("on", previewMode);
+  $("btnPreview").textContent = previewMode ? "Back to editing" : "Player preview";
+  renderGrid();
 });
 $("btnUndo").addEventListener("click", undo);
 $("btnRedo").addEventListener("click", redo);
