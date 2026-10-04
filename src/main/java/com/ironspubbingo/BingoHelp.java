@@ -198,7 +198,7 @@ final class BingoHelp
 			p("Build the board in <a href='" + FORGE_URL + "'>Bingo Forge</a>, which runs in your browser, "
 				+ "and export its code.")
 				+ p("The <a href='" + README_URL + "'>full README</a> covers setting up a team store "
-					+ "on a Google Sheet or on Cloudflare, the board format and every goal type.")));
+					+ "on Cloudflare, the board format and every goal type.")));
 		return pages;
 	}
 

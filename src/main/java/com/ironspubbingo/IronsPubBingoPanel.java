@@ -701,7 +701,7 @@ class IronsPubBingoPanel extends PluginPanel
 		{
 			chooseTeamButton.setEnabled(plugin.storeConfigured());
 			chooseTeamButton.setToolTipText(plugin.storeConfigured()
-				? "Pick your team from the list the host defined on the team store sheet"
+				? "Pick your team from the list the host set up on the team store"
 				: "Needs the team store: turn on 'Use team store' and set the URL in the settings");
 		}
 		String teamName = plugin.teamDisplayName();
@@ -928,7 +928,7 @@ class IronsPubBingoPanel extends PluginPanel
 			if (teams.isEmpty())
 			{
 				JOptionPane.showMessageDialog(this,
-					"The host hasn't listed any teams on the sheet (Teams tab) yet.\n"
+					"The host hasn't added any teams to the store yet.\n"
 						+ "The store accepts no progress until they do - ask your host.",
 					"Irons Pub Bingo", JOptionPane.INFORMATION_MESSAGE);
 				return;

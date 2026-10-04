@@ -24,9 +24,8 @@ import okhttp3.ResponseBody;
  * Optional persistent team store (Layer 3 of team sync): POSTs everything this client
  * knows about the team to a host-configured URL and receives the server's merged view
  * back in the same call, so members whose play times never overlap still exchange
- * progress. The reference backend is a Google Apps Script the bingo host
- * deploys (see docs/apps-script-store.gs); any server honoring the same tiny contract
- * works. Opt-in: nothing is sent unless a URL is set and the toggle is enabled.
+ * progress. The backend is the Cloudflare Worker in cloudflare-store/ that the bingo host
+ * deploys. Opt-in: nothing is sent unless a URL is set and the toggle is enabled.
  */
 @Slf4j
 @Singleton
@@ -34,9 +33,8 @@ class BingoTeamStore
 {
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	/**
-	 * Generous timeout: an Apps Script deployment that has not been used for a while has to
-	 * cold start, and a busy store makes a request wait up to 25 seconds for its write
-	 * lock before it even starts; both regularly outlast the client's default timeouts.
+	 * Generous timeout: a slow connection must not turn a sync that the store did receive
+	 * into an error the plugin retries.
 	 */
 	private static final long TIMEOUT_SECONDS = 45;
 
@@ -54,7 +52,7 @@ class BingoTeamStore
 	@Inject
 	private IronsPubBingoConfig config;
 
-	/** One host-defined team from the sheet's Teams tab. */
+	/** One host-defined team from the store's Teams list. */
 	static class TeamInfo
 	{
 		String code;
@@ -70,7 +68,7 @@ class BingoTeamStore
 		Integer points;
 	}
 
-	/** A member's plea for admin credit; lands on the sheet's Requests tab for review. */
+	/** A member's plea for admin credit, reviewed by an admin on the store. */
 	static class CreditRequest
 	{
 		String member;
@@ -99,7 +97,7 @@ class BingoTeamStore
 		List<TeamInfo> teams;
 		/** Request: only fetch the team list, no board data. */
 		Boolean teamsOnly;
-		/** Request: fetch the board code the host pasted on the sheet. */
+		/** Request: fetch the board code the host saved on the store. */
 		Boolean fetchBoard;
 		/** Response to fetchBoard: the board code, ready for the normal import path. */
 		String boardJson;
@@ -253,7 +251,7 @@ class BingoTeamStore
 		});
 	}
 
-	/** Fetches the board code the host pasted on the sheet. Callback gets (json, error). */
+	/** Fetches the board code the host saved on the store. Callback gets (json, error). */
 	void fetchBoard(BiConsumer<String, String> callback)
 	{
 		StorePayload payload = new StorePayload(null, null, null);

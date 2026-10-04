@@ -210,7 +210,7 @@ class BingoTileDetail extends JPanel
 						Math.min(1f, share / (float) target), widthBasis);
 					if (verified)
 					{
-						memberBar.setToolTipText("Credited by an admin on the team sheet (verified progress)");
+						memberBar.setToolTipText("Credited by an admin (verified progress)");
 					}
 					bars.add(memberBar);
 				}
@@ -521,7 +521,7 @@ class BingoTileDetail extends JPanel
 				rebuild();
 				revalidate();
 				repaint();
-				String message = ok ? "Request sent - a team admin will review it on the sheet."
+				String message = ok ? "Request sent - a team admin will review it."
 					: "Could not send the request: " + error;
 				if (ok && screenshotError != null)
 				{

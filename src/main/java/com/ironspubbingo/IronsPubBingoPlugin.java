@@ -1475,7 +1475,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	/**
 	 * Fingerprint of the exact board code this client runs, sent with every store sync.
-	 * When the host pasted the official code on the sheet, the store rejects any other
+	 * When the host saved the official code on the store, the store rejects any other
 	 * board - so locally editing a goal (easier items, same board id) stops syncing.
 	 */
 	static String boardFingerprint(String rawBoardJson)
@@ -2139,13 +2139,13 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Display team name. For a store team the sheet's name is authoritative (the host
+	 * Display team name. For a store team the store's name is authoritative (the host
 	 * named it); the local Team name setting only labels custom-code teams, else the code.
 	 */
 	String teamDisplayName()
 	{
 		String code = normalizedTeamCode();
-		// The sheet's name only applies while the store is actually in use - with the
+		// The store's name only applies while the store is actually in use - with the
 		// toggle off this is a plain custom-code team, whatever the cache still holds.
 		String sheetName = code == null || !teamStore.isConfigured() ? null : storeTeamNames.get(code);
 		if (sheetName != null && !sheetName.isEmpty())
@@ -2201,13 +2201,13 @@ public class IronsPubBingoPlugin extends Plugin
 		return url.isEmpty() ? null : url;
 	}
 
-	/** The panel's "Choose team" picker: the host-defined teams from the store's sheet. */
+	/** The panel's "Choose team" picker: the host-defined teams from the store. */
 	void fetchStoreTeams(java.util.function.BiConsumer<List<BingoTeamStore.TeamInfo>, String> callback)
 	{
 		teamStore.fetchTeams(boardKey, callback);
 	}
 
-	/** The panel's "Get board from store": the board code the host pasted on the sheet. */
+	/** The panel's "Get board from store": the board code the host saved on the store. */
 	void fetchStoreBoard(java.util.function.BiConsumer<String, String> callback)
 	{
 		teamStore.fetchBoard(callback);
@@ -2250,9 +2250,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Files a credit request on the team sheet's Requests tab for an admin to review
+	 * Files a credit request on the store for an admin to review
 	 * (things the tracker missed or can't verify). Tile and goal are 0-based here,
-	 * 1-based on the sheet.
+	 * 1-based on the store.
 	 */
 	void submitCreditRequest(int tileIndex, Integer goalIndex, Long add, boolean complete,
 		String note, String links, java.util.function.BiConsumer<Boolean, String> callback)
@@ -3489,7 +3489,7 @@ public class IronsPubBingoPlugin extends Plugin
 				saveProgress(true);
 			}
 			// Land the session's progress before the client goes idle, so a player who
-			// logs out between polls is not missing from the sheet until they return.
+			// logs out between polls is not missing from the store until they return.
 			syncStore(true);
 			refreshPanel(); // the panel hides its content while logged out
 		}
@@ -3706,7 +3706,7 @@ public class IronsPubBingoPlugin extends Plugin
 
 	/**
 	 * Takes the store's copy of our own tiles where it is newer than ours: an admin
-	 * reset the tile on the sheet, or this account played on another machine. A reset
+	 * reset the tile on the store, or this account played on another machine. A reset
 	 * arrives as an empty tile and clears ours outright. XP goals keep the local count,
 	 * because XP is tracked against this machine's own baseline and catches up by itself
 	 * on the next XP drop; adopting the number as well would count the gain twice.

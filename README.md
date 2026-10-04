@@ -57,59 +57,26 @@ Live sync with online teammates uses RuneLite's party service.
    (source: [board-builder.html](docs/board-builder.html)). It runs in your browser. Set
    an `id`, `version`, the event `start`/`end` and points, then export the code.
 2. **Set up a team store.** It syncs progress even when players are never online
-   together. Pick one of the two options below.
-3. **Add your teams and the board code** to the store. The store rejects every sync
-   until it has teams, so do this before you share the URL.
-4. **Share the store URL** with the clan.
+   together. It runs as a Cloudflare Worker on a free account. Follow
+   [cloudflare-store/README.md](cloudflare-store/README.md). It takes about 10 minutes.
+3. **Open the event's admin page** and add your teams and the board code. Bingo Forge can
+   also send the board straight to it. The store accepts no syncs until it has teams, so
+   do this before you share the URL.
+4. **Share the event URL** with the clan. It is the store URL for the plugin settings,
+   and the player portal in a browser.
 
 Without a store, share the board code and a team code instead. Everything else works over
 live party sync.
 
-### Option 1: Google Sheet
-
-About 10 minutes, once per event.
-
-1. Blank Google Sheet, Extensions, Apps Script. Paste
-   [apps-script-store.gs](docs/apps-script-store.gs).
-2. Deploy as a Web app with *Execute as: Me* and *Who has access: Anyone*. Copy the
-   `/exec` URL. That is the store URL.
-3. Reload the sheet. Put the `/exec` URL in **Settings → Portal URL**, the board code in
-   **Board code**, and one row per team in **Teams**.
-4. Share the sheet with your **admins only**. Players never need it.
-
-After you edit the script, redeploy it as a new version. Saving alone keeps serving the
-old code.
-
-| Tab | What it's for |
-|---|---|
-| **Board code** | The official board. Players import it from here. Clients running a different board are rejected. |
-| **Teams** | Code and display name per team. Only listed codes can sync, and it fills the Choose team picker. The optional Webhook column is a Discord webhook that announces approved credit to the team. |
-| **Adjustments** | Credit progress by hand. Rows add up. A negative row corrects a mistake. |
-| **Requests** | Player credit requests. Set Status to `Done` to approve (it writes the Adjustments row) or `Rejected`. Rejecting an approved request takes the credit back. |
-| **Board \<team\>** | Read-only view per team: the grid, per-goal progress, who contributed what, and when each member last synced. |
-| **Removed** | Who stopped counting. Filled in when someone leaves a team. Their progress is parked and returns if they rejoin. Add a row to remove someone by hand. |
-| **Settings** | Portal URL, and `Poll interval (seconds)`. |
-
-The **Irons Pub Bingo** menu has: Open player portal, Refresh board view, Approve/Deny
-selected request(s), Apply pasted board update, Reset a tile's progress, and Reset store
-data. For a tile reset, first select the tile on its Board tab.
-
-Approvals are announced on the team's webhook. This needs one extra Google permission.
-After deploying, run the menu's Approve action once and accept the prompt. Approvals made
-with the Status dropdown can't post to Discord directly. They go out with the next player
-sync.
-
-### Option 2: Cloudflare Worker
-
-The same store, run as a Cloudflare Worker on a free account. You manage the event on an
-admin page instead of a sheet. Bingo Forge can send the board straight to it. See
-[cloudflare-store/README.md](cloudflare-store/README.md) for setup.
+On the admin page you review credit requests, give credit by hand, see each team's board
+and who contributed what, reset a tile, and change the sync interval. Approved credit is
+announced on the team's Discord webhook if it has one.
 
 ### Sync timing
 
 Each client syncs every 2 minutes, plus once per tile completion and once on logout. One
-call both uploads and downloads. Change it with `Poll interval (seconds)` in the store's
-settings, from 60 to 900. Use 60 for a short event and a few hundred for a long one.
+call both uploads and downloads. Change the interval on the admin page's Settings, from
+60 to 900 seconds. Use 60 for a short event and a few hundred for a long one.
 
 ### Board format
 
@@ -126,9 +93,8 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
   progress. Edit tiles in place. Never insert, remove or reorder them. Bump `version` so
   players see they need the new code. A new id is a new board with fresh progress.
 - Changing what a tile tracks resets that tile's progress. Relabeling it or changing its
-  target keeps it. The store resets its stored progress for that tile on the next sync,
-  or right away with **Apply pasted board update** (sheet) or **Save and apply**
-  (Cloudflare admin page).
+  target keeps it. The store resets its stored progress for that tile when you press
+  **Save and apply** on the admin page.
 - `start`/`end`: outside this window automatic tracking doesn't count. Manual ticks do.
 - `diagonals`: set `false` and only rows and columns count as lines.
 - `icon`: an item name, or a numeric item id for untradeables.
@@ -176,7 +142,6 @@ finish around Lumbridge in a few minutes.
 - Progress belongs to the team it was earned on.
 - Credit requests count only once an admin approves them.
 - Each client proves which account it syncs for, so the store URL alone can't change
-  another player's progress. On the sheet, if a player is ever locked out, clear their
-  key cell on the hidden Store tab.
+  another player's progress.
 - A modified client could still fake numbers. The per-player view and your proof policy
   are the backstop.

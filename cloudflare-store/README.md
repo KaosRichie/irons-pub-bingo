@@ -1,12 +1,11 @@
 # Irons Pub Bingo store on Cloudflare
 
-The same team store as the Google Sheet version, run as a Cloudflare Worker. Each event
-gets its own Durable Object, so syncs never wait on a lock and there is no cold start.
-The plugin needs no changes. Its store URL simply points here.
+The Irons Pub Bingo team store, run as a Cloudflare Worker on a free account. Each event
+gets its own Durable Object, so syncs never wait on each other.
 
-The Worker runs `docs/apps-script-store.gs` itself, so both versions behave the same.
-`build.mjs` turns the script into a module, and `src/google.js` stands in for the Google
-services it uses.
+The store's logic lives in `docs/apps-script-store.gs`, which started out as a Google Apps
+Script. `build.mjs` turns it into a module, and `src/google.js` stands in for the Google
+services it was written against.
 
 ## Setup
 
@@ -39,12 +38,11 @@ admin password, and press **Send to store**.
 
 The admin password is kept in your browser after you sign in. It is never put in a URL.
 
-## Differences from the Google Sheet version
+## Good to know
 
-- There is no spreadsheet. The admin page replaces it.
+- One admin password covers every event on the Worker.
 - Approvals post to Discord right away, but a post is not retried if Discord rate limits
   it. Discord sometimes limits Cloudflare's shared addresses.
-- One admin password covers every event on the Worker.
 
 ## Tests
 

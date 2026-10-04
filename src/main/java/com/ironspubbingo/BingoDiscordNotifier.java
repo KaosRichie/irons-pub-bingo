@@ -324,7 +324,7 @@ class BingoDiscordNotifier
 		captureFrame(frame -> post(url, message, frame));
 	}
 
-	/** " for team **X**"; the caller resolves the display name (sheet > config > code). */
+	/** " for team **X**"; the caller resolves the display name (store > config > code). */
 	private static String teamSuffix(String team)
 	{
 		return team == null || team.trim().isEmpty() ? "" : " for team **" + team.trim() + "**";

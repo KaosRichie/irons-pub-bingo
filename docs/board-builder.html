@@ -669,9 +669,8 @@ function exportBoard() {
     return out;
   });
   out.tiles = tiles;
-  // One line on purpose: multi-line JSON pasted into Google Sheets gets its quotes
-  // stripped by the CSV interpreter, corrupting the board code. A single line pastes
-  // intact everywhere (Sheets' Board code tab, Discord, the plugin's import box).
+  // One line on purpose: a single line pastes intact everywhere (the store's admin
+  // page, Discord, the plugin's import box).
   return JSON.stringify(out);
 }
 function importBoard(json) {
@@ -1704,7 +1703,7 @@ $("btnSend").addEventListener("click", () => {
     })
     .catch(() => {
       btn.disabled = false;
-      setSendStatus("Could not reach the store. Check the URL. A Google Sheets store can't take this, paste the code there instead.", "var(--red)");
+      setSendStatus("Could not reach the store. Check the URL.", "var(--red)");
     });
 });
 $("btnDialogCopy").addEventListener("click", () => {

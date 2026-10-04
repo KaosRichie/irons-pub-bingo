@@ -1,79 +1,38 @@
 /**
- * Irons Pub Bingo team store — free, clan-owned backend for the Irons Pub Bingo RuneLite plugin.
+ * Irons Pub Bingo team store: the backend for the Irons Pub Bingo RuneLite plugin.
+ *
+ * cloudflare-store/ runs this file inside a Cloudflare Worker, one Durable Object per
+ * event. It started out as a Google Apps Script bound to a spreadsheet, so it still talks
+ * to "tabs" through the Google APIs. cloudflare-store/src/google.js stands in for them,
+ * and the tabs are the event's tables in Durable Object storage.
  *
  * What it does:
- *  1. Stores each player's bingo progress so teammates who are never online at the
- *     same time still see each other's progress. The plugin POSTs everything a client
- *     knows and gets the merged team state back in the same call.
- *  2. Lets admins credit progress by hand on the "Adjustments" tab — for players who
- *     cannot run the plugin (mobile) and send screenshots instead. Those credits sync
+ *  1. Stores each player's bingo progress so teammates who are never online at the same
+ *     time still see each other's progress. A client sends its own progress and gets the
+ *     merged team state back in the same call.
+ *  2. Keeps admin credit (Adjustments) and player credit requests (Requests), which sync
  *     back into everyone's plugin like any other contribution.
+ *  3. Serves the player portal and the data the admin page shows.
  *
- * ONE sheet runs the WHOLE event: every team shares it, kept apart by team code, and the
- * host plus their admins work from it together.
+ * One store event runs the whole bingo: every team shares it, kept apart by team code.
  *
- * Setup (bingo host, ~10 minutes):
- *  1. Go to https://sheets.new and create a blank spreadsheet (this is your store + audit log).
- *  2. Extensions -> Apps Script. Delete the sample code, paste this whole file, save.
- *  3. Deploy -> New deployment -> type "Web app".
- *       Execute as: Me
- *       Who has access: Anyone
- *     Click Deploy and authorize when asked.
- *  4. Copy the Web app URL (ends in /exec) and share it with everyone in the event. They
- *     paste it into RuneLite -> Irons Pub Bingo settings -> "Team store URL" and enable
- *     "Use team store".
- *  5. Reload the spreadsheet once: a "Irons Pub Bingo" menu appears. Paste the same /exec URL
- *     into the Settings tab's "Portal URL" row so the menu's "Open player portal" works.
- *
- * When deploying you'll see "Google hasn't verified this app" — expected for any personal
- * Apps Script, since the unverified "app" is this very script on your own account. Click
- * Advanced -> "Go to ... (unsafe)" -> Allow. Only the deployer sees this, once; players
- * never authorize anything, they only use the URL.
- *
- * IMPORTANT: after editing this script, redeploy with
- * Deploy -> Manage deployments -> (pencil) -> Version: New version -> Deploy.
- * Saving alone keeps serving the old code.
- *
- * Sharing: NEVER share this spreadsheet with the clan - players talk to the web app URL
- * only, which runs as your account and needs no sheet access. Share the spreadsheet with
- * your admins (editors) and nobody else.
- *
- * Tabs (created automatically; Store/Meta/Removed start hidden - View -> Hidden sheets):
- *  - Adjustments : admin credit, typed by hand. This is the only tab you routinely edit.
- *  - Requests    : credit requests from players - via the plugin, or via the /exec URL
- *                  opened in a browser: a player portal showing the live board, the
- *                  team's requests and their status, and a request form (proof =
- *                  screenshot links, e.g. Discord/Imgur). Select row(s) and use
- *                  Irons Pub Bingo -> Approve/Deny; approving writes the Adjustments row
- *                  for you and stamps the request's Status column.
- *  - Teams       : the allow-list of team codes (Code + display Name). Only listed
- *                  codes may sync, and the plugin's "Choose team" button offers exactly
- *                  this list. Fill it before players sync - while it is empty the store
- *                  accepts nothing, so a leftover client cannot rebuild a reset event.
- *  - Board code  : paste the board code (JSON) here and players load the board with
- *                  Import board -> Import from store, and clients running any other
- *                  board are rejected. Manual Import board still works too.
- *  - Settings    : host knobs. "Poll interval (seconds)" sets how often each client
- *                  talks to this store - 60 to 900, blank means the default 120.
- *                  Values outside that range are clamped by the plugin.
- *  - Removed     : who no longer counts, per board scope. A row here stops that member
- *                  counting but keeps their Store row parked, so if they come back their
- *                  progress on that team comes back too. Reason "left" is written
- *                  automatically when a player switches teams and clears itself if they
- *                  rejoin; add a row by hand (reason blank) to evict someone permanently
- *                  - delete it to let them back.
- *  - Board <team>: generated read-only view of the board and its progress, one tab
- *                  per team (plain "Board" for players without a team code).
- *  - Store       : raw per-player data from the plugin. Leave alone.
- *  - Meta        : board definitions sent by the plugin. Leave alone.
- */
-
-/**
- * @OnlyCurrentDoc
- * Limits the requested permission to this script's own spreadsheet only,
- * instead of access to all spreadsheets on the account. Approval announcements to
- * Discord additionally need the "connect to an external service" permission, which
- * Google asks for once after deploying.
+ * Tables:
+ *  - Adjustments : admin credit. Rows add up. A negative row corrects a mistake.
+ *  - Requests    : credit requests from the plugin and the portal, with their status.
+ *                  Approving one writes its Adjustments row.
+ *  - Teams       : the allow-list of team codes (Code, Name, Webhook). Only listed codes
+ *                  may sync, and the plugin's Choose team picker offers exactly this list.
+ *                  While it is empty the store accepts nothing.
+ *  - Board code  : the official board. Players import it, and clients running any other
+ *                  board are rejected.
+ *  - Settings    : "Poll interval (seconds)", 60 to 900, blank means 120.
+ *  - Removed     : who no longer counts, per board scope. Their Store row stays parked,
+ *                  so returning to the team brings their progress back. Reason "left" is
+ *                  written when a player switches teams and clears when they rejoin.
+ *  - Board <team>: a generated view of each team's board and progress.
+ *  - Store       : per-player progress, with the member key hash that owns each row.
+ *  - Meta        : board summaries per board scope.
+ *  - Scores      : each team's points, for the standings.
  */
 
 var STORE_SHEET = 'Store';
