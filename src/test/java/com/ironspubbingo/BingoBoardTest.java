@@ -376,25 +376,6 @@ public class BingoBoardTest
 		assertTrue(!cached.apply("Alice", java.util.Map.of(99, bogus), 9));
 	}
 
-	@Test
-	public void publishedShareTravelsWithTheTileWithoutBaselines()
-	{
-		TileProgress own = new TileProgress();
-		own.goal(0, 1).n = 7;
-		own.goal(0, 1).baseline = 123456L;
-		own.completedAt = own.counts(1);
-		own.completedAt.goal(0, 1).n = 3;
-		own.ts = 1000L;
-
-		TileProgress shared = gson.fromJson(gson.toJson(own.toShare(1)), TileProgress.class);
-		assertEquals(7, shared.goal(0, 1).n);
-		assertEquals(3, shared.completedAt.goal(0, 1).n);
-		assertEquals(null, shared.completedAt.goal(0, 1).baseline);
-		assertEquals(null, shared.completedAt.completedAt);
-		assertTrue(shared.completedAt.hasProgress());
-		assertTrue(!new TileProgress().hasProgress());
-	}
-
 	private static TileProgress count(long n)
 	{
 		TileProgress tp = new TileProgress();
@@ -402,48 +383,58 @@ public class BingoBoardTest
 		return tp;
 	}
 
-	private static TileProgress publishedAs(long live, long atCompletion, String... with)
+	private static java.util.Map<String, TileProgress> combination(Object... idsAndCounts)
 	{
-		TileProgress tp = count(live);
-		tp.completedAt = count(atCompletion);
-		tp.completedAt.with = java.util.Arrays.asList(with);
-		return tp;
+		java.util.Map<String, TileProgress> out = new java.util.TreeMap<>();
+		for (int i = 0; i < idsAndCounts.length; i += 2)
+		{
+			out.put((String) idsAndCounts[i], count(((Number) idsAndCounts[i + 1]).longValue()));
+		}
+		return out;
 	}
 
 	@Test
-	public void lateJoinersFreezeTheSharesTheTeamPublished()
+	public void frozenNumbersTravelWithTheTileWithoutBaselines()
+	{
+		TileProgress own = count(7);
+		own.goal(0, 1).baseline = 123456L;
+		own.frozenTeam = combination("a", 3, "b", 2);
+		own.ts = 1000L;
+		TileProgress shared = gson.fromJson(gson.toJson(own.toShare(1)), TileProgress.class);
+		assertEquals(7, shared.goal(0, 1).n);
+		assertEquals(3, shared.frozenTeam.get("a").goal(0, 1).n);
+		assertEquals(null, shared.frozenTeam.get("a").goal(0, 1).baseline);
+		assertTrue(!new TileProgress().hasProgress());
+	}
+
+	@Test
+	public void everyClientShowsTheSamePublishedCombination()
 	{
 		BingoTile tile = BingoBoard.parse(gson, "{\"name\":\"t\",\"size\":1,\"tiles\":[{\"label\":\"Bones\","
 			+ "\"goals\":[{\"type\":\"DROP\",\"items\":[\"Bones\"],\"count\":5}]}]}").getTiles().get(0);
-		java.util.Set<String> team = new java.util.HashSet<>(java.util.Arrays.asList("a", "b"));
-		TileProgress alice = publishedAs(6, 3, "a", "b");
-		TileProgress bob = publishedAs(4, 2, "a", "b");
+		java.util.Set<String> team = new java.util.HashSet<>(java.util.Arrays.asList("a", "b", "c"));
+		// Each client worked the numbers out from its own history, and they differ a little.
+		java.util.SortedMap<String, java.util.Map<String, TileProgress>> published = new java.util.TreeMap<>();
+		published.put("c", combination("a", 3, "b", 1, "c", 1));
+		published.put("b", combination("a", 2, "b", 2, "c", 1));
+		// Whoever looks, the lowest publisher id that holds decides: b's numbers.
+		java.util.Map<String, TileProgress> chosen = IronsPubBingoPlugin.chooseFrozen(tile, published, team);
+		assertEquals(2, chosen.get("a").goal(0, 1).n);
+		assertEquals(2, chosen.get("b").goal(0, 1).n);
 
-		// Completed 3 + 2, both kept playing: someone joining now sees 3 and 2, not 6 and 4.
-		java.util.Map<String, TileProgress> guessed = new java.util.LinkedHashMap<>();
-		guessed.put("Alice", count(6));
-		guessed.put("Bob", count(4));
-		java.util.Map<String, TileProgress> published = new java.util.LinkedHashMap<>();
-		published.put("Alice", IronsPubBingoPlugin.heldShare(alice, team));
-		published.put("Bob", IronsPubBingoPlugin.heldShare(bob, team));
-		java.util.Map<String, TileProgress> frozen = IronsPubBingoPlugin.preferPublished(tile, guessed, published);
-		assertEquals(3, frozen.get("Alice").goal(0, 1).n);
-		assertEquals(2, frozen.get("Bob").goal(0, 1).n);
-
-		// Someone joining later does not void the shares: they came after the completion.
+		// Someone joining later changes nothing: they came after the completion.
 		java.util.Set<String> grown = new java.util.HashSet<>(team);
-		grown.add("c");
-		assertTrue(IronsPubBingoPlugin.heldShare(alice, grown) != null);
+		grown.add("d");
+		assertTrue(IronsPubBingoPlugin.chooseFrozen(tile, published, grown) == chosen);
 
-		// Bob leaves: Alice's share was worked out with him, so it no longer holds.
-		assertEquals(null, IronsPubBingoPlugin.heldShare(alice, java.util.Collections.singleton("a")));
+		// a leaves: neither publication holds until b and c publish again for b and c.
+		java.util.Set<String> withoutA = new java.util.HashSet<>(java.util.Arrays.asList("b", "c"));
+		assertEquals(null, IronsPubBingoPlugin.chooseFrozen(tile, published, withoutA));
+		published.put("c", combination("b", 2, "c", 3));
+		assertEquals(3, IronsPubBingoPlugin.chooseFrozen(tile, published, withoutA).get("c").goal(0, 1).n);
 
-		// A share that no longer completes the tile is not used either.
-		java.util.Map<String, TileProgress> alone = new java.util.LinkedHashMap<>();
-		alone.put("Alice", count(6));
-		java.util.Map<String, TileProgress> stale = new java.util.LinkedHashMap<>();
-		stale.put("Alice", count(3));
-		assertEquals(6, IronsPubBingoPlugin.preferPublished(tile, alone, stale).get("Alice").goal(0, 1).n);
+		// Numbers that no longer complete the tile never hold.
+		assertTrue(!IronsPubBingoPlugin.frozenHolds(tile, combination("b", 2, "c", 1), withoutA));
 	}
 
 	@Test

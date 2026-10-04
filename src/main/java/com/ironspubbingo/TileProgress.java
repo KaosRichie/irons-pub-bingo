@@ -21,18 +21,12 @@ public class TileProgress
 	 */
 	Long ts;
 	/**
-	 * This member's share of the tile as it stood the moment the tile completed, worked out
-	 * and published by the owner's client, which watched it happen. Teammates who only see
-	 * the tile later freeze these numbers instead of guessing. Null while the tile is not
-	 * complete, or before the owner's client has seen it complete.
+	 * The whole team's frozen numbers for this tile as this member's client worked them out
+	 * when it saw the tile complete, by member id. Every client shows the publication of
+	 * the teammate with the lowest member id that still holds, so all of them show exactly
+	 * the same combination. Null while the tile is not complete.
 	 */
-	TileProgress completedAt;
-	/**
-	 * On a published share: the member ids the owner worked it out with. A share only holds
-	 * while all of them are still on the team; once one leaves, the tile completed at a
-	 * different moment and the owner publishes again.
-	 */
-	List<String> with;
+	java.util.Map<String, TileProgress> frozenTeam;
 
 	/**
 	 * A copy safe to broadcast to teammates: counters, distinct item names, the manual
@@ -43,11 +37,7 @@ public class TileProgress
 		TileProgress share = new TileProgress();
 		share.manual = manual;
 		share.ts = ts;
-		if (completedAt != null)
-		{
-			share.completedAt = completedAt.counts(goalCount);
-			share.completedAt.with = completedAt.with == null ? null : new ArrayList<>(completedAt.with);
-		}
+		share.frozenTeam = frozenCounts(frozenTeam, goalCount);
 		for (int g = 0; g < goalCount; g++)
 		{
 			GoalProgress own = goal(g, goalCount);
@@ -63,6 +53,24 @@ public class TileProgress
 			}
 		}
 		return share;
+	}
+
+	/** A frozen combination's numbers only, ordered by member id; null stays null. */
+	static java.util.Map<String, TileProgress> frozenCounts(java.util.Map<String, TileProgress> team, int goalCount)
+	{
+		if (team == null)
+		{
+			return null;
+		}
+		java.util.Map<String, TileProgress> copy = new java.util.TreeMap<>();
+		for (java.util.Map.Entry<String, TileProgress> entry : team.entrySet())
+		{
+			if (entry.getKey() != null && entry.getValue() != null)
+			{
+				copy.put(entry.getKey(), entry.getValue().counts(goalCount));
+			}
+		}
+		return copy;
 	}
 
 	/** Just the numbers: counters, distinct names and the manual tick. */
