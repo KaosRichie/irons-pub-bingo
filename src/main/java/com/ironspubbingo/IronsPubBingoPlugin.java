@@ -98,7 +98,6 @@ public class IronsPubBingoPlugin extends Plugin
 	/** Hosts can tune polling; anything outside these bounds is clamped into range. */
 	private static final long STORE_POLL_MIN_SECONDS = 60;
 	private static final long STORE_POLL_MAX_SECONDS = 900;
-	/** A session is live when it spoke within this window (heartbeats come every poll). */
 	private static final int MAX_PROGRESS_MESSAGES_PER_EVENT = 3;
 	private static final int TILES_PER_MESSAGE = 25;
 
@@ -249,11 +248,6 @@ public class IronsPubBingoPlugin extends Plugin
 	 * team - like being offline, not like switching teams, so no reset. Not persisted.
 	 */
 	private boolean storePaused;
-	/**
-	 * Effective minimum ms between store pushes: the host can raise it via the sheet's
-	 * Settings tab (for big events on one deployment), but never below the plugin's own
-	 * default and never above a sane cap. Completions bypass it either way.
-	 */
 	/** Seconds between store polls; the host can raise this from the Settings tab. */
 	private long storePollSeconds = STORE_POLL_SECONDS;
 
@@ -318,7 +312,7 @@ public class IronsPubBingoPlugin extends Plugin
 			{
 				syncStore(false);
 				sendPresencePing();
-				refreshPanel(); // liveness decays with time, not only with events
+				refreshPanel();
 			}),
 			storePollSeconds, storePollSeconds, TimeUnit.SECONDS);
 	}
@@ -473,11 +467,6 @@ public class IronsPubBingoPlugin extends Plugin
 	// ---------------------------------------------------------------- board management
 
 	/**
-	 * Parses, validates, stores and activates a board.
-	 *
-	 * @return an error message for the user, or null on success
-	 */
-	/**
 	 * Imports a board code. Parsing happens right away; the board is applied on the
 	 * client thread, then onDone gets null on the Swing thread. A parse error goes to
 	 * onDone at once, on the calling thread.
@@ -564,9 +553,9 @@ public class IronsPubBingoPlugin extends Plugin
 			List<Object> goals = new ArrayList<>();
 			for (BingoGoal goal : tile.goals)
 			{
-				// Manual goals ride along too: leaving them out shifted every later
-				// goal's index, so mixed tiles' progress and admin credit landed on
-				// the wrong columns - and manual-only tiles vanished from the portal.
+				// Manual goals are included so goal indexes match the board: otherwise
+				// mixed tiles' progress and admin credit land on the wrong columns, and
+				// manual-only tiles vanish from the portal.
 				Map<String, Object> goalMeta = new HashMap<>();
 				goalMeta.put("label", goal.shortDescribe());
 				goalMeta.put("target", goal.target());
@@ -1513,7 +1502,6 @@ public class IronsPubBingoPlugin extends Plugin
 	/**
 	 * Cached teammate states are scoped per team, not just per board: switching team codes
 	 * on the same board must never carry the old team's members into the new team's store.
-	 * A switch deletes both sides of the key anyway (see {@link #dropCachedTeammates}).
 	 */
 	private String teamCacheKey(String teamCode, boolean storeMode)
 	{
@@ -1569,9 +1557,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Reacts to the team code being edited while the plugin runs. Without this the plugin
-	 * sat in the old team's party until the next restart ("In a different party") and kept
-	 * pushing the old team's cached members under the new team's store scope.
+	 * Reacts to the team code being edited while the plugin runs: follows the code into its
+	 * party and store scope, so the old team's cached members are never pushed under the
+	 * new team's scope.
 	 */
 	private void onTeamCodeChanged(String oldRawCode)
 	{
@@ -1583,7 +1571,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		// Progress must not follow a player from one team to another (a defector would
-		// count for both teams), so switching resets the board - after asking. Store
+		// count for both teams), so switching swaps the board - after asking. Store
 		// pushes pause while the dialog is open, or pre-reset progress would already
 		// have been pushed under the new team's scope.
 		// Ask when there is progress to lose - or when we can't tell (logged out, profile
@@ -1606,7 +1594,7 @@ public class IronsPubBingoPlugin extends Plugin
 					{
 						// Take nothing along and leave nothing behind: the store evicts
 						// this account from the old team's scope (tombstoned, so cached
-						// copies can't resurrect it) and the fresh state starts at zero.
+						// copies can't resurrect it).
 						if (config.teamStoreEnabled())
 						{
 							enqueueEviction(scopeFor(oldCode));
@@ -1768,11 +1756,6 @@ public class IronsPubBingoPlugin extends Plugin
 		return active;
 	}
 
-	/**
-	 * Wipes own progress but stamps every tile with a fresh empty entry: the timestamps
-	 * beat any stale copy of the old progress a teammate's cache might later relay, so a
-	 * reset can never be undone by gossip (same trick as the per-tile reset button).
-	 */
 	/** Where this profile's own progress for a team (in one sync mode) waits for a return. */
 	private String parkedProgressKey(String teamCode, boolean storeMode)
 	{
@@ -1781,9 +1764,9 @@ public class IronsPubBingoPlugin extends Plugin
 
 	/**
 	 * Files the current progress under the team it was earned on, and loads back whatever
-	 * this profile last had on the team it is joining. Progress still never moves between
-	 * teams - each team keeps its own copy - but leaving one no longer destroys it, so
-	 * coming back restores what you had there. XP baselines are reseeded either way: XP
+	 * this profile last had on the team it is joining. Progress never moves between
+	 * teams - each team keeps its own copy - so coming back restores what you had
+	 * there. XP baselines are reseeded either way: XP
 	 * earned while away counted for the other team and must not be credited twice.
 	 */
 	private void switchOwnProgress(String fromTeam, boolean fromStore, String toTeam, boolean toStore)
@@ -1818,6 +1801,11 @@ public class IronsPubBingoPlugin extends Plugin
 		rebaselineKillCounts();
 	}
 
+	/**
+	 * Wipes own progress but stamps every tile with a fresh empty entry: the timestamps
+	 * beat any stale copy of the old progress a teammate's cache might later relay, so a
+	 * reset can never be undone by gossip (same trick as the per-tile reset button).
+	 */
 	private void resetOwnProgress()
 	{
 		Map<Integer, Long> previous = new HashMap<>();
@@ -2111,7 +2099,7 @@ public class IronsPubBingoPlugin extends Plugin
 		String code = normalizedTeamCode();
 		if (code == null || storeTeamNames.isEmpty() || !teamStore.isConfigured())
 		{
-			return null; // no store in play: nothing to distinguish
+			return null;
 		}
 		return storeTeamNames.containsKey(code) ? "store team" : "custom code, party-only";
 	}
@@ -2258,7 +2246,7 @@ public class IronsPubBingoPlugin extends Plugin
 		request.note = note;
 		request.links = links;
 		teamStore.submitRequest(storeScopedKey(), request, boardCodeHash,
-			board == null ? null : board.version, callback);
+			board.version, callback);
 	}
 
 	/** Whether the player set a Discord webhook, for the request dialog's proof toggle. */
@@ -2289,8 +2277,7 @@ public class IronsPubBingoPlugin extends Plugin
 			return "In a different party";
 		}
 		// Deliberately no member count here: who's online is the friends list's job.
-		// This line only answers "is my team sync working"; the hover tooltip lists the
-		// individual sessions for diagnostics.
+		// This line only answers "is my team sync working".
 		return "Connected";
 	}
 
@@ -2532,10 +2519,9 @@ public class IronsPubBingoPlugin extends Plugin
 
 	private void sendPresencePing()
 	{
-		// Nobody reads these anymore (the session diagnostics UI was removed), but the
-		// periodic traffic keeps the party websocket from dying silently while idle - a
-		// dead socket reconnects under a NEW member id on the next real send, which is
-		// exactly the ghost-session problem this prevents.
+		// Receivers ignore these. The periodic traffic keeps the party websocket from
+		// dying silently while idle: a dead socket reconnects under a NEW member id on
+		// the next real send, leaving a ghost session behind.
 		if (board != null && inTeamParty() && localMemberId() != null)
 		{
 			partyService.send(new IronsPubBingoPing(boardKey));
@@ -2758,7 +2744,7 @@ public class IronsPubBingoPlugin extends Plugin
 		refreshPanel();
 		final int generation = storeGeneration;
 		teamStore.sync(forBoard, toSend, meta, self, earnedPoints(), boardCodeHash,
-			board == null ? null : board.version,
+			board.version,
 			(payload, error) -> clientThread.invokeLater(() ->
 		{
 			if (!running || generation != storeGeneration)
@@ -2798,7 +2784,7 @@ public class IronsPubBingoPlugin extends Plugin
 				storeError = error;
 				// The store rejected us for running an outdated board: surface it via
 				// the same notice a teammate's newer revision would trigger.
-				if (payload != null && payload.newerVersion != null && board != null
+				if (payload != null && payload.newerVersion != null
 					&& (board.version == null || payload.newerVersion >= board.version)
 					&& (newerBoardVersion == null || payload.newerVersion > newerBoardVersion))
 				{
@@ -2915,10 +2901,6 @@ public class IronsPubBingoPlugin extends Plugin
 		return lines + (diag ? 1 : 0) + (anti ? 1 : 0);
 	}
 
-	/**
-	 * Completed bingo lines as {firstCellIndex, lastCellIndex} segments, for drawing
-	 * strokes through them on the grid.
-	 */
 	LineDisplay lineDisplay()
 	{
 		return config.lineDisplay();
@@ -3024,6 +3006,10 @@ public class IronsPubBingoPlugin extends Plugin
 		return cells;
 	}
 
+	/**
+	 * Completed bingo lines as {firstCellIndex, lastCellIndex} segments, for drawing
+	 * strokes through them on the grid.
+	 */
 	List<int[]> completedLineSegments()
 	{
 		List<int[]> segments = new ArrayList<>();
@@ -3681,14 +3667,6 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Applies a reported kill count for a boss to a KC goal's progress: the first sighting
-	 * after board import baselines at reported - 1 (that message itself is a kill during the
-	 * event), later sightings count the delta — so missed messages are caught up on the next
-	 * kill and progress reflects kill count gained since import.
-	 *
-	 * @return whether progress changed
-	 */
-	/**
 	 * The timestamp for a change to a tile: now, but always past the tile's previous one,
 	 * so a change made after adopting a copy stamped ahead of this clock still wins.
 	 */
@@ -3785,6 +3763,14 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Applies a reported kill count for a boss to a KC goal's progress: the first sighting
+	 * after board import baselines at reported - 1 (that message itself is a kill during the
+	 * event), later sightings count the delta - so missed messages are caught up on the next
+	 * kill and progress reflects kill count gained since import.
+	 *
+	 * @return whether progress changed
+	 */
 	static boolean applyKillCount(GoalProgress p, String boss, long reported, boolean countIt)
 	{
 		Map<String, long[]> kc = p.kcMap();
@@ -4042,8 +4028,8 @@ public class IronsPubBingoPlugin extends Plugin
 			flushBroadcast();
 		}
 		// Only completions are worth their own store call. Ordinary progress rides the
-		// 2 minute poll, which pushes as well as pulls - pushing per change cost up to
-		// four calls a minute per player for freshness nobody was watching.
+		// poll, which pushes as well as pulls; a push per change would cost several calls
+		// a minute per player for freshness nobody is watching.
 		if (!newlyCompleted.isEmpty())
 		{
 			syncStore(true);
