@@ -121,6 +121,8 @@ class BingoTeamStore
 		Integer boardVersion;
 		/** Response: every team's points on this board, sorted best first. */
 		List<Standing> standings;
+		/** Response: the frozen numbers of every completed tile, tile -> member id -> progress. */
+		Map<Integer, Map<String, TileProgress>> frozen;
 		/** Response: why the push was rejected (e.g. a team code the host didn't define). */
 		String error;
 		/** Response beside a "Board updated" rejection: the version the host pasted. */

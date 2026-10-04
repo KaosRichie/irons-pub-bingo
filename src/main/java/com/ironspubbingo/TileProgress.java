@@ -21,14 +21,6 @@ public class TileProgress
 	 */
 	Long ts;
 	/**
-	 * The whole team's frozen numbers for this tile as this member's client worked them out
-	 * when it saw the tile complete, by member id. Every client shows the publication of
-	 * the teammate with the lowest member id that still holds, so all of them show exactly
-	 * the same combination. Null while the tile is not complete.
-	 */
-	java.util.Map<String, TileProgress> frozenTeam;
-
-	/**
 	 * A copy safe to broadcast to teammates: counters, distinct item names, the manual
 	 * flag and the owner timestamp, without per-member internals (XP/kill count baselines).
 	 */
@@ -37,7 +29,6 @@ public class TileProgress
 		TileProgress share = new TileProgress();
 		share.manual = manual;
 		share.ts = ts;
-		share.frozenTeam = frozenCounts(frozenTeam, goalCount);
 		for (int g = 0; g < goalCount; g++)
 		{
 			GoalProgress own = goal(g, goalCount);
@@ -53,24 +44,6 @@ public class TileProgress
 			}
 		}
 		return share;
-	}
-
-	/** A frozen combination's numbers only, ordered by member id; null stays null. */
-	static java.util.Map<String, TileProgress> frozenCounts(java.util.Map<String, TileProgress> team, int goalCount)
-	{
-		if (team == null)
-		{
-			return null;
-		}
-		java.util.Map<String, TileProgress> copy = new java.util.TreeMap<>();
-		for (java.util.Map.Entry<String, TileProgress> entry : team.entrySet())
-		{
-			if (entry.getKey() != null && entry.getValue() != null)
-			{
-				copy.put(entry.getKey(), entry.getValue().counts(goalCount));
-			}
-		}
-		return copy;
 	}
 
 	/** Just the numbers: counters, distinct names and the manual tick. */
@@ -89,23 +62,6 @@ public class TileProgress
 			}
 		}
 		return copy;
-	}
-
-	/** Whether there is any progress at all: a count, a name or a tick. */
-	boolean hasProgress()
-	{
-		if (manual)
-		{
-			return true;
-		}
-		for (GoalProgress p : goals == null ? new ArrayList<GoalProgress>() : goals)
-		{
-			if (p != null && (p.n != 0 || p.matched != null && !p.matched.isEmpty()))
-			{
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**

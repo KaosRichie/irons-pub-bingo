@@ -383,58 +383,13 @@ public class BingoBoardTest
 		return tp;
 	}
 
-	private static java.util.Map<String, TileProgress> combination(Object... idsAndCounts)
-	{
-		java.util.Map<String, TileProgress> out = new java.util.TreeMap<>();
-		for (int i = 0; i < idsAndCounts.length; i += 2)
-		{
-			out.put((String) idsAndCounts[i], count(((Number) idsAndCounts[i + 1]).longValue()));
-		}
-		return out;
-	}
-
 	@Test
-	public void frozenNumbersTravelWithTheTileWithoutBaselines()
+	public void theStoresFrozenNumbersAreReadFromASyncReply()
 	{
-		TileProgress own = count(7);
-		own.goal(0, 1).baseline = 123456L;
-		own.frozenTeam = combination("a", 3, "b", 2);
-		own.ts = 1000L;
-		TileProgress shared = gson.fromJson(gson.toJson(own.toShare(1)), TileProgress.class);
-		assertEquals(7, shared.goal(0, 1).n);
-		assertEquals(3, shared.frozenTeam.get("a").goal(0, 1).n);
-		assertEquals(null, shared.frozenTeam.get("a").goal(0, 1).baseline);
-		assertTrue(!new TileProgress().hasProgress());
-	}
-
-	@Test
-	public void everyClientShowsTheSamePublishedCombination()
-	{
-		BingoTile tile = BingoBoard.parse(gson, "{\"name\":\"t\",\"size\":1,\"tiles\":[{\"label\":\"Bones\","
-			+ "\"goals\":[{\"type\":\"DROP\",\"items\":[\"Bones\"],\"count\":5}]}]}").getTiles().get(0);
-		java.util.Set<String> team = new java.util.HashSet<>(java.util.Arrays.asList("a", "b", "c"));
-		// Each client worked the numbers out from its own history, and they differ a little.
-		java.util.SortedMap<String, java.util.Map<String, TileProgress>> published = new java.util.TreeMap<>();
-		published.put("c", combination("a", 3, "b", 1, "c", 1));
-		published.put("b", combination("a", 2, "b", 2, "c", 1));
-		// Whoever looks, the lowest publisher id that holds decides: b's numbers.
-		java.util.Map<String, TileProgress> chosen = IronsPubBingoPlugin.chooseFrozen(tile, published, team);
-		assertEquals(2, chosen.get("a").goal(0, 1).n);
-		assertEquals(2, chosen.get("b").goal(0, 1).n);
-
-		// Someone joining later changes nothing: they came after the completion.
-		java.util.Set<String> grown = new java.util.HashSet<>(team);
-		grown.add("d");
-		assertTrue(IronsPubBingoPlugin.chooseFrozen(tile, published, grown) == chosen);
-
-		// a leaves: neither publication holds until b and c publish again for b and c.
-		java.util.Set<String> withoutA = new java.util.HashSet<>(java.util.Arrays.asList("b", "c"));
-		assertEquals(null, IronsPubBingoPlugin.chooseFrozen(tile, published, withoutA));
-		published.put("c", combination("b", 2, "c", 3));
-		assertEquals(3, IronsPubBingoPlugin.chooseFrozen(tile, published, withoutA).get("c").goal(0, 1).n);
-
-		// Numbers that no longer complete the tile never hold.
-		assertTrue(!IronsPubBingoPlugin.frozenHolds(tile, combination("b", 2, "c", 1), withoutA));
+		BingoTeamStore.StorePayload payload = gson.fromJson("{\"frozen\":{\"0\":{\"aaaaaaaaaaaaaa01\":{\"goals\":[{\"n\":3}]},"
+			+ "\"admin:kaos\":{\"goals\":[{\"n\":2}],\"manual\":false}}}}", BingoTeamStore.StorePayload.class);
+		assertEquals(3, payload.frozen.get(0).get("aaaaaaaaaaaaaa01").goal(0, 1).n);
+		assertEquals(2, payload.frozen.get(0).get("admin:kaos").goal(0, 1).n);
 	}
 
 	@Test
