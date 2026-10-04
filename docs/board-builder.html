@@ -1161,7 +1161,7 @@ function renderEditor() {
   iconInput.parentNode.style.flex = "1";
   iconInput.style.width = "100%";
   const iconPreview = document.createElement("div");
-  iconLine.appendChild(iconPreview);
+  iconLine.insertBefore(iconPreview, iconLine.firstChild);
   iconPreview.style.cssText = "width:34px;height:34px;flex:0 0 auto;background:#222;border:1px solid var(--line);"
     + "border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#777";
   function refreshIconPreview() {
