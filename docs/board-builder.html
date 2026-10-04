@@ -118,6 +118,12 @@ input[type=checkbox]:checked::after {
 }
 .cell .n { position: absolute; top: 2px; left: 5px; font-size: 10px; color: var(--muted); }
 .hint { color: var(--muted); font-size: 13.5px; }
+.panehead { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.panehead h2 { flex: 1; margin: 0; }
+button.sm { padding: 3px 9px; font-size: 13.5px; }
+button:disabled { opacity: .45; cursor: default; }
+button:disabled:hover { border-color: var(--line); }
+.toolrow { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .tilehead { display: flex; align-items: baseline; gap: 10px; }
 .tilehead h2 { flex: 1; }
@@ -214,7 +220,11 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
 
 <main class="wrap">
   <section class="pane">
-    <h2 id="boardHeader">Board</h2>
+    <div class="panehead">
+      <h2 id="boardHeader">Board</h2>
+      <button id="btnUndo" class="sm" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+      <button id="btnRedo" class="sm" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+    </div>
     <div id="grid"></div>
     <p class="hint" id="boardHint">Click a tile to edit it, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
     <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID: tile positions carry the players' progress, so only swap tiles around <b>before</b> the event goes live.</p>
@@ -308,6 +318,7 @@ let board = freshBoard();
 let selected = -1;
 let tileClipboard = null;
 
+function isEmptyTile(t) { return !t || (!(t.label || "").trim() && !t.goals.length && !(t.icon || "").trim()); }
 function emptyTile() { return { label: "", description: "", mode: "ALL", icon: "", points: 0, goals: [] }; }
 function defaultGoal(type) {
   const g = { type: type || "DROP", count: 1, screenshot: false };
@@ -522,7 +533,52 @@ function importBoard(json) {
 }
 
 // ---------- draft persistence (best effort) ----------
-function saveDraft() { try { localStorage.setItem("bingo-forge-draft", JSON.stringify(board)); } catch (e) {} }
+// Every edit ends in saveDraft, so undo hangs off it: a snapshot of the board before each
+// change. Keystrokes in quick succession merge into one step, so undo takes back a word
+// or a field, not a single letter.
+const undoStack = [];
+const redoStack = [];
+let lastSnapshot = null;
+let mergeTimer = null;
+function saveDraft() {
+  const now = JSON.stringify(board);
+  if (lastSnapshot !== null && now !== lastSnapshot) {
+    if (!mergeTimer) {
+      undoStack.push(lastSnapshot);
+      if (undoStack.length > 200) undoStack.shift();
+      redoStack.length = 0;
+    }
+    clearTimeout(mergeTimer);
+    mergeTimer = setTimeout(() => { mergeTimer = null; }, 700);
+  }
+  lastSnapshot = now;
+  updateUndoButtons();
+  try { localStorage.setItem("bingo-forge-draft", now); } catch (e) {}
+}
+function restoreSnapshot(json) {
+  board = JSON.parse(json);
+  lastSnapshot = json;
+  clearTimeout(mergeTimer); mergeTimer = null;
+  if (selected >= board.tiles.length) selected = -1;
+  try { localStorage.setItem("bingo-forge-draft", json); } catch (e) {}
+  updateUndoButtons();
+  renderTopbar(); renderGrid(); renderEditor();
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(JSON.stringify(board));
+  restoreSnapshot(undoStack.pop());
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(board));
+  restoreSnapshot(redoStack.pop());
+}
+function updateUndoButtons() {
+  const u = document.getElementById("btnUndo"), r = document.getElementById("btnRedo");
+  if (u) u.disabled = !undoStack.length;
+  if (r) r.disabled = !redoStack.length;
+}
 function loadDraft() {
   try {
     const raw = localStorage.getItem("bingo-forge-draft");
@@ -727,7 +783,7 @@ function renderEditor() {
 
   // Copy/paste between tiles
   const toolRow = document.createElement("div");
-  toolRow.className = "row";
+  toolRow.className = "toolrow";
   const copyBtn = document.createElement("button");
   copyBtn.textContent = "Copy tile";
   copyBtn.title = "Copy this tile, then paste it onto another tile";
@@ -744,8 +800,33 @@ function renderEditor() {
     board.tiles[selected] = JSON.parse(JSON.stringify(tileClipboard));
     saveDraft(); renderEditor(); renderGrid();
   });
-  toolRow.appendChild(copyBtn);
-  toolRow.appendChild(pasteBtn);
+  const dupBtn = document.createElement("button");
+  dupBtn.textContent = "Duplicate";
+  dupBtn.title = "Put a copy of this tile on the next empty tile";
+  dupBtn.addEventListener("click", () => {
+    const n = board.tiles.length;
+    for (let step = 1; step < n; step++) {
+      const at = (selected + step) % n;
+      if (isEmptyTile(board.tiles[at])) {
+        board.tiles[at] = JSON.parse(JSON.stringify(tile));
+        selected = at;
+        saveDraft(); renderGrid(); renderEditor();
+        return;
+      }
+    }
+    dupBtn.textContent = "No empty tile";
+    setTimeout(() => { dupBtn.textContent = "Duplicate"; }, 1600);
+  });
+  const clearBtn = document.createElement("button");
+  clearBtn.textContent = "Clear";
+  clearBtn.className = "ghost";
+  clearBtn.title = "Empty this tile (Undo brings it back)";
+  clearBtn.disabled = isEmptyTile(tile);
+  clearBtn.addEventListener("click", () => {
+    board.tiles[selected] = emptyTile();
+    saveDraft(); renderGrid(); renderEditor();
+  });
+  [copyBtn, pasteBtn, dupBtn, clearBtn].forEach(b => { b.classList.add("sm"); toolRow.appendChild(b); });
   editor.appendChild(toolRow);
 
   editor.appendChild(field("Label (shown on the board)",
@@ -1084,6 +1165,14 @@ $("btnNew").addEventListener("click", () => {
   btn.textContent = "Replace draft?";
   newArmedTimer = setTimeout(() => { btn.textContent = "New"; newArmedTimer = null; }, 3000);
 });
+$("btnUndo").addEventListener("click", undo);
+$("btnRedo").addEventListener("click", redo);
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || $("ioDialog").open) return;
+  const k = e.key.toLowerCase();
+  if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
+});
 $("btnImport").addEventListener("click", () => openDialog("import"));
 $("btnExport").addEventListener("click", () => openDialog("export"));
 $("btnDialogClose").addEventListener("click", () => $("ioDialog").close());
@@ -1112,5 +1201,7 @@ $("btnDialogApply").addEventListener("click", () => {
 });
 
 if (!loadDraft()) resizeTiles();
+lastSnapshot = JSON.stringify(board);
+updateUndoButtons();
 renderTopbar(); renderGrid(); renderEditor();
 </script>
