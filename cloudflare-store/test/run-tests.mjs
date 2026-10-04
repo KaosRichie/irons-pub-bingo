@@ -384,6 +384,22 @@ await test('a made-up event code shows nothing until an admin saves to it', asyn
 	is((await rt.request('/e/made-up')).status, 200, 'saving brought the event into existence, and it lasts');
 });
 
+await test('Bingo Forge may call the admin API from its own pages only', async () =>
+{
+	const rt = createRuntime();
+	const forge = 'https://kaosrichie.github.io';
+	const pre = await rt.request('/e/summer/admin/api', { method: 'OPTIONS', headers: { origin: forge } });
+	is(pre.status, 204, 'preflight from Forge accepted');
+	is(pre.headers.get('access-control-allow-origin'), forge, 'and names Forge');
+	is((await rt.request('/e/summer/admin/api', { method: 'OPTIONS', headers: { origin: 'https://evil.example' } })).status, 403,
+		'preflight from elsewhere refused');
+	const post = await rt.request('/e/summer/admin/api', { method: 'POST',
+		headers: { origin: forge, authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ action: 'overview' }) });
+	is(post.headers.get('access-control-allow-origin'), forge, 'admin answers carry the header for Forge');
+	const portal = await rt.request('/e/summer/data', { headers: { origin: forge } });
+	is(portal.headers.get('access-control-allow-origin'), null, 'other routes stay same-origin');
+});
+
 // ---------------------------------------------------------------- report
 
 if (failures.length)

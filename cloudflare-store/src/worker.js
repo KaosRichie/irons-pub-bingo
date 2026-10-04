@@ -21,6 +21,9 @@ import { eventData, summarizeBoard } from './data.js';
 import { LOGO_PNG, ICON_PNG } from './generated/assets.js';
 
 const EVENT_CODE = /^[a-z0-9-]{3,40}$/;
+// Pages allowed to call the admin API from a browser: Bingo Forge's "Send to store" on
+// GitHub Pages, and a local copy of Forge. The password still guards every call.
+const FORGE_ORIGINS = /^(https:\/\/kaosrichie\.github\.io|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?|null)$/;
 const ASSETS = { '/assets/logo.png': LOGO_PNG, '/assets/icon.png': ICON_PNG };
 // Days of request counts kept for the admin page's Usage view.
 const USAGE_DAYS = 14;
@@ -50,8 +53,27 @@ export default {
 		{
 			return new Response('Unknown event', { status: 404 });
 		}
+		const origin = request.headers.get('origin') || '';
+		const cors = match[2] === '/admin/api' && FORGE_ORIGINS.test(origin) ? {
+			'access-control-allow-origin': origin,
+			'access-control-allow-methods': 'POST',
+			'access-control-allow-headers': 'authorization, content-type',
+			'access-control-max-age': '86400',
+			vary: 'origin'
+		} : null;
+		if (request.method === 'OPTIONS')
+		{
+			return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
+		}
 		const stub = env.BINGO_EVENT.get(env.BINGO_EVENT.idFromName(code));
-		return stub.fetch(request);
+		const response = await stub.fetch(request);
+		if (!cors)
+		{
+			return response;
+		}
+		const headers = new Headers(response.headers);
+		Object.keys(cors).forEach(k => headers.set(k, cors[k]));
+		return new Response(response.body, { status: response.status, headers });
 	}
 };
 

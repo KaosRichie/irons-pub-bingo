@@ -199,6 +199,10 @@ dialog h2 { font-family: var(--display); color: var(--gold); font-size: 17px; ma
 dialog textarea { width: 100%; height: 300px; resize: vertical; }
 dialog .dactions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; align-items: center; }
 dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
+.sendbox { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sendbox h3 { font-family: var(--display); font-size: 14px; color: var(--gold); margin: 0 0 4px; letter-spacing: .04em; }
+.sendbox .row input { width: 100%; }
+.sendbox .status { font-size: 13.5px; margin-top: 6px; min-height: 1.2em; }
 @media (prefers-reduced-motion: no-preference) {
   .cell { transition: border-color .12s ease; }
 }
@@ -304,6 +308,18 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   <h2 id="dialogTitle">Board code</h2>
   <p id="dialogNotes" class="hint" style="display:none; margin:0 0 8px"></p>
   <textarea id="dialogText" spellcheck="false"></textarea>
+  <div class="sendbox" id="sendBox" style="display:none">
+    <h3>Send to your team store</h3>
+    <p class="hint" style="margin:0 0 8px">Saves this board on your store event, the same as pasting it on the admin page. Players then load it with <b>Import board from store</b>.</p>
+    <div class="row">
+      <div><label for="storeUrl">Store event URL</label><input type="url" id="storeUrl" placeholder="https://irons-pub-bingo.you.workers.dev/e/summer-2026" autocomplete="url"></div>
+      <div style="flex:0 0 190px"><label for="storePass">Admin password</label><input type="password" id="storePass" autocomplete="current-password"></div>
+    </div>
+    <div class="dactions" style="justify-content:flex-start">
+      <button id="btnSend" class="primary">Send to store</button>
+      <span class="status" id="sendStatus"></span>
+    </div>
+  </div>
   <div class="dactions">
     <span class="copied" id="copyNote"></span>
     <button id="btnDialogCopy">Copy</button>
@@ -1292,6 +1308,7 @@ function setDialogNotes(text, color) {
 
 function openDialog(mode) {
   dialogMode = mode;
+  $("sendBox").style.display = "none";
   $("copyNote").textContent = "";
   setDialogNotes("");
   if (mode === "export") {
@@ -1331,6 +1348,10 @@ function openDialog(mode) {
       setDialogNotes("Worth a second look: " + warnings.join(" · "), "var(--gold)");
     }
     $("dialogTitle").textContent = "Share this board code with participants";
+    $("sendBox").style.display = "";
+    $("sendStatus").textContent = "";
+    try { $("storeUrl").value = localStorage.getItem("bingo-forge-store") || ""; } catch (e) {}
+    try { $("storePass").value = sessionStorage.getItem("bingo-forge-pass") || ""; } catch (e) {}
     $("dialogText").value = exportBoard();
     $("btnDialogApply").style.display = "none";
     $("btnDialogCopy").style.display = "";
@@ -1390,6 +1411,40 @@ document.addEventListener("keydown", e => {
 $("btnImport").addEventListener("click", () => openDialog("import"));
 $("btnExport").addEventListener("click", () => openDialog("export"));
 $("btnDialogClose").addEventListener("click", () => $("ioDialog").close());
+// Send to store: the store's admin API takes the code exactly like its admin page does.
+// The URL is remembered on this computer; the password only until the tab is closed.
+function setSendStatus(text, color) { $("sendStatus").textContent = text; $("sendStatus").style.color = color || "var(--muted)"; }
+$("btnSend").addEventListener("click", () => {
+  let url = $("storeUrl").value.trim().replace(/\/+$/, "").replace(/\/admin$/, "");
+  const pass = $("storePass").value;
+  if (!/^https?:\/\/[^/]+\/e\/[a-z0-9-]{3,40}$/i.test(url)) {
+    setSendStatus("Use the event address, like https://irons-pub-bingo.you.workers.dev/e/summer-2026", "var(--red)");
+    return;
+  }
+  if (!pass) { setSendStatus("Fill in the admin password.", "var(--red)"); return; }
+  try { localStorage.setItem("bingo-forge-store", url); } catch (e) {}
+  try { sessionStorage.setItem("bingo-forge-pass", pass); } catch (e) {}
+  const btn = $("btnSend");
+  btn.disabled = true;
+  setSendStatus("Sending...");
+  fetch(url + "/admin/api", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + pass },
+    body: JSON.stringify({ action: "saveBoardCode", code: $("dialogText").value })
+  }).then(r => r.json().then(j => ({ status: r.status, body: j })))
+    .then(({ status, body }) => {
+      btn.disabled = false;
+      if (status === 401) { setSendStatus("Wrong admin password.", "var(--red)"); return; }
+      const result = body.result || {};
+      if (result.error || body.error) { setSendStatus(result.error || body.error, "var(--red)"); return; }
+      const alerts = (body.alerts || []).filter(Boolean).join(" ");
+      setSendStatus("Saved on the store." + (alerts ? " " + alerts : ""), "var(--green)");
+    })
+    .catch(() => {
+      btn.disabled = false;
+      setSendStatus("Could not reach the store. Check the URL. A Google Sheets store can't take this, paste the code there instead.", "var(--red)");
+    });
+});
 $("btnDialogCopy").addEventListener("click", () => {
   const ta = $("dialogText");
   ta.select();
