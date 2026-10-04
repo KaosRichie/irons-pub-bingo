@@ -3,9 +3,8 @@
 The Irons Pub Bingo team store, run as a Cloudflare Worker on a free account. Each event
 gets its own Durable Object, so syncs never wait on each other.
 
-The store's logic lives in `docs/apps-script-store.gs`, which started out as a Google Apps
-Script. `build.mjs` turns it into a module, and `src/google.js` stands in for the Google
-services it was written against.
+The event's rules live in `src/store.js`. `src/worker.js` routes requests to the event and
+saves what changed, and `src/data.js` shapes the data the portal and admin pages show.
 
 ## Setup
 
@@ -46,7 +45,7 @@ The admin password is kept in your browser after you sign in. It is never put in
 
 ## Tests
 
-`npm test` builds the module and runs the Worker under Node. To test on Cloudflare's own
+`npm test` runs the store's own tests and the Worker under Node. To test on Cloudflare's own
 runtime, put `ADMIN_TOKEN=<anything>` in a `.dev.vars` file here, start
 `npx wrangler dev`, and run `node test/live-check.mjs http://127.0.0.1:8787 <that token>`.
 It runs a whole event against the Worker, and works against a deployed one too.

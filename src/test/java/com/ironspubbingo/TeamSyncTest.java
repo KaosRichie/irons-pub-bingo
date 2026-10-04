@@ -9,7 +9,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Client-side merge semantics: the same last-write-wins rules the store enforces
- * (store-tests/run-tests.js) must hold in the plugin's own team cache, or a stale
+ * (cloudflare-store/test/store-tests.mjs) must hold in the plugin's own team cache, or a stale
  * relay could resurrect progress locally that the store already dropped.
  */
 public class TeamSyncTest

@@ -1,57 +1,20 @@
-// Turns the store's tabs into the structured data the portal and admin pages draw from:
-// tile and goal names instead of row and column numbers, contributors per goal, requests
-// with their proof links split out, and (for admins) the credit ledger and settings.
-
-/** The pasted board code, parsed, or null. Used for tile icons, descriptions and points. */
-function officialBoard(store)
-{
-	const code = store.readBoardCode();
-	if (!code)
-	{
-		return null;
-	}
-	try
-	{
-		const parsed = JSON.parse(code);
-		return parsed && Array.isArray(parsed.tiles) ? parsed : null;
-	}
-	catch (err)
-	{
-		return null;
-	}
-}
-
-function tab(spreadsheet, name)
-{
-	const sheet = spreadsheet.getSheetByName(name);
-	return sheet ? sheet.data : [];
-}
-
-function cell(row, index)
-{
-	const value = row && row[index];
-	return value == null ? '' : String(value);
-}
-
-function splitLinks(text)
-{
-	return String(text || '').split(/\s+/).filter(link => /^https?:\/\/\S+$/i.test(link)).slice(0, 5);
-}
+// Turns the event's records into the data the portal and admin pages draw from: tile and
+// goal names, contributors per goal, requests with their labels, and (for admins) the
+// credit ledger, the raw team list and the settings.
+import { linesInDone, parseCredit } from './store.js';
 
 /**
  * Everything the portal shows. Admin data adds the ledger, settings and raw team rows.
  */
-export function eventData(store, spreadsheet, admin)
+export function eventData(store, admin)
 {
-	const teams = store.readTeamRows();
-	const official = officialBoard(store);
-	const scores = store.readScores();
+	const official = store.officialBoard();
 	const event = { name: null, size: 0, diagonals: true, linePoints: 0, blackoutPoints: 0 };
 	const out = { event, teams: [], requests: [], updated: new Date().toISOString() };
 	let memberLists = null;
 	const metaByTeam = {};
 
-	for (const team of teams)
+	for (const team of store.teamList())
 	{
 		const scope = store.latestBoardForTeam(team.code);
 		const entry = { code: team.code, name: team.name || team.code, members: [], points: null, board: null };
@@ -74,11 +37,11 @@ export function eventData(store, spreadsheet, admin)
 		if (!memberLists)
 		{
 			const at = scope.board.lastIndexOf('_');
-			memberLists = store.teamsWithMembers(at < 0 ? '' : scope.board.substring(0, at));
+			memberLists = store.teamsWithMembers(at < 0 ? '' : scope.board.slice(0, at));
 		}
 		const listed = memberLists.find(t => t.code === team.code);
-		entry.members = listed && listed.members ? listed.members : [];
-		const standing = store.standingsFor(scope.board, scores).find(s => s.team === team.code);
+		entry.members = listed ? listed.members : [];
+		const standing = store.standingsFor(scope.board).find(s => s.team === team.code);
 		entry.points = standing ? standing.points : null;
 
 		const totals = store.tileTotals(scope.board, meta);
@@ -87,7 +50,7 @@ export function eventData(store, spreadsheet, admin)
 			key: scope.board,
 			size,
 			done: totals.done.filter(Boolean).length,
-			lines: store.linesInDone(meta, totals.done),
+			lines: linesInDone(meta, totals.done),
 			tiles: meta.tiles.map((tile, t) =>
 			{
 				const source = sameBoard ? sameBoard.tiles[t] || {} : {};
@@ -115,35 +78,24 @@ export function eventData(store, spreadsheet, admin)
 		};
 	}
 
-	const requests = tab(spreadsheet, 'Requests');
-	for (let i = 1; i < requests.length; i++)
+	for (const request of store.requests.values())
 	{
-		const row = requests[i] || [];
-		if (!cell(row, 2).trim())
-		{
-			continue;
-		}
-		const team = cell(row, 1).trim().toLowerCase();
-		const tileNumber = parseInt(row[3], 10);
-		const goalNumber = parseInt(row[4], 10);
-		const meta = metaByTeam[team];
-		const tileMeta = meta && meta.tiles[tileNumber - 1];
-		const status = cell(row, 9).trim();
+		const tileMeta = metaByTeam[request.team] && metaByTeam[request.team].tiles[request.tile - 1];
 		out.requests.push({
-			id: cell(row, 11),
-			when: cell(row, 0),
-			team,
-			player: cell(row, 2),
-			tile: isNaN(tileNumber) ? null : tileNumber,
-			tileLabel: tileMeta ? String(tileMeta.label) : cell(row, 3).replace(/^\d+\s*-\s*/, ''),
-			goal: isNaN(goalNumber) ? null : goalNumber,
-			goalLabel: tileMeta && !isNaN(goalNumber) && tileMeta.goals[goalNumber - 1]
-				? String(tileMeta.goals[goalNumber - 1].label) : null,
-			add: row[5] === '' || row[5] == null ? null : Number(row[5]),
-			complete: !!cell(row, 6).trim(),
-			note: cell(row, 7),
-			links: splitLinks(row[10]),
-			status: status === 'Done' || status === 'Rejected' ? status : 'Pending'
+			id: request.id,
+			when: request.when,
+			team: request.team,
+			player: request.player,
+			tile: request.tile,
+			tileLabel: tileMeta ? String(tileMeta.label) : 'Tile ' + request.tile,
+			goal: request.goal,
+			goalLabel: tileMeta && request.goal && tileMeta.goals[request.goal - 1]
+				? String(tileMeta.goals[request.goal - 1].label) : null,
+			add: request.add,
+			complete: request.complete,
+			note: request.note,
+			links: request.links || [],
+			status: request.status
 		});
 	}
 	out.requests.reverse(); // newest first
@@ -153,47 +105,34 @@ export function eventData(store, spreadsheet, admin)
 		return out;
 	}
 
-	const ledger = tab(spreadsheet, 'Adjustments');
 	out.adjustments = [];
-	for (let i = 1; i < ledger.length; i++)
+	for (const credit of store.credits.values())
 	{
-		const row = ledger[i] || [];
-		const team = cell(row, 0).trim().toLowerCase();
-		const meta = metaByTeam[team] || Object.values(metaByTeam)[0] || null;
-		const parsed = store.parseAdjustmentRow(row, meta);
-		if (parsed.issues.length === 1 && parsed.issues[0] === '')
-		{
-			continue; // an empty row
-		}
+		const meta = metaByTeam[credit.team] || Object.values(metaByTeam)[0] || null;
+		const parsed = parseCredit(credit, meta);
 		const tileMeta = meta && meta.tiles[parsed.tile - 1];
-		// Approvals are written as "request <id>: <the player's note>".
-		const tagged = cell(row, 6).match(/^request (\S+?): ?([\s\S]*)$/);
 		out.adjustments.push({
-			row: i + 1,
-			fingerprint: JSON.stringify(row),
-			team,
+			id: credit.id,
+			team: parsed.team,
 			tile: isNaN(parsed.tile) ? null : parsed.tile,
-			tileLabel: tileMeta ? String(tileMeta.label) : cell(row, 1),
+			tileLabel: tileMeta ? String(tileMeta.label) : 'Tile ' + credit.tile,
 			goal: parsed.goal,
 			goalLabel: tileMeta && tileMeta.goals[parsed.goal - 1] ? String(tileMeta.goals[parsed.goal - 1].label) : null,
 			player: parsed.player,
 			add: parsed.add,
 			complete: parsed.complete,
-			note: tagged ? tagged[2] : cell(row, 6),
-			fromRequest: tagged ? tagged[1] : null,
-			by: cell(row, 7),
-			added: cell(row, 8),
-			issues: parsed.issues.filter(Boolean)
+			note: credit.note,
+			fromRequest: credit.request,
+			by: credit.by,
+			added: credit.added,
+			issues: parsed.issues
 		});
 	}
 	out.adjustments.reverse();
 
-	out.teamRows = tab(spreadsheet, 'Teams').slice(1)
-		.filter(row => cell(row, 0).trim())
-		.map(row => ({ code: cell(row, 0), name: cell(row, 1), webhook: cell(row, 2) }));
-	out.settings = { pollSeconds: store.readPollInterval() || 120 };
-	const code = store.readBoardCode();
-	out.boardCode = { text: code, summary: summarizeBoard(code) };
+	out.teamRows = store.config.teams.map(t => ({ code: t.code, name: t.name, webhook: t.webhook }));
+	out.settings = { pollSeconds: store.config.pollSeconds || 120 };
+	out.boardCode = { text: store.config.boardCode, summary: summarizeBoard(store.config.boardCode) };
 	return out;
 }
 
@@ -202,7 +141,7 @@ export function summarizeBoard(code)
 {
 	if (!code)
 	{
-		return { ok: false, message: 'No board code pasted yet.' };
+		return { ok: false, message: 'No board code saved yet.' };
 	}
 	let parsed;
 	try

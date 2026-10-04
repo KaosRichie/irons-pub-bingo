@@ -2,7 +2,7 @@ name = "irons-pub-bingo"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
-# Rebuilds src/generated/store-script.js from docs/apps-script-store.gs before every deploy.
+# Embeds the logo and icon (src/generated/assets.js) before every deploy.
 [build]
 command = "node build.mjs"
 

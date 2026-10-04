@@ -166,12 +166,12 @@ return '<div class="ledrow"><div><span class="lbl">Team</span>'+esc(a.team?teamN
 +'<div><span class="lbl">Player</span>'+esc(a.player)+'</div>'
 +'<div class="nowrap"><span class="lbl">Credit</span>'+(a.complete?'<span class="chip done">Complete</span>':'<b style="color:'+(a.add>=0?'var(--gold2)':'var(--red)')+'">'+(a.add>=0?'+':'')+fmt(a.add)+'</b>')+'</div>'
 +'<div><span class="lbl">Note</span>'+note+(a.added?'<div class="small muted" title="'+esc(a.added)+'">'+ago(a.added)+(a.by&&a.by!=='approved request'?' \\u00b7 '+esc(a.by):'')+'</div>':'')+'</div>'
-+'<div><button class="btn bad sm" data-row="'+a.row+'">Remove</button></div></div>';}).join('');
++'<div><button class="btn bad sm" data-id="'+esc(a.id)+'">Remove</button></div></div>';}).join('');
 fixClamps(el);
-Array.prototype.forEach.call(el.querySelectorAll('button[data-row]'),function(b){b.onclick=function(){var a=rows.find(function(x){return x.row===+b.dataset.row;});
+Array.prototype.forEach.call(el.querySelectorAll('button[data-id]'),function(b){b.onclick=function(){var a=rows.find(function(x){return x.id===b.dataset.id;});
 var what=(a.complete?'Completion of ':((a.add>=0?'+':'')+a.add+' on '))+a.tileLabel+' for '+a.player;
 confirmBox('Remove this credit?',what+' is taken back on everyone\\'s next sync, and the team\\'s Discord is told.'+(a.fromRequest?' This came from an approved request: rejecting the request on the Requests page does the same and shows the player why.':''),'Remove',true)
-.then(function(ok){if(ok){api({action:'deleteAdjustment',row:a.row,fingerprint:a.fingerprint}).then(function(){toast('Credit removed.','ok');load();}).catch(function(e){toast(e.message,'bad');});}});};});}
+.then(function(ok){if(ok){api({action:'deleteAdjustment',id:a.id}).then(function(){toast('Credit removed.','ok');load();}).catch(function(e){toast(e.message,'bad');});}});};});}
 /* ---------------- teams */
 function renderTeams(el){var rows=(data.teamRows||[]).map(function(r){return {code:r.code,name:r.name,webhook:r.webhook};});
 function draw(){el.innerHTML='<section class="card"><h2>Teams</h2><p class="muted" style="margin-top:-4px">Only listed teams can sync. Players pick their team from this list in the plugin.</p><div id="tr"></div>'

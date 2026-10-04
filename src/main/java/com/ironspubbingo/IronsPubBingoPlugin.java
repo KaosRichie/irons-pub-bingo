@@ -2147,10 +2147,10 @@ public class IronsPubBingoPlugin extends Plugin
 		String code = normalizedTeamCode();
 		// The store's name only applies while the store is actually in use - with the
 		// toggle off this is a plain custom-code team, whatever the cache still holds.
-		String sheetName = code == null || !teamStore.isConfigured() ? null : storeTeamNames.get(code);
-		if (sheetName != null && !sheetName.isEmpty())
+		String storeName = code == null || !teamStore.isConfigured() ? null : storeTeamNames.get(code);
+		if (storeName != null && !storeName.isEmpty())
 		{
-			return sheetName;
+			return storeName;
 		}
 		String name = config.teamName().trim();
 		if (!name.isEmpty())

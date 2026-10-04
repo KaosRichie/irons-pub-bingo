@@ -36,16 +36,14 @@ const hash = createHash('sha256').update(code, 'utf8').digest('hex');
 // -- admin setup, through the admin API the admin page uses
 check('admin page served', (await (await fetch(url + '/admin')).text()).includes('Admin sign in'));
 check('wrong token refused', (await fetch(url + '/admin/api', { method: 'POST', body: '{}' })).status === 401);
-const tabs = await admin({ action: 'tabs' });
-check('tabs listed', tabs.status === 200 && tabs.body.result.some(t => t.name === 'Teams'), JSON.stringify(tabs.body));
-await admin({ action: 'setTab', name: 'Teams', rows: [['Code', 'Name', 'Webhook'], ['Red', 'Red Team', ''], ['Blue', 'Blue Team', '']] });
-await admin({ action: 'setTab', name: 'Board code', rows: [['Paste the board code below'], [code]] });
-const applied = await admin({ action: 'applyBoardUpdate' });
-check('board update applied', (applied.body.alerts || []).length > 0, JSON.stringify(applied.body));
+const saved = await admin({ action: 'saveTeams', teams: [{ code: 'Red', name: 'Red Team' }, { code: 'Blue', name: 'Blue Team' }] });
+check('teams saved', saved.status === 200 && saved.body.result.ok, JSON.stringify(saved.body));
+const applied = await admin({ action: 'saveBoardCode', code });
+check('board code saved', /Board recorded|unchanged/.test((applied.body.alerts || []).join(' ')), JSON.stringify(applied.body));
 
 // -- the plugin's calls
 const fetched = (await sync({ fetchBoard: true })).body;
-check('players fetch the pasted board', fetched.boardJson === code, JSON.stringify(fetched).slice(0, 120));
+check('players fetch the saved board', fetched.boardJson === code, JSON.stringify(fetched).slice(0, 120));
 const teams = (await sync({ teamsOnly: true, board: 'id_live' })).body;
 check('choose team lists the teams', JSON.stringify(teams.teams.map(t => t.code)) === '["red","blue"]', JSON.stringify(teams));
 
@@ -79,16 +77,14 @@ const form = await (await fetch(url + '/rpc', { method: 'POST', body: JSON.strin
 check('portal form files a request', !form.error, form.error);
 
 // -- approving it from the admin page credits the team
-const requests = (await admin({ action: 'getTab', name: 'Requests' })).body.result;
-const row = requests.findIndex(r => r[2] === 'Player0');
-requests[row][9] = 'Done';
-await admin({ action: 'setTab', name: 'Requests', rows: requests });
+const request = (await admin({ action: 'overview' })).body.result.requests.find(r => r.player === 'Player0');
+await admin({ action: 'setRequestStatus', id: request.id, status: 'Done' });
 const after = (await sync({ board: 'id_live_red', rejoin: memberId(1), memberKey: keyFor(1), boardHash: hash, boardVersion: 1,
 	members: {} })).body;
 check('approved credit reaches the plugin', after.members['admin:player0'] && after.members['admin:player0'].tiles['0'].goals[0].n === 2,
 	JSON.stringify(after.members['admin:player0']));
-const views = (await admin({ action: 'tabs' })).body.result.map(t => t.name);
-check('board views rendered per team', views.includes('Board red') && views.includes('Board blue'), views.join(', '));
+const overview = (await admin({ action: 'overview' })).body.result;
+check('the admin page shows both team boards', overview.teams.every(t => t.board), JSON.stringify(overview.teams.map(t => t.code)));
 
 console.log('Event: ' + event);
 console.log(results.join('\n'));

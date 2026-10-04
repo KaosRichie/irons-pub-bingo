@@ -38,15 +38,12 @@ class FakeStorage
 		}
 	}
 
-	async list({ prefix })
+	async list()
 	{
 		const out = new Map();
-		for (const [key, value] of this.map)
+		for (const key of [...this.map.keys()].sort())
 		{
-			if (key.startsWith(prefix))
-			{
-				out.set(key, structuredClone(value));
-			}
+			out.set(key, structuredClone(this.map.get(key)));
 		}
 		return out;
 	}
@@ -122,10 +119,9 @@ function createRuntime()
 	};
 }
 
-async function setupEvent(rt, code)
+async function setupEvent(rt, code, webhook)
 {
-	await rt.admin(code, { action: 'tabs' });
-	await rt.admin(code, { action: 'setTab', name: 'Teams', rows: [['Code', 'Name', 'Webhook'], ['Red', 'Red Team', ''], ['Blue', '', '']] });
+	await rt.admin(code, { action: 'saveTeams', teams: [{ code: 'Red', name: 'Red Team', webhook: webhook || '' }, { code: 'Blue', name: '' }] });
 }
 
 function member(name, tiles)
@@ -184,7 +180,7 @@ await test('the synchronous SHA-256 matches Node', () =>
 	}
 });
 
-await test('a plugin sync round-trips like the Apps Script store', async () =>
+await test('a plugin sync round-trips', async () =>
 {
 	const rt = createRuntime();
 	await setupEvent(rt, 'summer');
@@ -256,26 +252,22 @@ await test('the portal renders and its request form files a request', async () =
 	ok(/Pick your name/.test(stranger.error), 'a name nobody synced is refused: ' + JSON.stringify(stranger));
 	const rpc = await form('alice');
 	ok(!rpc.error && /sent/i.test(rpc.result), 'a team member is accepted, in any case: ' + JSON.stringify(rpc));
-	const requests = (await rt.admin('summer', { action: 'getTab', name: 'Requests' })).body.result;
-	is(requests[1][2], 'alice', 'the request landed on the Requests tab');
+	const view = (await rt.admin('summer', { action: 'overview' })).body.result;
+	is(view.requests[0].player, 'alice', 'the request is filed');
 	const bad = await (await rt.request('/e/summer/rpc', { method: 'POST', body: JSON.stringify({ fn: 'resetStoreData' }) })).json();
 	ok(!!bad.error, 'no other function is reachable from the portal');
 });
 
-await test('admin edits run the store logic: approving a request credits and announces', async () =>
+await test('approving a request credits and announces', async () =>
 {
 	const rt = createRuntime();
-	await setupEvent(rt, 'summer');
-	const teams = (await rt.admin('summer', { action: 'getTab', name: 'Teams' })).body.result;
-	teams[1][2] = 'https://discord.com/api/webhooks/1/x';
-	await rt.admin('summer', { action: 'setTab', name: 'Teams', rows: teams });
+	await setupEvent(rt, 'summer', 'https://discord.com/api/webhooks/1/x');
 	await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A,
 		meta: { name: 'B', size: 1, tiles: [{ label: 'Ten kills', goals: [{ label: 'Kills', target: 10 }] }] },
 		members: { [A]: member('Alice', { 0: tile(1000, [3]) }) },
 		request: { member: A, player: 'Alice', tile: 1, goal: 1, add: 4, note: 'missed' } });
-	const requests = (await rt.admin('summer', { action: 'getTab', name: 'Requests' })).body.result;
-	requests[1][9] = 'Done';
-	await rt.admin('summer', { action: 'setTab', name: 'Requests', rows: requests });
+	const request = (await rt.admin('summer', { action: 'overview' })).body.result.requests[0];
+	await rt.admin('summer', { action: 'setRequestStatus', id: request.id, status: 'Done' });
 	const r = await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, members: {} });
 	is(r.members['admin:alice'].tiles['0'].goals[0].n, 4, 'the approval credits Alice');
 	ok(rt.webhooks.some(w => w.url.includes('discord.com') && /Credit approved/.test(w.body)), 'and is announced on Discord');
@@ -284,20 +276,19 @@ await test('admin edits run the store logic: approving a request credits and ann
 await test('admin calls need the token', async () =>
 {
 	const rt = createRuntime();
-	const wrong = await rt.admin('summer', { action: 'tabs' }, 'nope');
+	const wrong = await rt.admin('summer', { action: 'overview' }, 'nope');
 	is(wrong.status, 401, 'refused');
-	const none = await rt.admin('summer', { action: 'tabs' }, '');
+	const none = await rt.admin('summer', { action: 'overview' }, '');
 	is(none.status, 401, 'refused without a token');
 });
 
-await test('menu actions report what they did', async () =>
+await test('saving a board code reports what it did', async () =>
 {
 	const rt = createRuntime();
 	await setupEvent(rt, 'summer');
 	const code = '{"name":"Ev","id":"ev","size":1,"tiles":[{"label":"x","goals":[{"type":"KILL","npcs":["Man"],"count":2}]}]}';
-	await rt.admin('summer', { action: 'setTab', name: 'Board code', rows: [['Paste the board code below'], [code]] });
-	const applied = await rt.admin('summer', { action: 'applyBoardUpdate' });
-	ok(applied.body.alerts.some(a => /Board recorded|unchanged/.test(a)), 'apply reports: ' + applied.body.alerts);
+	const saved = await rt.admin('summer', { action: 'saveBoardCode', code });
+	ok(saved.body.alerts.some(a => /Board recorded/.test(a)), 'save reports: ' + saved.body.alerts);
 	const fetched = await rt.post('summer', { fetchBoard: true });
 	is(fetched.boardJson, code, 'players can fetch the pasted board');
 });
@@ -326,10 +317,10 @@ await test('the admin page actions work from names, not row numbers', async () =
 	view = (await rt.admin('summer', { action: 'overview' })).body.result;
 	const bob = view.adjustments.find(a => a.player === 'Bob');
 	is(bob.tileLabel, 'Ten kills', 'the ledger shows tile names');
-	r = (await rt.admin('summer', { action: 'deleteAdjustment', row: bob.row, fingerprint: 'stale' })).body.result;
-	ok(r.error, 'a ledger row that changed is not removed');
-	r = (await rt.admin('summer', { action: 'deleteAdjustment', row: bob.row, fingerprint: bob.fingerprint })).body.result;
-	is(r, { ok: true }, 'the row the admin saw is removed');
+	r = (await rt.admin('summer', { action: 'deleteAdjustment', id: 'nothing' })).body.result;
+	ok(r.error, 'credit that is gone is reported');
+	r = (await rt.admin('summer', { action: 'deleteAdjustment', id: bob.id })).body.result;
+	is(r, { ok: true }, 'the credit the admin saw is removed');
 
 	r = (await rt.admin('summer', { action: 'saveTeams', teams: [{ code: 'Red', name: 'Red' }, { code: 'red', name: 'Again' }] })).body.result;
 	ok(r.error, 'duplicate team codes are refused');
@@ -365,7 +356,7 @@ await test('credit from the admin page is announced on Discord, and so is taking
 	ok(/completed \*\*Ten kills\*\*/.test(rt.webhooks[1].body), 'credit that finishes the tile is the completion post: ' + rt.webhooks[1].body);
 	const view = (await rt.admin('summer', { action: 'overview' })).body.result;
 	const row = view.adjustments.find(a => a.add === 5);
-	await rt.admin('summer', { action: 'deleteAdjustment', row: row.row, fingerprint: row.fingerprint });
+	await rt.admin('summer', { action: 'deleteAdjustment', id: row.id });
 	ok(/withdrawn/.test(rt.webhooks[2].body), 'removing credit is announced: ' + rt.webhooks[2].body);
 });
 
@@ -379,9 +370,6 @@ await test('a made-up event code shows nothing until an admin saves to it', asyn
 	is((await rt.admin('made-up', { action: 'overview' }, 'wrong')).status, 401, 'wrong password refused');
 	const preview = await rt.admin('made-up', { action: 'overview' });
 	ok(preview.status === 200 && preview.body.result.isNew, 'admin can look at the new event');
-	const tabs = await rt.admin('made-up', { action: 'tabs' });
-	ok(tabs.body.result.some(t => t.name === 'Teams'), 'its tabs can be listed before saving');
-	ok(Array.isArray((await rt.admin('made-up', { action: 'getTab', name: 'Teams' })).body.result), 'and read');
 	is(rt.storage.has('made-up') ? rt.storage.get('made-up').size : 0, 0, 'looking stored nothing');
 	await rt.admin('made-up', { action: 'saveTeams', teams: [{ code: 'red', name: 'Red Team', webhook: '' }] });
 	rt.restart();

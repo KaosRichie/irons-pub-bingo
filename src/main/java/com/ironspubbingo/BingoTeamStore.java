@@ -338,8 +338,8 @@ class BingoTeamStore
 				}
 				catch (JsonSyntaxException e)
 				{
-					// Google answers with an HTML error page when the script throws
-					// (a lock timeout, a bad deployment), which never parses as JSON.
+					// A wrong URL (or a proxy in the way) answers with an HTML page,
+					// which never parses as JSON.
 					log.debug("Team store reply was not JSON: {}", body, e);
 					callback.accept(null, "Error page - see the log");
 				}
