@@ -94,9 +94,13 @@ return '<div class="req"><div class="head"><span class="chip '+r.status.toLowerC
 +'<span class="spacer"></span><span class="small muted" title="'+esc(r.when)+'">'+ago(r.when)+'</span></div>'
 +(r.note?'<div style="margin:0 0 8px;color:var(--ink2)">'+clampHtml(r.note)+'</div>':'')+linksHtml(r.links)+'</div>';}).join('');fixClamps(el);}
 function openForm(tileIndex){var t=team();if(!t.board){return;}var player='';try{player=localStorage.getItem('ipb.player')||'';}catch(e){}
+var members=t.members.slice().sort(function(a,b){return a.toLowerCase()<b.toLowerCase()?-1:1;}),known=members.indexOf(player)>=0;
 var root=document.getElementById('modalRoot');
 root.innerHTML='<div class="modal" id="modal"><div class="card"><h2>Request credit</h2><p class="muted small" style="margin-top:-4px">For progress the tracker missed. An admin reviews it before it counts.</p>'
-+'<div class="grid2"><label class="field"><span>Your in-game name</span><input id="fPlayer" maxlength="40" autocomplete="nickname" value="'+esc(player)+'"></label>'
++'<div class="grid2"><label class="field"><span>Your in-game name</span>'+(members.length?'<select id="fWho">'+(known?'':'<option value="" selected disabled>Pick your name</option>')
++members.map(function(m){return '<option'+(m===player?' selected':'')+'>'+esc(m)+'</option>';}).join('')+'<option value="__other__">Not listed, type it</option></select>':'')
++'<input id="fPlayer" maxlength="40" autocomplete="nickname" placeholder="Your in-game name" value="'+esc(members.length?'':player)+'"'+(members.length?' style="display:none;margin-top:6px"':'')+'>'
++(members.length?'':'<div class="hint">Nobody on this team has synced yet, so type your name.</div>')+'</label>'
 +'<label class="field"><span>Team</span><input value="'+esc(t.name)+'" disabled></label></div>'
 +'<label class="field" style="margin-top:12px"><span>Tile</span><select id="fTile">'+t.board.tiles.map(function(x,i){return '<option value="'+i+'"'+(i===tileIndex?' selected':'')+'>'+(i+1)+'. '+esc(x.label)+'</option>';}).join('')+'</select></label>'
 +'<label class="field" style="margin-top:12px"><span>What to credit</span><select id="fGoal"></select></label>'
@@ -104,15 +108,17 @@ root.innerHTML='<div class="modal" id="modal"><div class="card"><h2>Request cred
 +'<label class="field" style="margin-top:12px"><span>Note for the admin</span><textarea id="fNote" rows="3" maxlength="300" placeholder="What happened, and when"></textarea></label>'
 +'<label class="field" style="margin-top:12px"><span>Proof links</span><textarea id="fLinks" rows="2" placeholder="Screenshot links, one per line"></textarea><div class="hint">Discord, Imgur or similar. Up to 5.</div></label>'
 +'<div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn ghost" id="fCancel">Cancel</button><button class="btn gold" id="fSend">Send request</button></div></div></div>';
-var tileSel=document.getElementById('fTile'),goalSel=document.getElementById('fGoal');
+var tileSel=document.getElementById('fTile'),goalSel=document.getElementById('fGoal'),who=document.getElementById('fWho'),typed=document.getElementById('fPlayer');
+if(who){who.onchange=function(){var other=who.value==='__other__';typed.style.display=other?'':'none';if(other){typed.focus();}};}
+function playerName(){return who&&who.value!=='__other__'?who.value:typed.value.trim();}
 function fillGoals(){var tile=t.board.tiles[+tileSel.value],opts='';tile.goals.forEach(function(g,i){if(!g.manual){opts+='<option value="'+(i+1)+'">'+esc(g.label)+' ('+fmt(g.total)+' / '+fmt(g.target)+')</option>';}});
 opts+='<option value="complete">The whole tile is complete</option>';goalSel.innerHTML=opts;toggle();}
 function toggle(){document.getElementById('fAmountWrap').style.display=goalSel.value==='complete'?'none':'';}
 tileSel.onchange=fillGoals;goalSel.onchange=toggle;fillGoals();
 document.getElementById('fCancel').onclick=function(){root.innerHTML='';};
 document.getElementById('modal').onclick=function(e){if(e.target.id==='modal'){root.innerHTML='';}};
-document.getElementById('fSend').onclick=function(){var name=document.getElementById('fPlayer').value.trim(),complete=goalSel.value==='complete',amount=document.getElementById('fAmount').value;
-if(!name){toast('Fill in your in-game name.','bad');return;}if(!complete&&!(+amount>0)){toast('Fill in how many to credit, or pick the whole tile.','bad');return;}
+document.getElementById('fSend').onclick=function(){var name=playerName(),complete=goalSel.value==='complete',amount=document.getElementById('fAmount').value;
+if(!name){toast(who&&who.value!=='__other__'?'Pick your name.':'Fill in your in-game name.','bad');return;}if(!complete&&!(+amount>0)){toast('Fill in how many to credit, or pick the whole tile.','bad');return;}
 try{localStorage.setItem('ipb.player',name);}catch(e){}var btn=this;btn.disabled=true;
 fetch(base+'/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fn:'submitFormRequest',args:[{board:t.board.key,player:name,tile:+tileSel.value+1,
 goal:complete?'':+goalSel.value,add:complete?'':amount,complete:complete,note:document.getElementById('fNote').value,links:document.getElementById('fLinks').value}]})})
