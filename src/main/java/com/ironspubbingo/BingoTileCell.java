@@ -11,14 +11,13 @@ import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import javax.swing.JPanel;
 
 /**
  * One tile on the board grid, hand-painted: a rounded card whose color tells its state,
- * an optional bottom-up progress fill, a gold check on completed tiles, a gold outline on
- * tiles in a completed line, and a white outline on the selected tile.
+ * an optional bottom-up progress fill, a gold outline on tiles in a completed line, and a
+ * white outline on the selected tile.
  */
 class BingoTileCell extends JPanel
 {
@@ -123,28 +122,6 @@ class BingoTileCell extends JPanel
 			: complete ? COMPLETE_TOP.brighter() : EDGE);
 		float inset = stroke / 2f + 0.5f;
 		g.draw(new RoundRectangle2D.Float(inset, inset, w - 2 * inset, h - 2 * inset, arc, arc));
-
-		if (complete)
-		{
-			paintCheck(g, w);
-		}
 		g.dispose();
-	}
-
-	/** A small gold disc with a dark tick in the top-right corner. */
-	private static void paintCheck(Graphics2D g, int w)
-	{
-		float d = Math.max(10f, Math.min(16f, w / 5f));
-		float x = w - d - Math.max(3f, d / 4f);
-		float y = Math.max(3f, d / 4f);
-		g.setColor(BingoUi.COLOR_GOLD);
-		g.fill(new java.awt.geom.Ellipse2D.Float(x, y, d, d));
-		Path2D tick = new Path2D.Float();
-		tick.moveTo(x + d * 0.27f, y + d * 0.52f);
-		tick.lineTo(x + d * 0.44f, y + d * 0.69f);
-		tick.lineTo(x + d * 0.74f, y + d * 0.33f);
-		g.setColor(new Color(29, 20, 6));
-		g.setStroke(new BasicStroke(Math.max(1.6f, d / 7f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g.draw(tick);
 	}
 }

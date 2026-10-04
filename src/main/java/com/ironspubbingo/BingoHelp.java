@@ -243,7 +243,7 @@ final class BingoHelp
 		return "<table cellspacing='0' cellpadding='3' style='margin-top:4px; margin-bottom:6px'>"
 			+ swatch("#2c2c2c", "No progress yet")
 			+ swatch("#96701a", "Some progress")
-			+ swatch("#42843a", "Complete, with a gold check")
+			+ swatch("#42843a", "Complete")
 			+ swatch(GOLD, "A completed bingo line")
 			+ "</table>";
 	}

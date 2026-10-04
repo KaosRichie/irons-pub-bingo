@@ -18,7 +18,6 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
 import javax.swing.SwingConstants;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
@@ -44,7 +43,10 @@ class BingoBoardWindow extends JFrame
 	private static final int DETAIL_WIDTH = 380;
 	private final BingoTileDetail detail;
 	private final JScrollPane detailScroll;
-	private final JSplitPane split;
+	private final JPanel detailCards = new JPanel(new java.awt.CardLayout());
+	private final JLabel detailHint = new JLabel();
+	/** Below this body width the detail moves under the board instead of beside it. */
+	private static final int SIDE_BY_SIDE_MIN_WIDTH = 720;
 	private final List<BingoTileCell> cells = new ArrayList<>();
 	private final List<JLabel> cellIcons = new ArrayList<>();
 	private final List<BingoWrappedLabel> cellLabels = new ArrayList<>();
@@ -57,8 +59,8 @@ class BingoBoardWindow extends JFrame
 		setTitle("Irons Pub Bingo");
 		setIconImage(ImageUtil.loadImageResource(IronsPubBingoPlugin.class, "window_icon.png"));
 		setDefaultCloseOperation(HIDE_ON_CLOSE);
-		setSize(700, 780);
-		setMinimumSize(new Dimension(420, 480));
+		setSize(1060, 720);
+		setMinimumSize(new Dimension(440, 560));
 
 		JPanel content = new JPanel(new BorderLayout(0, 8));
 		content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -75,17 +77,16 @@ class BingoBoardWindow extends JFrame
 				refresh(); // re-wrap tile labels to the new cell width
 			}
 		});
-		// The same tile detail as the sidebar, under the board, for the selected tile.
-		// It keeps the sidebar's fixed content width inside a centering holder - all its
-		// wrap widths and bar labels are computed for that basis, and stretching it to
-		// the window width breaks them. The split divider lets the player trade board
-		// space against detail space instead of the detail claiming a fixed strip.
+		// The same tile detail as the sidebar, for the selected tile. It keeps the sidebar's
+		// fixed content width - all its wrap widths and bar labels are computed for that
+		// basis, and stretching it breaks them. So it gets a fixed-width column beside the
+		// board, which takes all the rest; in a narrow window it moves under the board.
 		detail = new BingoTileDetail(plugin, DETAIL_WIDTH);
 		JPanel detailHolder = new JPanel(new java.awt.GridBagLayout());
 		detailHolder.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailHolder.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+		detailHolder.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		java.awt.GridBagConstraints holderConstraints = new java.awt.GridBagConstraints();
-		holderConstraints.anchor = java.awt.GridBagConstraints.NORTHWEST;
+		holderConstraints.anchor = java.awt.GridBagConstraints.NORTH;
 		holderConstraints.weightx = 1;
 		holderConstraints.weighty = 1;
 		detailHolder.add(detail, holderConstraints);
@@ -93,15 +94,27 @@ class BingoBoardWindow extends JFrame
 			JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		detailScroll.setBorder(BorderFactory.createEmptyBorder());
 		detailScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailScroll.setPreferredSize(new Dimension(0, 260));
-		detailScroll.setVisible(false);
+		detailScroll.getVerticalScrollBar().setUnitIncrement(16);
 
-		split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, grid, detailScroll);
-		split.setResizeWeight(1.0);
-		split.setBorder(null);
-		split.setDividerSize(0);
-		split.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		content.add(split, BorderLayout.CENTER);
+		detailHint.setText("<html><div style='text-align:center'>Select a tile to see its goals,<br>"
+			+ "who contributed and its actions.</div></html>");
+		detailHint.setHorizontalAlignment(SwingConstants.CENTER);
+		detailHint.setFont(FontManager.getRunescapeSmallFont());
+		detailHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		JPanel hintPanel = new JPanel(new BorderLayout());
+		hintPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		hintPanel.add(detailHint, BorderLayout.CENTER);
+
+		detailCards.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		detailCards.setBorder(BorderFactory.createLineBorder(BingoUi.COLOR_CHIP_EDGE));
+		detailCards.add(detailScroll, "detail");
+		detailCards.add(hintPanel, "hint");
+
+		JPanel body = new JPanel(new BodyLayout());
+		body.setOpaque(false);
+		body.add(grid);
+		body.add(detailCards);
+		content.add(body, BorderLayout.CENTER);
 		setContentPane(content);
 
 		// Keeps the "Time left" countdown in the status line ticking while visible.
@@ -144,23 +157,12 @@ class BingoBoardWindow extends JFrame
 			titleLabel.setText("No board loaded");
 			subLabel.setText("Import a board in the side panel to see it here.");
 			setChipsVisible(false);
-			detailScroll.setVisible(false);
-			split.setDividerSize(0);
+			showDetail(false);
 			return;
 		}
 
 		detail.setSelectedTile(plugin.selectedTileIndex());
-		boolean showDetail = detail.rebuild();
-		if (detailScroll.isVisible() != showDetail)
-		{
-			detailScroll.setVisible(showDetail);
-			split.setDividerSize(showDetail ? 6 : 0);
-			if (showDetail)
-			{
-				split.resetToPreferredSizes();
-			}
-			getContentPane().revalidate();
-		}
+		showDetail(detail.rebuild());
 		detail.revalidate();
 		detail.repaint();
 
@@ -196,6 +198,65 @@ class BingoBoardWindow extends JFrame
 		}
 		revalidate();
 		repaint();
+	}
+
+	private void showDetail(boolean tileSelected)
+	{
+		((java.awt.CardLayout) detailCards.getLayout()).show(detailCards, tileSelected ? "detail" : "hint");
+	}
+
+	/**
+	 * Lays out the board (kept square, centered) and the detail column. Wide: the detail is
+	 * a fixed-width column on the right. Narrow: it sits under the board with a share of
+	 * the height, so the window can be resized freely and the detail never disappears.
+	 */
+	private final class BodyLayout implements java.awt.LayoutManager
+	{
+		private static final int GAP = 10;
+
+		@Override
+		public void layoutContainer(java.awt.Container parent)
+		{
+			int w = parent.getWidth();
+			int h = parent.getHeight();
+			int detailWidth = DETAIL_WIDTH + 22 + detailScroll.getVerticalScrollBar().getPreferredSize().width;
+			java.awt.Rectangle boardArea;
+			if (w >= SIDE_BY_SIDE_MIN_WIDTH)
+			{
+				detailCards.setBounds(w - detailWidth, 0, detailWidth, h);
+				boardArea = new java.awt.Rectangle(0, 0, w - detailWidth - GAP, h);
+			}
+			else
+			{
+				int detailHeight = Math.max(200, Math.round(h * 0.42f));
+				detailCards.setBounds(0, h - detailHeight, w, detailHeight);
+				boardArea = new java.awt.Rectangle(0, 0, w, h - detailHeight - GAP);
+			}
+			int side = Math.max(0, Math.min(boardArea.width, boardArea.height));
+			grid.setBounds(boardArea.x + (boardArea.width - side) / 2, boardArea.y, side, side);
+		}
+
+		@Override
+		public Dimension preferredLayoutSize(java.awt.Container parent)
+		{
+			return new Dimension(1040, 620);
+		}
+
+		@Override
+		public Dimension minimumLayoutSize(java.awt.Container parent)
+		{
+			return new Dimension(400, 440);
+		}
+
+		@Override
+		public void addLayoutComponent(String name, java.awt.Component comp)
+		{
+		}
+
+		@Override
+		public void removeLayoutComponent(java.awt.Component comp)
+		{
+		}
 	}
 
 	/** Board title, a quiet subline (team, version) and a row of stat chips, over a gold rule. */
