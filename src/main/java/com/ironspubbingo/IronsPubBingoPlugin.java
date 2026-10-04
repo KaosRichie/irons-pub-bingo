@@ -1415,7 +1415,8 @@ public class IronsPubBingoPlugin extends Plugin
 			TileProgress tp = member.getValue().tilesMap().get(tileIndex);
 			if (tp != null && !member.getKey().equals(self))
 			{
-				history.record(tileIndex, member.getKey(), tp, goalCount);
+				// A teammate's state arrives in syncs, so one change may hide several steps.
+				history.record(tileIndex, member.getKey(), tp, goalCount, true);
 			}
 		}
 	}
