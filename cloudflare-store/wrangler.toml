@@ -1,4 +1,4 @@
-name = "irons-pub-bingo-store"
+name = "irons-pub-bingo"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
 

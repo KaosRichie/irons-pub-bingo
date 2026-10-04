@@ -16,12 +16,12 @@ You need a free Cloudflare account and Node.js.
 1. In this folder, sign in: `npx wrangler login`
 2. Set the admin password: `npx wrangler secret put ADMIN_TOKEN`
 3. Deploy: `npx wrangler deploy`. It prints your Worker address, like
-   `https://irons-pub-bingo-store.<you>.workers.dev`.
+   `https://irons-pub-bingo.<you>.workers.dev`.
 4. Pick an event code, for example `summer-2026`. Open
-   `https://irons-pub-bingo-store.<you>.workers.dev/e/summer-2026/admin`, enter the admin
+   `https://irons-pub-bingo.<you>.workers.dev/e/summer-2026/admin`, enter the admin
    password, press Load, and fill in Teams and the Board code.
 5. In the plugin settings, set the store URL to
-   `https://irons-pub-bingo-store.<you>.workers.dev/e/summer-2026`.
+   `https://irons-pub-bingo.<you>.workers.dev/e/summer-2026`.
 
 The same address without `/admin` is the player portal.
 

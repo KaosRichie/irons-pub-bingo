@@ -231,7 +231,7 @@ el.innerHTML='<section class="card"><h2>Requests to this event</h2><div class="g
 +'<div><div class="muted small">Estimate at full activity</div><div class="big">'+Math.round(players*86400/poll).toLocaleString()+'</div><div class="small muted">'+players+' players syncing every '+poll+' s, all day long ('+(players*86400/poll/1000).toFixed(1)+'% of the limit)</div></div></div>'
 +'<div class="usage">'+days.map(function(x){return '<div title="'+x[0]+': '+x[1]+' requests" style="height:'+Math.max(2,x[1]/max*100)+'%"><span>'+x[0].slice(5)+'</span></div>';}).join('')+'</div><div style="height:24px"></div>'
 +'<p class="muted small">This counts what reaches this event, which is nearly all of the traffic. The free plan\\'s daily limit covers the whole Cloudflare account, every event included. '
-+'Cloudflare\\'s own numbers are under Workers &amp; Pages in the <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noopener">Cloudflare dashboard</a>, on the irons-pub-bingo-store Worker\\'s Metrics tab. Limits reset at midnight UTC.</p></section>';}
++'Cloudflare\\'s own numbers are under Workers &amp; Pages in the <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noopener">Cloudflare dashboard</a>, on the irons-pub-bingo Worker\\'s Metrics tab. Limits reset at midnight UTC.</p></section>';}
 if(token){load();}else{showLogin();}
 </script></body></html>`;
 }
