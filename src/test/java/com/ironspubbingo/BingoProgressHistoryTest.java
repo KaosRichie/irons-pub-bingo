@@ -61,7 +61,7 @@ public class BingoProgressHistoryTest
 		history.record(0, "y", state(1_000_000, 3, 1), 2);
 		history.record(0, "y", state(2_000_000, 12, 6), 2); // both past their targets at once
 		Map<String, TileProgress> snapshot = history.snapshot(0, tile, Collections.singletonList("y"));
-		assertEquals(12, n(snapshot, "y", 0));
+		assertEquals("never more than the target", 10, n(snapshot, "y", 0));
 		assertEquals("the second goal shows where it stood just before", 1, n(snapshot, "y", 1));
 	}
 
@@ -79,39 +79,40 @@ public class BingoProgressHistoryTest
 	}
 
 	@Test
-	public void whenOneLeavesTheRestFreezeWhereTheirStepsReachedTheTarget()
+	public void whenOneLeavesTheRestFreezeWhereTheyReachedTheTarget()
 	{
 		// Goal 1 needs 5: a, b and c complete it at 3, 1 and 1. Then b gets 1 more, and c
-		// gets 10 more in steps that reached this client as one change.
+		// gets 10 more.
 		BingoProgressHistory history = new BingoProgressHistory();
 		history.record(0, "a", state(1_000_000, 0, 3), 2);
 		history.record(0, "b", state(1_000_000, 0, 1), 2);
 		history.record(0, "c", state(2_000_000, 0, 1), 2);
 		history.record(0, "b", state(3_000_000, 0, 2), 2);
-		history.record(0, "c", state(4_000_000, 0, 11), 2, true);
+		history.record(0, "c", state(4_000_000, 0, 11), 2);
 		Map<String, TileProgress> all = history.snapshot(0, tile, Arrays.asList("a", "b", "c"));
 		assertEquals(3, n(all, "a", 1));
 		assertEquals(1, n(all, "c", 1));
 
-		// a leaves: b and c completed it when c's steps reached 3, with b at 2.
+		// a leaves: b and c completed it when c reached 3, with b at 2.
 		Map<String, TileProgress> rest = history.snapshot(0, tile, Arrays.asList("b", "c"));
 		assertEquals(2, n(rest, "b", 1));
 		assertEquals(3, n(rest, "c", 1));
 	}
 
 	@Test
-	public void aSingleBigStepKeepsItsFullAmount()
+	public void aSingleBigDropShowsOnlyWhatTheTargetNeeded()
 	{
 		BingoProgressHistory history = new BingoProgressHistory();
 		history.record(0, "b", state(1_000_000, 0, 2), 2);
 		history.record(0, "c", state(2_000_000, 0, 1), 2);
-		history.record(0, "c", state(3_000_000, 0, 11), 2); // one drop of 10, seen exactly
+		history.record(0, "c", state(3_000_000, 0, 11), 2); // one drop of 10
 		Map<String, TileProgress> rest = history.snapshot(0, tile, Arrays.asList("b", "c"));
-		assertEquals(11, n(rest, "c", 1));
+		assertEquals(2, n(rest, "b", 1));
+		assertEquals(3, n(rest, "c", 1));
 	}
 
 	@Test
-	public void quickOwnStepsMergeIntoOneSteppedRecord()
+	public void quickStepsMergedIntoOneRecordStillStopAtTheTarget()
 	{
 		BingoProgressHistory history = new BingoProgressHistory();
 		history.record(0, "b", state(1_000_000, 0, 2), 2);

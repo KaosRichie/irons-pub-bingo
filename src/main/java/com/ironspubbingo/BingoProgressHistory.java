@@ -21,10 +21,8 @@ import java.util.TreeSet;
  *
  * Kept small: a record is added only when a value changes, records closer together than
  * a minute are merged, and each member keeps at most MAX_SNAPS records per tile (the
- * closest pairs merge first). A record that may stand for several steps (a merged one, or
- * a teammate's state as it arrived in a sync) is marked stepped: when it is the one that
- * completes the tile, the replay takes that member only as far as the target needed.
- * Client thread only.
+ * closest pairs merge first). A completed goal never shows more than its target: the
+ * change that completed it counts only as far as the target needed. Client thread only.
  */
 class BingoProgressHistory
 {
@@ -40,8 +38,6 @@ class BingoProgressHistory
 		/** Per goal: item or pet names first seen here (distinct goals), or null. */
 		List<List<String>> add;
 		boolean manual;
-		/** May stand for several steps, so the moment it crossed a target is not known. */
-		boolean stepped;
 	}
 
 	/** A member's state at some moment, rebuilt from their snaps. */
@@ -58,12 +54,6 @@ class BingoProgressHistory
 
 	/** Records a member's current state of a tile, if it differs from the last record. */
 	void record(int tile, String member, TileProgress progress, int goalCount)
-	{
-		record(tile, member, progress, goalCount, false);
-	}
-
-	/** @param stepped the change may stand for several steps (a teammate's synced state) */
-	void record(int tile, String member, TileProgress progress, int goalCount, boolean stepped)
 	{
 		List<Snap> snaps = tiles.computeIfAbsent(tile, k -> new HashMap<>())
 			.computeIfAbsent(member, k -> new ArrayList<>());
@@ -117,7 +107,6 @@ class BingoProgressHistory
 			last.n = n;
 			last.manual = progress.manual;
 			last.add = mergeNames(last.add, add, goalCount);
-			last.stepped = true;
 		}
 		else
 		{
@@ -126,7 +115,6 @@ class BingoProgressHistory
 			snap.n = n;
 			snap.add = add;
 			snap.manual = progress.manual;
-			snap.stepped = stepped;
 			snaps.add(snap);
 			while (snaps.size() > MAX_SNAPS)
 			{
@@ -213,16 +201,16 @@ class BingoProgressHistory
 				}
 			}
 		}
-		trimSteppedCrossings(byMember, definition, at, before, runStart, goalCount);
+		trimCrossings(byMember, definition, at, before, runStart, goalCount);
 		return at;
 	}
 
 	/**
-	 * A goal that crossed its target in a stepped record crossed it somewhere inside those
-	 * steps: the members whose stepped record it was are taken back toward where they stood
-	 * before, only as far as the target needed. Exact records are left as they are.
+	 * A goal that crossed its target at the completing moment never shows more than the
+	 * target: the members whose change it was are taken back toward where they stood
+	 * before, only as far as the target needed.
 	 */
-	private static void trimSteppedCrossings(Map<String, List<Snap>> byMember, BingoTile definition,
+	private static void trimCrossings(Map<String, List<Snap>> byMember, BingoTile definition,
 		Map<String, TileProgress> at, Map<String, TileProgress> before, long runStart, int goalCount)
 	{
 		TileProgress mergedAt = merge(at, goalCount);
@@ -242,7 +230,7 @@ class BingoProgressHistory
 				{
 					break;
 				}
-				if (!steppedAt(byMember.get(entry.getKey()), runStart))
+				if (!changedAt(byMember.get(entry.getKey()), runStart))
 				{
 					continue;
 				}
@@ -257,13 +245,13 @@ class BingoProgressHistory
 		}
 	}
 
-	private static boolean steppedAt(List<Snap> snaps, long t)
+	private static boolean changedAt(List<Snap> snaps, long t)
 	{
 		for (Snap snap : snaps == null ? new ArrayList<Snap>() : snaps)
 		{
 			if (snap.t == t)
 			{
-				return snap.stepped;
+				return true;
 			}
 		}
 		return false;
@@ -416,6 +404,5 @@ class BingoProgressHistory
 		Snap dropped = snaps.remove(best);
 		Snap next = snaps.get(best);
 		next.add = mergeNames(dropped.add, next.add, goalCount);
-		next.stepped = true;
 	}
 }

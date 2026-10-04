@@ -447,6 +447,24 @@ public class BingoBoardTest
 	}
 
 	@Test
+	public void aFrozenGoalNeverShowsMoreThanItsTarget()
+	{
+		BingoTile tile = BingoBoard.parse(gson, "{\"name\":\"t\",\"size\":1,\"tiles\":[{\"label\":\"Bones\","
+			+ "\"goals\":[{\"type\":\"DROP\",\"items\":[\"Bones\"],\"count\":5}]}]}").getTiles().get(0);
+		TileProgress alice = count(2);
+		alice.ts = 1000L;
+		TileProgress bob = count(11);
+		bob.ts = 2000L;
+		java.util.Map<String, TileProgress> snapshot = new java.util.LinkedHashMap<>();
+		snapshot.put("Alice", alice.counts(1));
+		snapshot.put("Bob", bob.toShare(1));
+		IronsPubBingoPlugin.capAtTargets(tile, snapshot);
+		assertEquals(2, snapshot.get("Alice").goal(0, 1).n);
+		assertEquals("the last to update gives up the excess", 3, snapshot.get("Bob").goal(0, 1).n);
+		assertEquals("tracking keeps the real count", 11, bob.goal(0, 1).n);
+	}
+
+	@Test
 	public void matchedNamesKeepGameCasingAndDedupeIgnoringCase()
 	{
 		GoalProgress p = new GoalProgress();

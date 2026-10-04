@@ -843,7 +843,14 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<Integer, Map<String, TileProgress>> frozen = readJsonConfig(frozenKey(teamCode, storeMode), FROZEN_TYPE);
 		if (frozen != null)
 		{
-			frozenContributions.putAll(frozen);
+			frozen.forEach((tile, snapshot) ->
+			{
+				if (board != null && tile != null && tile >= 0 && tile < board.getTiles().size() && snapshot != null)
+				{
+					capAtTargets(board.getTiles().get(tile), snapshot);
+					frozenContributions.put(tile, snapshot);
+				}
+			});
 		}
 		loadRemovedMembers();
 	}
@@ -1141,10 +1148,48 @@ public class IronsPubBingoPlugin extends Plugin
 		Map<String, String> names = memberNamesFor(tileIndex);
 		String ownName = names.get(OWN_MEMBER);
 		frozen = preferPublished(board.getTiles().get(tileIndex), frozen, publishedShares(tileIndex, live, names));
+		capAtTargets(board.getTiles().get(tileIndex), frozen);
 		publishOwnShare(tileIndex, frozen.get(ownName), memberIds(names));
 		frozenContributions.put(tileIndex, frozen);
 		saveProgress(false);
 		return frozen;
+	}
+
+	/**
+	 * A frozen goal never shows more than its target. The replay already stops at the
+	 * target; this catches the snapshots it could not build (no history, mixed shares),
+	 * taking the excess off whoever updated the tile last.
+	 */
+	static void capAtTargets(BingoTile tile, Map<String, TileProgress> snapshot)
+	{
+		int goalCount = tile.goals.size();
+		List<TileProgress> latestFirst = new ArrayList<>(snapshot.values());
+		latestFirst.removeIf(java.util.Objects::isNull);
+		latestFirst.sort((a, b) -> Long.compare(b.ts == null ? 0 : b.ts, a.ts == null ? 0 : a.ts));
+		for (int g = 0; g < goalCount; g++)
+		{
+			BingoGoal goal = tile.goals.get(g);
+			if (goal.goalType == GoalType.MANUAL || goal.usesMatchedSet())
+			{
+				continue;
+			}
+			long excess = -goal.target();
+			for (TileProgress tp : latestFirst)
+			{
+				excess += tp.goal(g, goalCount).n;
+			}
+			for (TileProgress tp : latestFirst)
+			{
+				if (excess <= 0)
+				{
+					break;
+				}
+				GoalProgress p = tp.goal(g, goalCount);
+				long cut = Math.min(excess, Math.max(0, p.n));
+				p.n -= cut;
+				excess -= cut;
+			}
+		}
 	}
 
 	/** Whether the snapshot still shows every teammate's published share that holds. */
@@ -1415,8 +1460,7 @@ public class IronsPubBingoPlugin extends Plugin
 			TileProgress tp = member.getValue().tilesMap().get(tileIndex);
 			if (tp != null && !member.getKey().equals(self))
 			{
-				// A teammate's state arrives in syncs, so one change may hide several steps.
-				history.record(tileIndex, member.getKey(), tp, goalCount, true);
+				history.record(tileIndex, member.getKey(), tp, goalCount);
 			}
 		}
 	}
