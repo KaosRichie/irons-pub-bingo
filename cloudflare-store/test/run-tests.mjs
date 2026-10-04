@@ -331,12 +331,12 @@ await test('the admin page actions work from names, not row numbers', async () =
 	is(view.requests[0].status, 'Done', 'shown as approved');
 	is(view.teams.find(t => t.code === 'red').board.tiles[0].goals[0].total, 7, 'and the credit counts');
 
-	let r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 3, note: 'screenshot' })).body.result;
+	let r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Alice', add: 3, note: 'screenshot' })).body.result;
 	is(r, { ok: true }, 'credit added from the form');
-	r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 9, goal: 1, player: 'Bob', add: 3 })).body.result;
+	r = (await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 9, goal: 1, player: 'Alice', add: 3 })).body.result;
 	ok(r.error && /does not exist/.test(r.error), 'a tile outside the board is refused: ' + JSON.stringify(r));
 	view = (await rt.admin('summer', { action: 'overview' })).body.result;
-	const bob = view.adjustments.find(a => a.player === 'Bob');
+	const bob = view.adjustments.find(a => a.player === 'Alice' && a.note === 'screenshot');
 	is(bob.tileLabel, 'Ten kills', 'the ledger shows tile names');
 	r = (await rt.admin('summer', { action: 'deleteAdjustment', id: 'nothing' })).body.result;
 	ok(r.error, 'credit that is gone is reported');
@@ -370,10 +370,10 @@ await test('credit from the admin page is announced on Discord, and so is taking
 	const meta = { name: 'Board', size: 1, tiles: [{ label: 'Ten kills', goals: [{ label: 'Kills', target: 10 }] }] };
 	await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, meta, members: { [A]: member('Alice', { 0: tile(1000, [3]) }) } });
 	rt.webhooks.length = 0;
-	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 2, note: 'screenshot in chat' });
-	ok(rt.webhooks.length === 1 && /Credit approved/.test(rt.webhooks[0].body) && /Bob/.test(rt.webhooks[0].body)
+	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Alice', add: 2, note: 'screenshot in chat' });
+	ok(rt.webhooks.length === 1 && /Credit approved/.test(rt.webhooks[0].body) && /Alice/.test(rt.webhooks[0].body)
 		&& /screenshot in chat/.test(rt.webhooks[0].body), 'plain credit announced: ' + JSON.stringify(rt.webhooks));
-	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Bob', add: 5 });
+	await rt.admin('summer', { action: 'addAdjustment', team: 'red', tile: 1, goal: 1, player: 'Alice', add: 5 });
 	ok(/completed \*\*Ten kills\*\*/.test(rt.webhooks[1].body), 'credit that finishes the tile is the completion post: ' + rt.webhooks[1].body);
 	const view = (await rt.admin('summer', { action: 'overview' })).body.result;
 	const row = view.adjustments.find(a => a.add === 5);

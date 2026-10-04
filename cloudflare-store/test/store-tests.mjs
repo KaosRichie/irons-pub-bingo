@@ -286,7 +286,7 @@ test('the poll interval reaches clients', () =>
 
 // ---------------------------------------------------------------- admin credit
 
-test('admin credit becomes verified progress, and a negative amount takes progress off', () =>
+test('admin credit becomes verified progress, and negative credit corrects a player down to zero at most', () =>
 {
 	const s = newStore();
 	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', { 0: tile(1000, [6]) }) } });
@@ -301,6 +301,9 @@ test('admin credit becomes verified progress, and a negative amount takes progre
 	is(r.members['admin:alice'].tiles['0'].goals[0].n, -3, 'the correction goes out as it is');
 	const totals = s.store.tileTotals('b_red', META);
 	is([totals.tracked[0][0] + totals.verified[0][0], totals.done[0]], [7, false], 'and takes the team below the target again');
+	// A correction never takes a player below zero: Alice tracked 6.
+	s.credit({ tile: 1, player: 'Alice', add: -20 });
+	is(s.post({ board: 'b_red', rejoin: A, members: {} }).members['admin:alice'].tiles['0'].goals[0].n, -6, 'down to zero for Alice, never a penalty');
 	s.credit({ team: 'blue', tile: 1, player: 'Bob', add: 5 });
 	ok(!('admin:bob' in s.post({ board: 'b_red', rejoin: A, members: {} }).members), 'another team\'s credit stays out');
 });
@@ -309,12 +312,13 @@ test('credit from the admin page is checked and announced, and so is taking it b
 {
 	const s = newStore([{ code: 'red', name: 'Red Team', webhook: WEBHOOK }]);
 	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', { 0: tile(1000, [3]) }) } });
-	ok(/does not exist/.test(s.store.addCredit({ team: 'red', tile: 9, player: 'Bob', add: 2 }).error), 'a missing tile is refused');
-	ok(!!s.store.addCredit({ team: 'nope', tile: 1, player: 'Bob', add: 2 }).error, 'a team without a board is refused');
-	is(s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Bob', add: 2, note: 'screenshot' }), { ok: true }, 'credit added');
+	ok(/does not exist/.test(s.store.addCredit({ team: 'red', tile: 9, player: 'Alice', add: 2 }).error), 'a missing tile is refused');
+	ok(!!s.store.addCredit({ team: 'nope', tile: 1, player: 'Alice', add: 2 }).error, 'a team without a board is refused');
+	ok(/synced/.test(s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Nobody', add: 2 }).error), 'a player who never synced is refused');
+	is(s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: 2, note: 'screenshot' }), { ok: true }, 'credit added');
 	let posts = s.posts();
 	ok(posts.length === 1 && /Credit approved/.test(posts[0].content) && /screenshot/.test(posts[0].content), 'announced');
-	s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Bob', add: 5 });
+	s.store.addCredit({ team: 'red', tile: 1, goal: 1, player: 'Alice', add: 5 });
 	ok(/completed \*\*10 kills\*\*/.test(s.posts()[0].content), 'credit that finishes the tile is the completion post');
 	const last = [...s.store.credits.values()].pop();
 	is(s.store.removeCredit(last.id), { ok: true }, 'removed');

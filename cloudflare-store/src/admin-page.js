@@ -128,7 +128,7 @@ if(ok){api({action:'resetTile',team:t.code,tile:boardTile+1}).then(load).catch(f
 function renderCredit(el){var teams=data.teams.filter(function(t){return t.board;});var pre=creditPrefill||{};creditPrefill=null;
 el.innerHTML='<section class="card"><h2>Give credit</h2><p class="muted" style="margin-top:-4px">For progress the tracker missed. It counts for the team right away and is announced on the team\\'s Discord.</p>'
 +(teams.length?'<div class="grid2"><label class="field"><span>Team</span><select id="cTeam">'+teams.map(function(t){return '<option value="'+esc(t.code)+'"'+(t.code===pre.team?' selected':'')+'>'+esc(t.name)+'</option>';}).join('')+'</select></label>'
-+'<label class="field"><span>Player</span><input id="cPlayer" list="cMembers" maxlength="40" placeholder="Who earned it"><datalist id="cMembers"></datalist></label></div>'
++'<label class="field"><span>Player</span><select id="cPlayer"></select><div class="hint">Players who have synced to this team.</div></label></div>'
 +'<label class="field" style="margin-top:12px"><span>Tile</span><select id="cTile"></select></label>'
 +'<div class="grid2" style="margin-top:12px"><label class="field"><span>What to credit</span><select id="cGoal"></select></label>'
 +'<label class="field" id="cAmountWrap"><span>Amount</span><input id="cAmount" type="number" step="1" placeholder="e.g. 5"><div class="hint">Use a negative number to correct a mistake.</div></label></div>'
@@ -140,20 +140,23 @@ renderLedger();if(!teams.length){return;}
 var teamSel=document.getElementById('cTeam'),tileSel=document.getElementById('cTile'),goalSel=document.getElementById('cGoal');
 function team(){return teams.find(function(t){return t.code===teamSel.value;});}
 function fillTiles(keep){var t=team();tileSel.innerHTML=t.board.tiles.map(function(x,i){return '<option value="'+i+'">'+(i+1)+'. '+esc(x.label)+(x.done?' \\u2713':'')+'</option>';}).join('');
-if(keep!=null){tileSel.value=String(keep);}document.getElementById('cMembers').innerHTML=t.members.map(function(m){return '<option value="'+esc(m)+'">';}).join('');fillGoals();}
+if(keep!=null){tileSel.value=String(keep);}fillPlayers();fillGoals();}
+function fillPlayers(){var t=team(),sel=document.getElementById('cPlayer'),was=sel.value;
+sel.innerHTML=t.members.length?'<option value="" selected disabled>Pick a player</option>'+t.members.map(function(m){return '<option'+(m===was?' selected':'')+'>'+esc(m)+'</option>';}).join('')
+:'<option value="" selected disabled>Nobody on this team has synced yet</option>';sel.disabled=!t.members.length;}
 function fillGoals(){var tile=team().board.tiles[+tileSel.value],opts='';tile.goals.forEach(function(g,i){opts+='<option value="'+(i+1)+'">'+(g.manual?'Tick: ':'')+esc(g.label)+(g.manual?'':' ('+fmt(g.total)+' / '+fmt(g.target)+')')+'</option>';});
 goalSel.innerHTML=opts+'<option value="complete">Mark the whole tile complete</option>';update();}
 function update(){var complete=goalSel.value==='complete',tile=team().board.tiles[+tileSel.value],g=complete?null:tile.goals[+goalSel.value-1];
 var manualGoal=g&&g.manual;document.getElementById('cAmountWrap').style.display=complete||manualGoal?'none':'';
 var player=document.getElementById('cPlayer').value.trim(),amount=+document.getElementById('cAmount').value||0;
-if(!player||(!complete&&!manualGoal&&!amount)){document.getElementById('cPreview').innerHTML='<span class="muted">Fill in '+(!player?'who earned it':'an amount')+' to see exactly what this adds.</span>';return;}
+if(!player||(!complete&&!manualGoal&&!amount)){document.getElementById('cPreview').innerHTML='<span class="muted">'+(!player?'Pick the player':'Fill in an amount')+' to see exactly what this adds.</span>';return;}
 document.getElementById('cPreview').innerHTML=complete||manualGoal?'Marks <b>'+esc(tile.label)+'</b> complete for <b>'+esc(team().name)+'</b>, credited to '+esc(player)+'.'
 :'Adds <b>'+(amount>=0?'+':'')+amount+'</b> to <b>'+esc(g.label)+'</b> on <b>'+esc(tile.label)+'</b> for <b>'+esc(team().name)+'</b>, credited to '+esc(player)+'. New total: <b>'+fmt(Math.max(0,Math.min(g.target||Infinity,g.raw+amount)))+' / '+fmt(g.target)+'</b>.';}
-teamSel.onchange=function(){fillTiles();};tileSel.onchange=fillGoals;goalSel.onchange=update;document.getElementById('cPlayer').oninput=update;document.getElementById('cAmount').oninput=update;
+teamSel.onchange=function(){fillTiles();};tileSel.onchange=fillGoals;goalSel.onchange=update;document.getElementById('cPlayer').onchange=update;document.getElementById('cAmount').oninput=update;
 fillTiles(pre.tile);
 document.getElementById('cAdd').onclick=function(){var complete=goalSel.value==='complete',tile=team().board.tiles[+tileSel.value],g=complete?null:tile.goals[+goalSel.value-1],manualGoal=g&&g.manual;
 var player=document.getElementById('cPlayer').value.trim(),amount=+document.getElementById('cAmount').value;
-if(!player){toast('Fill in who earned it.','bad');return;}if(!complete&&!manualGoal&&!amount){toast('Fill in an amount.','bad');return;}
+if(!player){toast('Pick the player.','bad');return;}if(!complete&&!manualGoal&&!amount){toast('Fill in an amount.','bad');return;}
 api({action:'addAdjustment',team:teamSel.value,tile:+tileSel.value+1,goal:complete?'':+goalSel.value,player:player,add:complete||manualGoal?'':amount,complete:complete||manualGoal,note:document.getElementById('cNote').value})
 .then(function(){toast('Credit added for '+player+'.','ok');load();}).catch(function(e){toast(e.message,'bad');});};}
 function renderLedger(){var el=document.getElementById('ledger'),rows=data.adjustments||[];

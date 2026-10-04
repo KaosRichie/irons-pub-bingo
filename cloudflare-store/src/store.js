@@ -565,7 +565,7 @@ export class EventStore
 	/**
 	 * Admin credit as synthetic members the plugin merges like teammates, one per player,
 	 * named "<player> (verified)". Credit adds up, and a negative amount corrects a
-	 * mistake: it takes progress off the team's total, tracked progress included.
+	 * mistake, in what the player tracked or was credited, down to zero for that player.
 	 */
 	creditMembers(board, meta)
 	{
@@ -590,6 +590,29 @@ export class EventStore
 			tile.goals[parsed.goal - 1].n += parsed.add;
 			tile.manual = tile.manual || parsed.complete;
 		}
+		// Negative credit corrects progress, it never penalizes: it takes a player down to
+		// zero at most, counting what they tracked themselves and what they were credited.
+		for (const [id, member] of Object.entries(members))
+		{
+			const player = id.slice('admin:'.length);
+			for (const [key, tile] of Object.entries(member.tiles))
+			{
+				tile.goals.forEach((goal, g) =>
+				{
+					let tracked = 0;
+					for (const row of this.members.values())
+					{
+						const own = row.board === board && String(row.name || '').toLowerCase() === player
+							&& row.tiles && row.tiles[key];
+						if (own && !this.departures.has(row.board + '|' + row.member))
+						{
+							tracked += Number(((own.goals || [])[g] || {}).n || 0);
+						}
+					}
+					goal.n = Math.max(-tracked, goal.n);
+				});
+			}
+		}
 		return members;
 	}
 
@@ -613,6 +636,10 @@ export class EventStore
 		if (!scope || issues.length)
 		{
 			return { error: scope ? issues.join('. ') : 'That team has no board yet.' };
+		}
+		if (!this.isTeamMember(scope.board, credit.player))
+		{
+			return { error: 'Pick a player who has synced to this team.' };
 		}
 		// The before and after around the write tell the post whether this finished the
 		// tile, and which bingo lines it completed.
