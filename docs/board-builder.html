@@ -1157,7 +1157,6 @@ function renderEditor() {
   const iconPreview = document.createElement("div");
   iconPreview.style.cssText = "width:34px;height:34px;flex:0 0 auto;align-self:center;background:#222;"
     + "border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#777";
-  iconPreview.title = "Icon preview - a question mark means the name was not recognized";
   function refreshIconPreview() {
     iconPreview.innerHTML = "";
     const raw = (tile.icon || "").trim();
@@ -1168,20 +1167,15 @@ function renderEditor() {
   }
   refreshIconPreview();
   iconPreview.style.cursor = "pointer";
-  iconPreview.title = "Browse icons";
+  iconPreview.title = "Click to pick an icon (a question mark means the name was not recognized)";
   iconPreview.addEventListener("click", () => openIconPicker(tile, id => {
     tile.icon = id ? String(id) : "";
     saveDraft(); renderGrid(); renderEditor();
   }));
-  const browse = document.createElement("button");
-  browse.type = "button"; browse.className = "sm"; browse.textContent = "Browse";
-  browse.style.alignSelf = "center";
-  browse.addEventListener("click", () => iconPreview.click());
   const pointsField = field("Points", numberInput(tile.points, v => tile.points = v, 0),
     "0 = no points");
   iconRow.appendChild(iconField);
   iconRow.appendChild(iconPreview);
-  iconRow.appendChild(browse);
   iconRow.appendChild(pointsField);
   editor.appendChild(iconRow);
 
@@ -1362,21 +1356,6 @@ function renderGoal(tile, goal, gi) {
     box.appendChild(field("Agility course", sel, "Laps count like RuneLite's lap counter."));
   }
   if (goal.type === "CHAT") {
-    const templates = dataList("chatTemplates");
-    if (templates.length) {
-      const pick = document.createElement("select");
-      pick.innerHTML = "<option value=''>Start from a common message...</option>"
-        + templates.map((t, i) => "<option value='" + i + "'>" + t.label.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</option>").join("");
-      pick.addEventListener("change", () => {
-        const t = templates[+pick.value];
-        if (!t) return;
-        goal.pattern = t.pattern;
-        if (!goal.name) goal.name = t.label;
-        chatSamples[gi] = t.sample;
-        saveDraft(); renderEditor(); renderGrid();
-      });
-      box.appendChild(field("Ready-made patterns", pick));
-    }
     const patternInput = textInput(goal.pattern, v => { goal.pattern = v; runTest(); }, "Corrupted challenge duration: [0-6]:[0-5][0-9]");
     box.appendChild(field("Game message pattern (regex)", patternInput, "Counts once per matching game message."));
     // Tester: a sample message, checked against the pattern as the plugin would (tags removed,

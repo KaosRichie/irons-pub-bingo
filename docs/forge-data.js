@@ -7,8 +7,6 @@
  *               "New item added to your collection log: <name>" prints it. icon is the pet item id.
  * lootSources   Source names the RuneLite Loot Tracker records: NPC names for kills, and the
  *               Loot Tracker's own event names for chests, minigames and clues.
- * chatTemplates Ready-made chat goals. pattern is a Java regex run with find() on the message
- *               text after tags are stripped. sample is a real message the pattern matches.
  *
  * Names must match the game text exactly (the plugin compares case-insensitively, but spelling,
  * spacing and punctuation must be right). A wrong name makes a goal silently never count.
@@ -263,26 +261,5 @@ window.FORGE_DATA = {
     "Zalcano",
     "Zombie Pirate's Locker",
     "Zulrah",
-  ],
-  chatTemplates: [
-    { label: "Level up (any skill)", pattern: "Congratulations, you've just advanced your \\w+ level", sample: "Congratulations, you've just advanced your Construction level. You are now level 50." },
-    { label: "Level up (Construction)", pattern: "advanced your Construction level", sample: "Congratulations, you've just advanced your Construction level. You are now level 50." },
-    { label: "Level 99 (any skill)", pattern: "reached the highest possible \\w+ level of 99", sample: "Congratulations, you've reached the highest possible Strength level of 99." },
-    { label: "Mahogany Homes contract completed", pattern: "You have completed [\\d,]+ contracts", sample: "You have completed 19 contracts with a total of 152 points." },
-    { label: "Mahogany Homes build finished", pattern: "seems happy with your work", sample: "Barbara seems happy with your work. Talk to her for your reward." },
-    { label: "Mahogany Homes contract taken", pattern: "Contract: Go see", sample: "Expert Contract: Go see Barbara, south of Hosidius bank." },
-    { label: "Brutus kill under 3 seconds", pattern: "Fight duration: 0:0[0-2]\\.", sample: "Fight duration: 0:02.40. Personal best: 0:01.80" },
-    { label: "Untradeable drop", pattern: "Untradeable drop: ", sample: "Untradeable drop: Mooleta" },
-    { label: "Clue scroll box received", pattern: "Untradeable drop: Scroll box", sample: "Untradeable drop: Scroll box (beginner)" },
-    { label: "Valuable drop", pattern: "Valuable drop: .+ \\([\\d,]+ coins\\)", sample: "Valuable drop: Rune scimitar (25,600 coins)" },
-    { label: "New collection log item", pattern: "New item added to your collection log: ", sample: "New item added to your collection log: Chompy bird hat" },
-    { label: "Pet drop", pattern: "You (?:have a funny feeling like you're being followed|feel something weird sneaking into your backpack)", sample: "You have a funny feeling like you're being followed." },
-    { label: "Combat achievement task", pattern: "Congratulations, you've completed an? \\w+ combat task", sample: "Congratulations, you've completed an easy combat task: A Slow Death." },
-    { label: "Superior slayer monster", pattern: "A superior foe has appeared", sample: "A superior foe has appeared..." },
-    { label: "Slayer task completed", pattern: "You have completed your task! You killed", sample: "You have completed your task! You killed 245 Cave Kraken. You gained 62,475 xp." },
-    { label: "Clue scroll completed (any tier)", pattern: "You have completed [\\d,]+ (?:beginner|easy|medium|hard|elite|master) Treasure Trails?", sample: "You have completed 2,823 medium Treasure Trails." },
-    { label: "Achievement diary tier completed", pattern: "Congratulations! You have completed all of the \\w+ tasks in the .+ area", sample: "Congratulations! You have completed all of the easy tasks in the Karamja area. Speak to Pirate Jackie the Fruit to claim your reward." },
-    { label: "Dog fully grown", pattern: "has fully grown", sample: "Your Samoyed has fully grown!" },
-    { label: "Lamp or book XP used", pattern: "Your mind fills with new knowledge", sample: "Your mind fills with new knowledge." },
   ],
 };
