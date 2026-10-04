@@ -1,6 +1,7 @@
 // Runs the Worker module under Node with an in-memory stand-in for Durable Object storage.
 // No Cloudflare account, no network: node build.mjs && node test/run-tests.mjs
 import worker, { BingoEvent, EventRegistry } from '../src/worker.js';
+import { EventStore } from '../src/store.js';
 import { sha256 } from '../src/sha256.js';
 import { createHash } from 'node:crypto';
 
@@ -445,6 +446,60 @@ await test('the top-level admin page lists the events, and an event can be delet
 	is((await rt.request('/e/winter')).status, 404, 'its address shows nothing again');
 	is(rt.storage.get('winter').size, 0, 'and nothing of it is stored');
 	is((await rt.admin('summer', { action: 'deleteEvent' }, 'nope')).status, 401, 'deleting needs the password');
+});
+
+await test('a bad board summary never breaks the portal or the admin page', async () =>
+{
+	const rt = createRuntime();
+	await setupEvent(rt, 'summer');
+	const r = await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, meta: { tiles: [null] }, members: {} });
+	is(r.error, 'Board summary not valid', 'a sync with a broken summary is refused');
+	// Data stored before the check: a broken summary already in storage.
+	rt.storage.get('summer').set('meta:b_red', { updated: '2999-01-01', meta: { tiles: [null] } });
+	rt.restart();
+	is((await rt.request('/e/summer/data')).status, 200, 'the portal data still loads');
+	const view = await rt.admin('summer', { action: 'overview' });
+	is([view.status, view.body.result.teams.find(t => t.code === 'red').board.tiles.length], [200, 1], 'and the admin page opens');
+});
+
+await test('a store call that throws leaves nothing half saved', async () =>
+{
+	const rt = createRuntime();
+	await setupEvent(rt, 'summer');
+	const sync = EventStore.prototype.sync;
+	EventStore.prototype.sync = function ()
+	{
+		this.set('meta', 'junk_red', { updated: 'x', meta: null });
+		throw new Error('boom');
+	};
+	const logError = console.error;
+	console.error = () => {};
+	let status;
+	try
+	{
+		status = (await rt.request('/e/summer', { method: 'POST', body: '{}' })).status;
+	}
+	finally
+	{
+		EventStore.prototype.sync = sync;
+		console.error = logError;
+	}
+	is(status, 500, 'the failed call answers with an error');
+	await rt.post('summer', { board: 'b_red', rejoin: A, memberKey: KEY_A, members: { [A]: member('Alice', { 0: tile(1000, [1]) }) } });
+	ok(!rt.storage.get('summer').has('meta:junk_red'), 'its change is never saved by a later request');
+	ok(rt.storage.get('summer').has('member:b_red|' + A), 'while the later request saves as usual');
+});
+
+await test('a failed admin action does not create the event', async () =>
+{
+	const rt = createRuntime();
+	ok(!!(await rt.admin('fresh', { action: 'nope' })).body.result.error, 'an unknown action is refused');
+	ok(!!(await rt.admin('fresh', { action: 'saveBoardCode', code: '{not json' })).body.result.error, 'a broken board code is refused');
+	is(rt.storage.has('fresh') ? rt.storage.get('fresh').size : 0, 0, 'nothing was stored');
+	is((await rt.request('/e/fresh')).status, 404, 'the event still does not exist');
+	await rt.settle();
+	const list = await rt.request('/admin/api', { method: 'POST', headers: { authorization: 'Bearer ' + TOKEN }, body: '{}' });
+	is((await list.json()).result, [], 'and is not listed');
 });
 
 // ---------------------------------------------------------------- report

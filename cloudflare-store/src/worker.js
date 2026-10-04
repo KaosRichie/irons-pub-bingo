@@ -188,7 +188,18 @@ export class BingoEvent
 	/** Runs a store call, saves what it changed, sends its Discord posts, answers in JSON. */
 	async answer(call, headers)
 	{
-		const result = call();
+		let result;
+		try
+		{
+			result = call();
+		}
+		catch (err)
+		{
+			// The call may have changed the store halfway. Throw all of it away: the next
+			// request reloads the event from storage.
+			this.ready = null;
+			throw err;
+		}
 		await this.save();
 		this.sendOutbox();
 		this.report(false);
@@ -254,7 +265,7 @@ export class BingoEvent
 				puts[key] = value;
 			}
 		}
-		if (this.unsavedRequests && (Object.keys(puts).length || deletes.length || this.unsavedRequests >= 25))
+		if (this.created && this.unsavedRequests && (Object.keys(puts).length || deletes.length || this.unsavedRequests >= 25))
 		{
 			puts.usage = this.usage;
 			this.unsavedRequests = 0;
@@ -325,12 +336,6 @@ export class BingoEvent
 			this.report(true, true);
 			return json({ result: { ok: true }, alerts: [] });
 		}
-		const creating = !this.created;
-		if (creating)
-		{
-			this.created = true;
-			await this.state.storage.put({ created: true });
-		}
 		const store = this.store;
 		const alerts = [];
 		const response = await this.answer(() =>
@@ -379,6 +384,13 @@ export class BingoEvent
 			}
 		});
 		const result = await response.json();
+		// Only an action that worked brings a new event into existence.
+		const creating = !this.created && !(result && result.error);
+		if (creating)
+		{
+			this.created = true;
+			await this.state.storage.put({ created: true });
+		}
 		if (creating || ['saveTeams', 'saveBoardCode', 'resetStore', 'setRequestStatus', 'addAdjustment', 'deleteAdjustment'].indexOf(action) >= 0)
 		{
 			this.report(true);

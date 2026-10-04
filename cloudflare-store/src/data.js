@@ -11,8 +11,6 @@ export function eventData(store, admin)
 	const official = store.officialBoard();
 	const event = { name: null, size: 0, diagonals: true, linePoints: 0, blackoutPoints: 0 };
 	const out = { event, teams: [], requests: [], updated: new Date().toISOString() };
-	let memberLists = null;
-	const metaByTeam = {};
 
 	for (const team of store.teamList())
 	{
@@ -24,7 +22,6 @@ export function eventData(store, admin)
 			continue;
 		}
 		const meta = scope.meta;
-		metaByTeam[team.code] = meta;
 		const size = meta.size || Math.round(Math.sqrt(meta.tiles.length));
 		if (!event.name)
 		{
@@ -34,12 +31,9 @@ export function eventData(store, admin)
 			event.linePoints = Number(meta.linePoints) || 0;
 			event.blackoutPoints = Number(meta.blackoutPoints) || 0;
 		}
-		if (!memberLists)
-		{
-			const at = scope.board.lastIndexOf('_');
-			memberLists = store.teamsWithMembers(at < 0 ? '' : scope.board.slice(0, at));
-		}
-		const listed = memberLists.find(t => t.code === team.code);
+		// Each team's members come from its own scope: teams may sit on different boards.
+		const at = scope.board.lastIndexOf('_');
+		const listed = store.teamsWithMembers(at < 0 ? '' : scope.board.slice(0, at)).find(t => t.code === team.code);
 		entry.members = listed ? listed.members : [];
 		const standing = store.standingsFor(scope.board).find(s => s.team === team.code);
 		entry.points = standing ? standing.points : null;
@@ -58,7 +52,6 @@ export function eventData(store, admin)
 					label: String(tile.label || 'Tile ' + (t + 1)),
 					mode: tile.mode === 'ANY' ? 'ANY' : 'ALL',
 					done: !!totals.done[t],
-					verifiedComplete: !!totals.verifiedManual[t],
 					tickedBy: Object.keys(totals.manualBy[t] || {}),
 					icon: source.icon == null ? null : String(source.icon),
 					description: source.description ? String(source.description) : null,
@@ -136,11 +129,11 @@ export function eventData(store, admin)
 
 	out.teamRows = store.config.teams.map(t => ({ code: t.code, name: t.name, webhook: t.webhook }));
 	out.settings = { pollSeconds: store.config.pollSeconds || 120 };
-	out.boardCode = { text: store.config.boardCode, summary: summarizeBoard(store.config.boardCode) };
+	out.boardCode = { text: store.config.boardCode };
 	return out;
 }
 
-/** What the admin page shows beside the board code: name, id, size, or what is wrong. */
+/** Checks a board code before it is saved: name, id, size, or what is wrong. */
 export function summarizeBoard(code)
 {
 	if (!code)

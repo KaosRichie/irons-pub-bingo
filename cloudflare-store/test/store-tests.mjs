@@ -1,7 +1,8 @@
 // Tests for the event store itself (src/store.js), driven with the payloads the plugin
 // sends. Each test gets a fresh event. No network: node test/store-tests.mjs
 import { createHash } from 'node:crypto';
-import { EventStore, metaFromBoard } from '../src/store.js';
+import { EventStore, metaFromBoard, MAX_PENDING } from '../src/store.js';
+import { eventData } from '../src/data.js';
 
 const A = 'aaaaaaaaaaaaaa01';
 const B = 'bbbbbbbbbbbbbb02';
@@ -604,7 +605,8 @@ test('manual ticks name who ticked, and goal indices stay aligned', () =>
 test('a tile reset wipes it for the whole team, and beats any client clock', () =>
 {
 	const s = newStore();
-	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', { 0: tile(1000, [3]), 1: tile(1000, [7]) }) } });
+	const meta = { name: 'Four', size: 2, tiles: [0, 1, 2, 3].map(t => ({ label: 'Tile ' + t, goals: [{ label: 'g', target: 10 }] })) };
+	s.post({ board: 'b_red', meta, members: { [A]: member('Alice', { 0: tile(1000, [3]), 1: tile(1000, [7]) }) } });
 	s.post({ board: 'b_red', members: { [B]: member('Bob', { 0: tile(1000, [2]) }) } });
 	ok(/2 member\(s\)/.test(s.store.resetTile('red', 1)), 'both members wiped');
 	ok(/does not exist/.test(s.store.resetTile('red', 99)), 'a missing tile is refused');
@@ -650,6 +652,110 @@ test('records round-trip through storage', () =>
 	is([...reloaded.members.keys()], [...s.store.members.keys()], 'members');
 	is([reloaded.requests.size, reloaded.credits.size, reloaded.departures.size, reloaded.scores.size, reloaded.metas.size],
 		[1, 1, 1, 1, 1], 'every kind of record');
+});
+
+// ---------------------------------------------------------------- limits on what clients store
+
+test('a malformed board summary is refused, and a stored one is repaired on load', () =>
+{
+	const s = newStore();
+	for (const meta of [{ tiles: [null] }, { size: 2, tiles: META.tiles }, { size: 1, tiles: [{ label: 'x', goals: [null] }] },
+		{ size: 1, tiles: [{ label: 'x' }] }, { size: 11, tiles: new Array(121).fill(META.tiles[0]) }])
+	{
+		const r = s.post({ board: 'b_red', meta, members: { [A]: member('Alice', { 0: tile(1000, [1]) }) } });
+		is(r.error, 'Board summary not valid', 'refused: ' + JSON.stringify(meta).slice(0, 60));
+	}
+	is([s.store.metas.size, s.store.members.size], [0, 0], 'nothing from them was stored');
+	s.post({ board: 'b_red', meta: Object.assign({ junk: 'x'.repeat(1000) }, META), members: {}, rejoin: A });
+	ok(!('junk' in s.store.metaFor('b_red')), 'a good summary keeps only the fields the store reads');
+
+	const stored = new EventStore([
+		['config', { teams: [{ code: 'red', name: 'Red' }, { code: 'blue', name: 'Blue' }] }],
+		['meta:b_blue', { updated: '2026-01-01', meta: { tiles: 'no' } }],
+		['meta:b_red', { updated: '2026-01-01', meta: { size: 'x', tiles: [null, { label: 'Kept', goals: [null, { label: 'g', target: 2 }] }] } }]
+	]);
+	const data = eventData(stored, true);
+	const red = data.teams.find(t => t.code === 'red').board;
+	is(red.tiles.map(t => [t.label, t.goals.length]), [['Tile 1', 0], ['Kept', 1]], 'bad tiles are repaired, good ones kept');
+	is(data.teams.find(t => t.code === 'blue').board, null, 'a summary with no tiles is left out');
+});
+
+test('with a board code saved, only that board\'s key syncs', () =>
+{
+	const s = newStore();
+	const code = JSON.stringify({ name: 'Official', id: 'ev', size: 1, tiles: [{ label: 'Real', goals: [{ type: 'KILL', npcs: ['Man'], count: 10 }] }] });
+	s.store.saveBoardCode(code);
+	const r = s.post({ board: 'forged_red', boardHash: sha(code), meta: META, teamPoints: 999,
+		members: { [A]: member('Alice', { 0: tile(1000, [5]) }) } });
+	is(r.error, 'Wrong board - use Import from store', 'a forged board key is refused');
+	ok(!s.store.metas.has('forged_red') && !s.store.scores.has('forged_red') && !s.store.members.size, 'and stores nothing');
+	ok(!s.post({ board: 'id_ev_red', rejoin: A, boardHash: sha(code), members: {} }).error, 'the official key syncs');
+	// A stray scope from before the code was saved must not steer the pages or credit.
+	s.store.saveMeta('stray_red', { name: 'Stray', size: 1, tiles: META.tiles });
+	s.store.metas.get('stray_red').updated = '2999-01-01';
+	is(s.store.latestBoardForTeam('red').board, 'id_ev_red', 'the official scope wins');
+});
+
+test('each team\'s member list comes from its own board', () =>
+{
+	const s = newStore();
+	s.post({ board: 'one_red', meta: META, members: { [A]: member('Alice', {}) } });
+	s.post({ board: 'two_blue', meta: META, members: { [B]: member('Bob', {}) } });
+	const data = eventData(s.store, true);
+	is(data.teams.map(t => [t.code, t.members]), [['red', ['Alice']], ['blue', ['Bob']]], 'members per team scope');
+	ok(!('verifiedComplete' in data.teams[0].board.tiles[0]) && !('summary' in data.boardCode), 'unused fields are gone');
+});
+
+test('board keys, departures and progress are capped', () =>
+{
+	const s = newStore();
+	is(s.post({ board: 'b'.repeat(200) + '_red', rejoin: A, members: {} }).error, 'Bad board key', 'a long board key is refused');
+	is(s.post({ board: 'nounderscore', rejoin: A, members: {} }).error, 'Bad board key', 'a board key with no team is refused');
+
+	const ids = Array.from({ length: 30 }, (_, i) => 'dddddddddddd' + String(1000 + i));
+	s.post({ board: 'b_red', memberKey: keyFor(ids[0]), remove: ids, members: {} });
+	ok(s.store.departures.size <= 20, 'at most 20 departures per sync, got ' + s.store.departures.size);
+	const before = s.store.departures.size;
+	s.post({ board: 'b_gone', memberKey: keyFor(ids[0]), remove: ids, members: {} });
+	is(s.store.departures.size, before, 'no departures on an unknown team without progress there');
+
+	const got = {};
+	for (let i = 0; i < 100; i++)
+	{
+		got['item ' + i] = 1;
+	}
+	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', {
+		0: { goals: [{ n: 3, got, matched: new Array(500).fill('x') }, { n: 9 }], manual: false, ts: 1000, junk: 'y' },
+		1: tile(1000, [1]), 999: tile(1000, [1]), '00': tile(1000, [1]), x: tile(1000, [1]) }) } });
+	const row = s.store.members.get('b_red|' + A);
+	is(Object.keys(row.tiles), ['0'], 'only tiles the board has are kept');
+	const kept = row.tiles['0'];
+	is([kept.goals.length, Object.keys(kept.goals[0].got).length, kept.goals[0].matched.length, 'junk' in kept],
+		[1, 40, 300, false], 'goals, item names and distinct names are capped');
+});
+
+test('a player can have only a few requests waiting', () =>
+{
+	const s = newStore();
+	s.post({ board: 'b_red', meta: META, members: { [A]: member('Alice', {}) } });
+	for (let i = 0; i < MAX_PENDING + 5; i++)
+	{
+		s.post({ board: 'b_red', rejoin: A, members: {}, request: { member: A, player: 'Alice', tile: 1, add: 1, note: 'try ' + i } });
+	}
+	is(s.requests().length, MAX_PENDING, 'a changed note cannot file request after request');
+	let refused = '';
+	try
+	{
+		s.store.submitPortalRequest({ board: 'b_red', player: 'alice', tile: 1, add: '1', note: 'portal' });
+	}
+	catch (err)
+	{
+		refused = err.message;
+	}
+	ok(/requests waiting/.test(refused), 'the portal says why: ' + refused);
+	s.store.setRequestStatus(s.requests()[0].id, 'Rejected');
+	s.store.submitPortalRequest({ board: 'b_red', player: 'alice', tile: 1, add: '1', note: 'portal' });
+	is(s.requests().length, MAX_PENDING + 1, 'a reviewed request frees a place');
 });
 
 // ---------------------------------------------------------------- report

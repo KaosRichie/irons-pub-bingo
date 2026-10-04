@@ -23,6 +23,18 @@ const MAX_BODY_CHARS = 200000;
 // would outrank every later write, including the owner's own reset, forever.
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MEMBER_ID = /^[0-9a-f]{16}$/;
+// A team scope: "<board key>_<team code>". The team code has no underscore.
+const BOARD_KEY = /^[A-Za-z0-9_-]+_[A-Za-z0-9-]+$/;
+// Caps on what one client may store. A real board is at most 10x10.
+const MAX_BOARD_KEY = 120;
+const MAX_TILES = 100;
+const MAX_GOALS = 50;
+const MAX_LABEL = 200;
+const MAX_MATCHED = 300;
+const MAX_GOT = 40;
+const MAX_REMOVE = 20;
+// Pending requests one player may have waiting at once.
+export const MAX_PENDING = 10;
 const DISCORD_WEBHOOK = /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//;
 export const REQUEST_STATUSES = ['Pending', 'Done', 'Rejected'];
 const KINDS = { member: 'members', meta: 'metas', score: 'scores', left: 'departures', request: 'requests', credit: 'credits' };
@@ -50,7 +62,17 @@ export class EventStore
 			}
 			const at = key.indexOf(':');
 			const map = KINDS[key.slice(0, at)];
-			if (map)
+			if (map === 'metas')
+			{
+				// An older store may hold a summary no client should have sent. Repaired on
+				// load, so the portal and the admin page always open.
+				const meta = value ? cleanMeta(value.meta, true) : null;
+				if (meta)
+				{
+					this.metas.set(key.slice(at + 1), Object.assign({}, value, { meta }));
+				}
+			}
+			else if (map)
 			{
 				this[map].set(key.slice(at + 1), value);
 			}
@@ -117,7 +139,11 @@ export class EventStore
 		}
 
 		const board = String(body.board || '');
-		const members = body.members || {};
+		if (board.length > MAX_BOARD_KEY || !BOARD_KEY.test(board))
+		{
+			return { error: 'Bad board key' };
+		}
+		const members = body.members && typeof body.members === 'object' ? body.members : {};
 		// Proof of identity. The store URL is shared clan-wide and member ids are public,
 		// so a write for a member must carry that member's key, derived from their account
 		// on their own client. A member's rows accept only the key that first wrote them.
@@ -132,17 +158,14 @@ export class EventStore
 			self = null;
 		}
 
-		if (Array.isArray(body.remove) && body.remove.length)
-		{
-			// The member left this team scope. Handled before the team check, so leaving a
-			// team the host has since removed still works.
-			const leaving = body.remove.map(String).filter(id => this.ownsMember(id, keyHash));
-			this.markLeft(board, leaving);
-			if (!self && !body.request && !Object.keys(members).length)
-			{
-				return { board, left: leaving };
-			}
-		}
+		// The member left this team scope, a few ids per sync. A member with progress on the
+		// scope leaves it before the team check, so leaving a team the host has since
+		// removed still works. Other departures wait for the checks below.
+		const leaving = Array.isArray(body.remove) ? body.remove.slice(0, MAX_REMOVE).map(String)
+			.filter(id => this.ownsMember(id, keyHash)) : [];
+		const withRows = leaving.filter(id => this.members.has(board + '|' + id));
+		const onlyLeaving = leaving.length > 0 && !self && !body.request && !Object.keys(members).length;
+		this.markLeft(board, withRows);
 
 		// Only teams the host listed may sync. With none listed the event is not set up
 		// (or was just reset), and a client still holding an old board must not refill it.
@@ -150,6 +173,10 @@ export class EventStore
 		const team = teamOf(board);
 		if (!teams.length || !this.hasTeam(team))
 		{
+			if (onlyLeaving)
+			{
+				return { board, left: withRows };
+			}
 			const error = !teams.length ? 'No teams yet - the host has not added any'
 				: team === 'solo' ? 'No team code - use Choose team or ask your host'
 					: 'Unknown team code - use Choose team or ask your host';
@@ -160,11 +187,12 @@ export class EventStore
 		// edited copy (easier goals, same board id) is refused.
 		const code = this.config.boardCode;
 		const codeHash = code ? sha256Hex(code) : null;
+		const official = code ? parseJson(code, null) : null;
 		if (codeHash && String(body.boardHash || '') !== codeHash)
 		{
 			// A client on any earlier code of this board is told about the update. Anything
 			// else is an edited board. The error stays short: it sits on the plugin's button.
-			const currentVersion = Number((parseJson(code, {}) || {}).version || 0);
+			const currentVersion = Number((official || {}).version || 0);
 			const clientVersion = Number(body.boardVersion || 0);
 			const outdated = (currentVersion && clientVersion && clientVersion < currentVersion)
 				|| this.isEarlierBoardCode(String(body.boardHash || ''));
@@ -174,7 +202,32 @@ export class EventStore
 				newerVersion: outdated ? currentVersion : undefined
 			};
 		}
+		// The official board's scopes are the only ones: a made-up board key on a listed
+		// team would otherwise start a second board for that team.
+		const officialTiles = official && Array.isArray(official.tiles);
+		const officialId = officialTiles ? normalizedBoardId(official) : '';
+		if (officialId && board !== 'id_' + officialId + '_' + team)
+		{
+			return { board, error: 'Wrong board - use Import from store' };
+		}
 
+		// With an official code saved the summary comes from it, never from the client:
+		// a client could otherwise rename tiles or lower targets for everyone.
+		let meta = null;
+		if (body.meta)
+		{
+			meta = officialTiles ? cleanMeta(metaFromBoard(official), true) : cleanMeta(body.meta, false);
+			if (!meta && !officialTiles)
+			{
+				return { board, error: 'Board summary not valid' };
+			}
+		}
+
+		this.markLeft(board, leaving);
+		if (onlyLeaving)
+		{
+			return { board, left: leaving };
+		}
 		if (self)
 		{
 			// Syncing here clears the member's own "left" mark, so switching back to a team
@@ -182,21 +235,17 @@ export class EventStore
 			this.drop('left', board + '|' + self);
 			this.leaveSiblingTeams(board, self);
 		}
+		if (meta)
+		{
+			this.saveMeta(board, meta);
+		}
 		if (body.request && this.ownsMember(String(body.request.member || ''), keyHash))
 		{
 			this.recordRequest(board, body.request, false);
 		}
-		if (typeof body.teamPoints === 'number' && body.teamPoints >= 0)
+		if (typeof body.teamPoints === 'number' && body.teamPoints >= 0 && isFinite(body.teamPoints))
 		{
 			this.saveScore(board, Math.floor(body.teamPoints));
-		}
-		if (body.meta)
-		{
-			// With an official code saved the summary comes from it, never from the client:
-			// a client could otherwise rename tiles or lower targets for everyone.
-			const official = code ? parseJson(code, null) : null;
-			this.saveMeta(board, official && official.tiles ? metaFromBoard(official)
-				: JSON.parse(JSON.stringify(body.meta)));
 		}
 		// A client writes only its own progress. Relayed copies of teammates are ignored,
 		// so nobody can overwrite someone else, and a player who never turned the store on
@@ -214,13 +263,19 @@ export class EventStore
 		const key = board + '|' + memberId;
 		const row = this.members.get(key);
 		const tiles = row ? Object.assign({}, row.tiles) : {};
-		const incomingTiles = incoming.tiles || {};
+		incoming = incoming && typeof incoming === 'object' ? incoming : {};
+		const incomingTiles = incoming.tiles && typeof incoming.tiles === 'object' ? incoming.tiles : {};
+		// Only tiles the board has, each cut to its goals: junk keys never pile up.
+		const meta = this.metaFor(board);
+		const tileCount = meta ? meta.tiles.length : MAX_TILES;
 		const maxTs = Date.now() + MAX_CLOCK_SKEW_MS;
 		let changed = false;
-		for (const tile of Object.keys(incomingTiles))
+		for (const tileKey of Object.keys(incomingTiles))
 		{
-			const next = incomingTiles[tile];
-			if (!next || typeof next !== 'object')
+			const index = /^(0|[1-9][0-9]{0,2})$/.test(tileKey) ? Number(tileKey) : -1;
+			const goalCap = meta && index >= 0 && index < tileCount ? Math.max(1, meta.tiles[index].goals.length) : MAX_GOALS;
+			const next = index >= 0 && index < tileCount ? cleanTileProgress(incomingTiles[tileKey], goalCap) : null;
+			if (!next)
 			{
 				continue;
 			}
@@ -229,10 +284,10 @@ export class EventStore
 				// Clamp to now, not to now plus the skew: the next honest write must win.
 				next.ts = Date.now();
 			}
-			const current = tiles[tile];
-			if (!current || (next.ts || 0) > (current.ts || 0))
+			const current = tiles[tileKey];
+			if (!current || next.ts > (current.ts || 0))
 			{
-				tiles[tile] = next;
+				tiles[tileKey] = next;
 				changed = true;
 			}
 		}
@@ -448,6 +503,15 @@ export class EventStore
 	/** The most recently updated team scope of a team, with its summary, or null. */
 	latestBoardForTeam(team)
 	{
+		// With an official board saved, its scope wins: a stray scope must not steer the
+		// portal, the admin pages or credit.
+		const official = this.officialBoard();
+		const id = official ? normalizedBoardId(official) : '';
+		const scope = id ? this.scopeOf('id_' + id + '_' + team) : null;
+		if (scope)
+		{
+			return scope;
+		}
 		let best = null;
 		for (const [board, entry] of this.metas)
 		{
@@ -486,7 +550,6 @@ export class EventStore
 		const tracked = [];
 		const verified = [];
 		const manual = [];
-		const verifiedManual = [];
 		const distinctSets = [];
 		const contrib = [];
 		const manualBy = [];
@@ -498,11 +561,10 @@ export class EventStore
 			distinctSets.push(Array.from({ length: goalCount }, () => ({})));
 			contrib.push(Array.from({ length: goalCount }, () => ({})));
 			manual.push(false);
-			verifiedManual.push(false);
 			manualBy.push({});
 		}
 
-		const absorb = (tiles, into, isCredit, playerName) =>
+		const absorb = (tiles, into, playerName) =>
 		{
 			for (const key of Object.keys(tiles || {}))
 			{
@@ -516,16 +578,17 @@ export class EventStore
 				{
 					manual[index] = true;
 					manualBy[index][playerName] = true;
-					verifiedManual[index] = verifiedManual[index] || isCredit;
 				}
-				const goals = entry.goals || [];
+				// Rows stored before progress was checked on write may hold junk: skip it.
+				const goals = Array.isArray(entry.goals) ? entry.goals : [];
 				for (let g = 0; g < goals.length && g < into[index].length; g++)
 				{
-					const goalMeta = (meta.tiles[index].goals || [])[g] || {};
-					const matched = goals[g].matched;
+					const goalMeta = meta.tiles[index].goals[g] || {};
+					const goal = goals[g] || {};
+					const matched = Array.isArray(goal.matched) ? goal.matched : null;
 					// The counter always adds up. On a distinct goal it carries admin credit,
 					// which has no item names: the plugin counts names plus counter too.
-					let amount = Number(goals[g].n || 0);
+					let amount = Number(goal.n) || 0;
 					into[index][g] += amount;
 					if (goalMeta.distinct && matched && matched.length)
 					{
@@ -548,12 +611,12 @@ export class EventStore
 		{
 			if (row.board === board && !left[row.member])
 			{
-				absorb(row.tiles, tracked, false, row.name || row.member);
+				absorb(row.tiles, tracked, row.name || row.member);
 			}
 		}
 		for (const id of Object.keys(credited))
 		{
-			absorb(credited[id].tiles, verified, true, credited[id].name);
+			absorb(credited[id].tiles, verified, credited[id].name);
 		}
 		for (let t = 0; t < tracked.length; t++)
 		{
@@ -564,7 +627,7 @@ export class EventStore
 		}
 		const done = meta.tiles.map((tile, t) => manual[t]
 			|| ((tile.goals || []).length > 0 && tileReached(tile, tracked[t], verified[t])));
-		return { tracked, verified, done, verifiedManual, contrib, manualBy };
+		return { tracked, verified, done, contrib, manualBy };
 	}
 
 	// ------------------------------------------------------------------ admin credit
@@ -754,10 +817,30 @@ export class EventStore
 				return null;
 			}
 		}
+		if (this.pendingCount(fields.team, player, member) >= MAX_PENDING)
+		{
+			return null; // a changed note must not file request after request
+		}
 		const id = newId('r');
 		this.set('request', id, Object.assign({ id, when: new Date().toISOString() }, fields,
 			{ links: cleanProofLinks(request.links), status: 'Pending' }));
 		return id;
+	}
+
+	/** Pending requests on a team for this player name, or sent by this member's client. */
+	pendingCount(team, player, member)
+	{
+		const name = String(player || '').toLowerCase();
+		let count = 0;
+		for (const known of this.requests.values())
+		{
+			if (known.status === 'Pending' && known.team === team
+				&& (String(known.player || '').toLowerCase() === name || (member !== 'portal' && known.member === member)))
+			{
+				count++;
+			}
+		}
+		return count;
 	}
 
 	/** The portal's request form. Returns a confirmation, or throws with the reason. */
@@ -772,6 +855,10 @@ export class EventStore
 		if (!this.isTeamMember(board, payload.player))
 		{
 			throw new Error('Pick your name from the list. Only players who have synced to this team can request credit.');
+		}
+		if (this.pendingCount(teamOf(board), cleanPlayerName(payload.player), 'portal') >= MAX_PENDING)
+		{
+			throw new Error('You have ' + MAX_PENDING + ' requests waiting. Wait for an admin to review them.');
 		}
 		const id = this.recordRequest(board, {
 			player: payload.player, tile: payload.tile, goal: payload.goal, add: payload.add,
@@ -989,7 +1076,11 @@ export class EventStore
 		{
 			return; // an id-less board's scope keys are only known once a client syncs
 		}
-		const meta = metaFromBoard(parsed);
+		const meta = cleanMeta(metaFromBoard(parsed), true);
+		if (!meta)
+		{
+			return; // a board with no tiles has nothing to show
+		}
 		for (const team of this.config.teams)
 		{
 			this.saveMeta('id_' + id + '_' + team.code, meta);
@@ -1331,6 +1422,99 @@ export function metaFromBoard(board)
 			};
 		})
 	};
+}
+
+/**
+ * A board summary with only the fields the store reads, or null when it is not one.
+ * A client's summary must be well formed (repair false). A stored one keeps what it can:
+ * a broken tile becomes an empty one, so old bad data never breaks the pages.
+ */
+export function cleanMeta(meta, repair)
+{
+	if (!meta || typeof meta !== 'object' || !Array.isArray(meta.tiles) || !meta.tiles.length
+		|| (!repair && meta.tiles.length > MAX_TILES))
+	{
+		return null;
+	}
+	const size = Number(meta.size);
+	const sizeOk = Number.isInteger(size) && size >= 1 && size <= 10 && meta.tiles.length === size * size;
+	if (!sizeOk && !repair)
+	{
+		return null;
+	}
+	const tiles = [];
+	for (const tile of meta.tiles.slice(0, MAX_TILES))
+	{
+		const goals = tile && typeof tile === 'object' && Array.isArray(tile.goals) ? tile.goals : null;
+		const wellFormed = !!goals && goals.length <= MAX_GOALS && goals.every(goal => goal && typeof goal === 'object');
+		if (!wellFormed && !repair)
+		{
+			return null;
+		}
+		tiles.push({
+			label: labelText(tile && tile.label, 'Tile ' + (tiles.length + 1)),
+			mode: tile && tile.mode === 'ANY' ? 'ANY' : 'ALL',
+			goals: (goals || []).filter(goal => goal && typeof goal === 'object').slice(0, MAX_GOALS).map(goal => ({
+				label: labelText(goal.label, ''),
+				target: Math.max(0, Number(goal.target) || 0),
+				distinct: !!goal.distinct,
+				manual: !!goal.manual
+			}))
+		});
+	}
+	return {
+		name: labelText(meta.name, ''),
+		size: sizeOk ? size : Math.max(1, Math.round(Math.sqrt(tiles.length))),
+		diagonals: meta.diagonals !== false,
+		linePoints: Math.max(0, Number(meta.linePoints) || 0),
+		blackoutPoints: Math.max(0, Number(meta.blackoutPoints) || 0),
+		tiles
+	};
+}
+
+function labelText(value, fallback)
+{
+	return value == null || value === '' ? fallback : String(value).slice(0, MAX_LABEL);
+}
+
+/** One tile of a member's own progress, cut to what the plugin sends, or null. */
+function cleanTileProgress(entry, goalCap)
+{
+	if (!entry || typeof entry !== 'object')
+	{
+		return null;
+	}
+	return {
+		goals: Array.isArray(entry.goals) ? entry.goals.slice(0, goalCap).map(cleanGoalProgress) : [],
+		manual: entry.manual === true,
+		ts: Number(entry.ts) || 0
+	};
+}
+
+/** A goal's counter, distinct names and item breakdown, each capped. */
+function cleanGoalProgress(goal)
+{
+	goal = goal && typeof goal === 'object' ? goal : {};
+	const out = { n: finiteNumber(goal.n) };
+	if (Array.isArray(goal.matched) && goal.matched.length)
+	{
+		out.matched = goal.matched.slice(0, MAX_MATCHED).map(name => String(name).slice(0, MAX_LABEL));
+	}
+	if (goal.got && typeof goal.got === 'object' && !Array.isArray(goal.got))
+	{
+		out.got = {};
+		for (const name of Object.keys(goal.got).slice(0, MAX_GOT))
+		{
+			out.got[name.slice(0, MAX_LABEL)] = finiteNumber(goal.got[name]);
+		}
+	}
+	return out;
+}
+
+function finiteNumber(value)
+{
+	const n = Number(value);
+	return isFinite(n) ? n : 0;
 }
 
 // The label rules below mirror BingoGoal.describe() and shortDescribe() in the plugin.
