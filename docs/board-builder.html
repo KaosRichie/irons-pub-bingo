@@ -124,6 +124,15 @@ button.sm { padding: 3px 9px; font-size: 13.5px; }
 button:disabled { opacity: .45; cursor: default; }
 button:disabled:hover { border-color: var(--line); }
 .toolrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.templates button {
+  display: flex; align-items: center; gap: 7px; text-align: left; padding: 6px 8px;
+  font-size: 13.5px; line-height: 1.2; min-height: 40px;
+}
+.templates img { width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated; flex: 0 0 auto; }
+.templates .noicon { width: 24px; flex: 0 0 auto; text-align: center; color: var(--muted); }
+.tplbox { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 4px; padding: 10px; }
+.tplbox h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; font-weight: 500; }
 
 .tilehead { display: flex; align-items: baseline; gap: 10px; }
 .tilehead h2 { flex: 1; }
@@ -293,6 +302,73 @@ const GOAL_TYPES = [
   ["CHAT", "Chat message"],
   ["MANUAL", "Manual"],
 ];
+
+// Ready-made tiles. Icons are item names, turned into ids when used (the plugin needs the id
+// for untradeables like the Fire cape). Names here must match the game: KC names as the kill
+// count message prints them, loot sources as RuneLite's Loot Tracker records them.
+const TEMPLATES = [
+  { label: "Any pet", icon: "Pet snakeling", goals: [{ type: "PET", pets: [], count: 1 }] },
+  { label: "Fire cape", icon: "Fire cape", goals: [{ type: "KC", npcs: ["TzTok-Jad"], count: 1 }] },
+  { label: "Infernal cape", icon: "Infernal cape", goals: [{ type: "KC", npcs: ["TzKal-Zuk"], count: 1 }] },
+  { label: "100 Zulrah kills", icon: "Zulrah's scales", goals: [{ type: "KC", npcs: ["Zulrah"], count: 100 }] },
+  { label: "500 Abyssal demons", icon: "Abyssal head", goals: [{ type: "KILL", npcs: ["Abyssal demon"], count: 500 }] },
+  { label: "Abyssal whip", icon: "Abyssal whip", goals: [{ type: "DROP", items: ["Abyssal whip"], sources: [], count: 1 }] },
+  { label: "3 different Barrows pieces", icon: "Dharok's helm", goals: [{ type: "DROP",
+    items: ["Ahrim's*", "Dharok's*", "Guthan's*", "Karil's*", "Torag's*", "Verac's*"], sources: ["Barrows"], distinct: true, count: 3 }] },
+  { label: "Any godsword hilt", icon: "Armadyl hilt", goals: [{ type: "DROP",
+    items: ["Armadyl hilt", "Bandos hilt", "Saradomin hilt", "Zamorak hilt"], sources: [], count: 1 }] },
+  { label: "Any raid purple", icon: "Twisted bow", goals: [{ type: "RAID_PURPLE", raids: ["COX", "TOB", "TOA"], count: 1 }] },
+  { label: "ToA purple", icon: "Tumeken's shadow (uncharged)", goals: [{ type: "RAID_PURPLE", raids: ["TOA"], count: 1 }] },
+  { label: "1M Slayer XP", icon: "Slayer helmet", goals: [{ type: "XP", skill: "SLAYER", amount: 1000000 }] },
+  { label: "A 5M+ drop", icon: "995", goals: [{ type: "VALUE", amount: 5000000, sources: [], count: 1 }] },
+  { label: "100 Canifis laps", icon: "Mark of grace", goals: [{ type: "LAP", course: "CANIFIS", count: 100 }] },
+  { label: "10 superior slayer monsters", icon: "Enchanted gem", goals: [{ type: "CHAT",
+    pattern: "A superior foe has appeared", regions: [], count: 10 }] },
+  { label: "5 elite clues", icon: "Clue scroll (elite)", goals: [{ type: "CHAT",
+    pattern: "You have completed \\d+ elite Treasure Trail", regions: [], count: 5 }] },
+  { label: "Whip or trident (either)", icon: "Abyssal whip", mode: "ANY", goals: [
+    { type: "DROP", items: ["Abyssal whip"], sources: [], count: 1 },
+    { type: "DROP", items: ["Kraken tentacle", "Trident of the seas (full)"], sources: ["Kraken"], count: 1 }] },
+  { label: "Proof tile (manual)", icon: "", description: "Post a screenshot in the team channel", goals: [] },
+];
+/** A template as a fresh tile: every goal filled out like the editor's own, icon as an id. */
+function tileFromTemplate(tpl) {
+  const t = emptyTile();
+  t.label = tpl.label;
+  t.description = tpl.description || "";
+  t.mode = tpl.mode || "ALL";
+  const id = /^\d+$/.test(tpl.icon || "") ? tpl.icon : tpl.icon && itemNameMap ? itemNameMap[tpl.icon.toLowerCase()] : null;
+  t.icon = id ? String(id) : (tpl.icon || "");
+  t.goals = tpl.goals.map(g => Object.assign(defaultGoal(g.type), JSON.parse(JSON.stringify(g))));
+  return t;
+}
+function templatePicker(onPick) {
+  const box = document.createElement("div");
+  box.className = "tplbox";
+  const h = document.createElement("h3");
+  h.textContent = "Start from a template";
+  box.appendChild(h);
+  const grid = document.createElement("div");
+  grid.className = "templates";
+  TEMPLATES.forEach(tpl => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const img = tpl.icon ? iconImg(tpl.icon, 24) : null;
+    if (img) { img.style.cssText = ""; b.appendChild(img); }
+    else { const n = document.createElement("span"); n.className = "noicon"; n.textContent = "☐"; b.appendChild(n); }
+    b.appendChild(document.createTextNode(tpl.label));
+    b.addEventListener("click", () => onPick(tileFromTemplate(tpl)));
+    grid.appendChild(b);
+  });
+  box.appendChild(grid);
+  const hint = document.createElement("div");
+  hint.className = "fieldhint";
+  hint.style.marginTop = "8px";
+  hint.textContent = "Every template can be edited afterwards: change the boss, the item, the count.";
+  box.appendChild(hint);
+  return box;
+}
+let templatesOpen = false;
 
 function randomId() {
   const bytes = new Uint8Array(4);
@@ -826,8 +902,21 @@ function renderEditor() {
     board.tiles[selected] = emptyTile();
     saveDraft(); renderGrid(); renderEditor();
   });
-  [copyBtn, pasteBtn, dupBtn, clearBtn].forEach(b => { b.classList.add("sm"); toolRow.appendChild(b); });
+  const tplBtn = document.createElement("button");
+  const empty = isEmptyTile(tile);
+  tplBtn.textContent = templatesOpen && !empty ? "Hide templates" : "Templates";
+  tplBtn.title = "Fill this tile from a ready-made template";
+  tplBtn.style.display = empty ? "none" : "";
+  tplBtn.addEventListener("click", () => { templatesOpen = !templatesOpen; renderEditor(); });
+  [tplBtn, copyBtn, pasteBtn, dupBtn, clearBtn].forEach(b => { b.classList.add("sm"); toolRow.appendChild(b); });
   editor.appendChild(toolRow);
+  if (empty || templatesOpen) {
+    editor.appendChild(templatePicker(t => {
+      board.tiles[selected] = t;
+      templatesOpen = false;
+      saveDraft(); renderGrid(); renderEditor();
+    }));
+  }
 
   editor.appendChild(field("Label (shown on the board)",
     textInput(tile.label, v => tile.label = v, "Uncut Onyx from Zulrah")));
