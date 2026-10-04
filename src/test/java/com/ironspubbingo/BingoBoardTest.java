@@ -395,6 +395,57 @@ public class BingoBoardTest
 		assertTrue(!new TileProgress().hasProgress());
 	}
 
+	private static TileProgress count(long n)
+	{
+		TileProgress tp = new TileProgress();
+		tp.goal(0, 1).n = n;
+		return tp;
+	}
+
+	private static TileProgress publishedAs(long live, long atCompletion, String... with)
+	{
+		TileProgress tp = count(live);
+		tp.completedAt = count(atCompletion);
+		tp.completedAt.with = java.util.Arrays.asList(with);
+		return tp;
+	}
+
+	@Test
+	public void lateJoinersFreezeTheSharesTheTeamPublished()
+	{
+		BingoTile tile = BingoBoard.parse(gson, "{\"name\":\"t\",\"size\":1,\"tiles\":[{\"label\":\"Bones\","
+			+ "\"goals\":[{\"type\":\"DROP\",\"items\":[\"Bones\"],\"count\":5}]}]}").getTiles().get(0);
+		java.util.Set<String> team = new java.util.HashSet<>(java.util.Arrays.asList("a", "b"));
+		TileProgress alice = publishedAs(6, 3, "a", "b");
+		TileProgress bob = publishedAs(4, 2, "a", "b");
+
+		// Completed 3 + 2, both kept playing: someone joining now sees 3 and 2, not 6 and 4.
+		java.util.Map<String, TileProgress> guessed = new java.util.LinkedHashMap<>();
+		guessed.put("Alice", count(6));
+		guessed.put("Bob", count(4));
+		java.util.Map<String, TileProgress> published = new java.util.LinkedHashMap<>();
+		published.put("Alice", IronsPubBingoPlugin.heldShare(alice, team));
+		published.put("Bob", IronsPubBingoPlugin.heldShare(bob, team));
+		java.util.Map<String, TileProgress> frozen = IronsPubBingoPlugin.preferPublished(tile, guessed, published);
+		assertEquals(3, frozen.get("Alice").goal(0, 1).n);
+		assertEquals(2, frozen.get("Bob").goal(0, 1).n);
+
+		// Someone joining later does not void the shares: they came after the completion.
+		java.util.Set<String> grown = new java.util.HashSet<>(team);
+		grown.add("c");
+		assertTrue(IronsPubBingoPlugin.heldShare(alice, grown) != null);
+
+		// Bob leaves: Alice's share was worked out with him, so it no longer holds.
+		assertEquals(null, IronsPubBingoPlugin.heldShare(alice, java.util.Collections.singleton("a")));
+
+		// A share that no longer completes the tile is not used either.
+		java.util.Map<String, TileProgress> alone = new java.util.LinkedHashMap<>();
+		alone.put("Alice", count(6));
+		java.util.Map<String, TileProgress> stale = new java.util.LinkedHashMap<>();
+		stale.put("Alice", count(3));
+		assertEquals(6, IronsPubBingoPlugin.preferPublished(tile, alone, stale).get("Alice").goal(0, 1).n);
+	}
+
 	@Test
 	public void matchedNamesKeepGameCasingAndDedupeIgnoringCase()
 	{

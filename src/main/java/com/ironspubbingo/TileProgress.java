@@ -27,6 +27,12 @@ public class TileProgress
 	 * complete, or before the owner's client has seen it complete.
 	 */
 	TileProgress completedAt;
+	/**
+	 * On a published share: the member ids the owner worked it out with. A share only holds
+	 * while all of them are still on the team; once one leaves, the tile completed at a
+	 * different moment and the owner publishes again.
+	 */
+	List<String> with;
 
 	/**
 	 * A copy safe to broadcast to teammates: counters, distinct item names, the manual
@@ -37,7 +43,11 @@ public class TileProgress
 		TileProgress share = new TileProgress();
 		share.manual = manual;
 		share.ts = ts;
-		share.completedAt = completedAt == null ? null : completedAt.counts(goalCount);
+		if (completedAt != null)
+		{
+			share.completedAt = completedAt.counts(goalCount);
+			share.completedAt.with = completedAt.with == null ? null : new ArrayList<>(completedAt.with);
+		}
 		for (int g = 0; g < goalCount; g++)
 		{
 			GoalProgress own = goal(g, goalCount);
