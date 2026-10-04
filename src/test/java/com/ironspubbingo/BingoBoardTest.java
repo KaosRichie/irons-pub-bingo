@@ -2,8 +2,9 @@ package com.ironspubbingo;
 
 import com.google.gson.Gson;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -603,12 +604,9 @@ public class BingoBoardTest
 		assertTrue(!Wildcards.compile("Long bone").matcher("Curved bone").matches());
 	}
 
+	/** The example boards live in docs/, where the README links them. */
 	private String readResource(String path) throws IOException
 	{
-		try (InputStream in = BingoBoardTest.class.getResourceAsStream(path))
-		{
-			assertNotNull(path + " missing from test resources", in);
-			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		}
+		return new String(Files.readAllBytes(Paths.get("docs" + path)), StandardCharsets.UTF_8);
 	}
 }
