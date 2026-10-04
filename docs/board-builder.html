@@ -1146,16 +1146,23 @@ function renderEditor() {
   const iconRow = document.createElement("div");
   iconRow.className = "row";
   const iconInput = textInput(tile.icon, v => { tile.icon = v; refreshIconPreview(); }, "Uncut onyx  |  6571");
-  const iconField = field("Icon (optional)", iconInput,
-    "Item name or numeric id (untradeables need the id).");
+  // The preview sits right against the field, in the same box, so it reads as part of it.
+  const iconLine = document.createElement("div");
+  iconLine.style.cssText = "display:flex;align-items:center;gap:6px";
+  iconLine.appendChild(iconInput);
+  const iconField = field("Icon (optional)", iconLine,
+    "Item name or numeric id (untradeables need the id). Click the icon to browse.");
   attachItemSuggest(iconInput, (input, entry, id) => {
     // Always the id: the plugin resolves names through the tradeable-item search,
     // so an untradeable's name (Enhanced crystal key) would silently fail in-game.
     input.value = String(id);
   });
   iconField.style.flex = "2";
+  iconInput.parentNode.style.flex = "1";
+  iconInput.style.width = "100%";
   const iconPreview = document.createElement("div");
-  iconPreview.style.cssText = "width:34px;height:34px;flex:0 0 auto;align-self:center;background:#222;"
+  iconLine.appendChild(iconPreview);
+  iconPreview.style.cssText = "width:34px;height:34px;flex:0 0 auto;background:#222;border:1px solid var(--line);"
     + "border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#777";
   function refreshIconPreview() {
     iconPreview.innerHTML = "";
@@ -1175,7 +1182,6 @@ function renderEditor() {
   const pointsField = field("Points", numberInput(tile.points, v => tile.points = v, 0),
     "0 = no points");
   iconRow.appendChild(iconField);
-  iconRow.appendChild(iconPreview);
   iconRow.appendChild(pointsField);
   editor.appendChild(iconRow);
 
