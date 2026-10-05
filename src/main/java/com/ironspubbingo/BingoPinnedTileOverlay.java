@@ -2,12 +2,16 @@ package com.ironspubbingo;
 
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.List;
 import javax.inject.Inject;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.ui.overlay.components.LayoutableRenderableEntity;
 import net.runelite.client.ui.overlay.components.LineComponent;
 import net.runelite.client.ui.overlay.components.ProgressBarComponent;
 import net.runelite.client.ui.overlay.components.TitleComponent;
@@ -18,6 +22,12 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  */
 class BingoPinnedTileOverlay extends OverlayPanel
 {
+	private static final int WIDTH = 200;
+	/** The panel's border leaves this much room for text. */
+	private static final int TEXT_WIDTH = WIDTH - 10;
+	private static final Color BAR_BACKGROUND = new Color(54, 40, 26);
+	private static final Color DIVIDER = new Color(90, 80, 68);
+
 	private final IronsPubBingoPlugin plugin;
 	private final IronsPubBingoConfig config;
 
@@ -39,18 +49,25 @@ class BingoPinnedTileOverlay extends OverlayPanel
 		{
 			return null;
 		}
-		panelComponent.setPreferredSize(new Dimension(200, 0));
+		panelComponent.setPreferredSize(new Dimension(WIDTH, 0));
+		FontMetrics metrics = graphics.getFontMetrics();
+		boolean first = true;
 		for (int index : pinned)
 		{
 			if (index < 0 || index >= board.getTiles().size())
 			{
 				continue;
 			}
+			if (!first)
+			{
+				panelComponent.getChildren().add(new Divider());
+			}
+			first = false;
 			BingoTile tile = board.getTiles().get(index);
 			TileProgress merged = plugin.mergedProgressFor(index);
 			boolean complete = tile.isComplete(merged);
 			panelComponent.getChildren().add(TitleComponent.builder()
-				.text(tile.label)
+				.text(fit(metrics, tile.label))
 				.color(complete ? BingoUi.COLOR_GOAL_DONE : ColorScheme.BRAND_ORANGE)
 				.build());
 			for (int g = 0; g < tile.goals.size(); g++)
@@ -64,7 +81,7 @@ class BingoPinnedTileOverlay extends OverlayPanel
 					: Math.max(0, Math.min(goal.progressOf(p), target));
 				boolean done = merged.manual || goal.isComplete(p);
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left(goal.shortDescribe())
+					.left(fit(metrics, goal.shortDescribe()))
 					.leftColor(done ? BingoUi.COLOR_GOAL_DONE : Color.WHITE)
 					.build());
 				ProgressBarComponent bar = new ProgressBarComponent();
@@ -73,9 +90,67 @@ class BingoPinnedTileOverlay extends OverlayPanel
 				bar.setValue(value);
 				bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL);
 				bar.setForegroundColor(done ? BingoUi.COLOR_COMPLETE : BingoUi.COLOR_PARTIAL);
+				bar.setBackgroundColor(BAR_BACKGROUND);
 				panelComponent.getChildren().add(bar);
 			}
 		}
 		return super.render(graphics);
+	}
+
+	/** Cuts text that would run past the box, ending it with "...". */
+	private static String fit(FontMetrics metrics, String text)
+	{
+		if (text == null || metrics.stringWidth(text) <= TEXT_WIDTH)
+		{
+			return text;
+		}
+		int end = text.length();
+		while (end > 0 && metrics.stringWidth(text.substring(0, end) + "...") > TEXT_WIDTH)
+		{
+			end--;
+		}
+		return text.substring(0, end).trim() + "...";
+	}
+
+	/** A thin line between two pinned tiles. */
+	private static class Divider implements LayoutableRenderableEntity
+	{
+		private static final int HEIGHT = 7;
+		private final Rectangle bounds = new Rectangle();
+		private Point location = new Point();
+		private Dimension size = new Dimension(TEXT_WIDTH, HEIGHT);
+
+		@Override
+		public Dimension render(Graphics2D graphics)
+		{
+			graphics.setColor(DIVIDER);
+			int y = location.y + HEIGHT / 2;
+			graphics.drawLine(location.x, y, location.x + size.width - 1, y);
+			Dimension dimension = new Dimension(size.width, HEIGHT);
+			bounds.setLocation(location);
+			bounds.setSize(dimension);
+			return dimension;
+		}
+
+		@Override
+		public Rectangle getBounds()
+		{
+			return bounds;
+		}
+
+		@Override
+		public void setPreferredLocation(Point position)
+		{
+			location = position;
+		}
+
+		@Override
+		public void setPreferredSize(Dimension dimension)
+		{
+			if (dimension != null && dimension.width > 0)
+			{
+				size = new Dimension(dimension.width, HEIGHT);
+			}
+		}
 	}
 }
