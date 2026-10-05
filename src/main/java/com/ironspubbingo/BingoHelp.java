@@ -192,7 +192,7 @@ final class BingoHelp
 				"Only loot the Loot Tracker sees counts. Most thieving chests don't show up there.",
 				"For pet tiles, turn on the game setting <b>Collection log - New addition notification</b>. "
 					+ "It also names the pet.",
-				"XP and kill count goals start at zero when you import the board. Earlier XP and kills don't count.",
+				"XP and kill count goals count from the event start, or from when you import the board if that's later.",
 				"A newer board shows as a notice in the panel. "
 					+ "Reimport it from the store in one click.",
 				"Right-click a tile on the board to pin it to the in-game overlay. "

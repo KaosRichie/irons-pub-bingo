@@ -36,8 +36,8 @@ who have synced to that team, so sync once with the plugin first.
 - Keep the built-in **Loot Tracker** enabled. Drops, chests and raid loot come from it.
 - For pet tiles, turn on the game setting **Collection log - New addition notification**.
   Specific pet tiles need it, and it names the pet on any-pet tiles.
-- XP and kill count goals start at zero when you import the board. Earlier XP and kills
-  don't count.
+- XP and kill count goals count from the event start, or from when you import the board
+  if that's later.
 - When your host publishes a newer board, the panel says so. Reimport it from the store.
 - The in-game overlay can show the event countdown, store and live sync problems,
   and tiles you pinned. Right-click a tile on the board to pin it. Each part has its own
