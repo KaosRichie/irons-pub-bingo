@@ -16,7 +16,7 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  */
 class BingoStatusOverlay extends OverlayPanel
 {
-	private static final Color WARNING = new Color(255, 152, 31);
+	private static final Color PROBLEM = new Color(255, 70, 70);
 
 	private final IronsPubBingoPlugin plugin;
 	private final IronsPubBingoConfig config;
@@ -52,18 +52,33 @@ class BingoStatusOverlay extends OverlayPanel
 		}
 		if (update != null)
 		{
-			panelComponent.getChildren().add(LineComponent.builder().left(update).build());
+			addProblem(update);
 		}
 		if (store != null)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Store: " + store).leftColor(WARNING).build());
+			addProblem("Store: " + store);
 		}
 		if (live != null)
 		{
-			panelComponent.getChildren().add(LineComponent.builder()
-				.left("Live sync: " + live).leftColor(WARNING).build());
+			addProblem("Live sync: " + live);
 		}
 		return super.render(graphics);
+	}
+
+	/**
+	 * A problem in red. What to do about it ("press Reimport from store") follows the
+	 * " - " in the text and stays white on its own line.
+	 */
+	private void addProblem(String text)
+	{
+		int cut = text.indexOf(" - ");
+		String problem = cut < 0 ? text : text.substring(0, cut);
+		panelComponent.getChildren().add(LineComponent.builder().left(problem).leftColor(PROBLEM).build());
+		if (cut >= 0)
+		{
+			String fix = text.substring(cut + 3);
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left(Character.toUpperCase(fix.charAt(0)) + fix.substring(1)).build());
+		}
 	}
 }
