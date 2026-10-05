@@ -303,7 +303,7 @@ public interface IronsPubBingoConfig extends Config
 		keyName = "teamSyncUrl",
 		name = "Team store URL",
 		description = "The event's progress store URL from your bingo host, so progress also syncs"
-			+ " when teammates are not online at the same time (see the plugin's Readme to set one up)",
+			+ " when teammates are not online at the same time (see the plugin's full Readme to set one up)",
 		section = teamStoreSection,
 		position = 41,
 		secret = true

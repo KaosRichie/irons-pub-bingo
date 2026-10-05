@@ -27,11 +27,11 @@ import net.runelite.client.util.LinkBrowser;
 
 /**
  * The in-game help: a topic list on the left and one short page per topic on the right,
- * instead of one long wall of text. Keep it in step with README.md's player section.
+ * instead of one long wall of text. Keep it in step with the player sections of README.md and docs/full-readme.md.
  */
 final class BingoHelp
 {
-	static final String README_URL = "https://github.com/KaosRichie/irons-pub-bingo";
+	static final String README_URL = "https://github.com/KaosRichie/irons-pub-bingo/blob/master/docs/full-readme.md";
 	static final String FORGE_URL = "https://kaosrichie.github.io/irons-pub-bingo/board-builder.html";
 
 	private static final String GOLD = "#e2ad48";
