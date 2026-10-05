@@ -6,6 +6,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.util.ArrayList;
 import java.util.List;
 import javax.inject.Inject;
 import net.runelite.client.ui.ColorScheme;
@@ -66,10 +67,14 @@ class BingoPinnedTileOverlay extends OverlayPanel
 			BingoTile tile = board.getTiles().get(index);
 			TileProgress merged = plugin.mergedProgressFor(index);
 			boolean complete = tile.isComplete(merged);
-			panelComponent.getChildren().add(TitleComponent.builder()
-				.text(fit(metrics, tile.label))
-				.color(complete ? BingoUi.COLOR_GOAL_DONE : ColorScheme.BRAND_ORANGE)
-				.build());
+			// Titles don't wrap by themselves: a long one becomes several centered lines.
+			for (String line : wrap(metrics, tile.label))
+			{
+				panelComponent.getChildren().add(TitleComponent.builder()
+					.text(line)
+					.color(complete ? BingoUi.COLOR_GOAL_DONE : ColorScheme.BRAND_ORANGE)
+					.build());
+			}
 			for (int g = 0; g < tile.goals.size(); g++)
 			{
 				BingoGoal goal = tile.goals.get(g);
@@ -81,7 +86,7 @@ class BingoPinnedTileOverlay extends OverlayPanel
 					: Math.max(0, Math.min(goal.progressOf(p), target));
 				boolean done = merged.manual || goal.isComplete(p);
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left(fit(metrics, goal.shortDescribe()))
+					.left(goal.shortDescribe())
 					.leftColor(done ? BingoUi.COLOR_GOAL_DONE : Color.WHITE)
 					.build());
 				ProgressBarComponent bar = new ProgressBarComponent();
@@ -97,19 +102,26 @@ class BingoPinnedTileOverlay extends OverlayPanel
 		return super.render(graphics);
 	}
 
-	/** Cuts text that would run past the box, ending it with "...". */
-	private static String fit(FontMetrics metrics, String text)
+	/** Splits text into lines that fit the box, breaking between words. */
+	private static List<String> wrap(FontMetrics metrics, String text)
 	{
-		if (text == null || metrics.stringWidth(text) <= TEXT_WIDTH)
+		List<String> lines = new ArrayList<>();
+		StringBuilder line = new StringBuilder();
+		for (String word : String.valueOf(text).trim().split("\\s+"))
 		{
-			return text;
+			String next = line.length() == 0 ? word : line + " " + word;
+			if (line.length() > 0 && metrics.stringWidth(next) > TEXT_WIDTH)
+			{
+				lines.add(line.toString());
+				line = new StringBuilder(word);
+			}
+			else
+			{
+				line = new StringBuilder(next);
+			}
 		}
-		int end = text.length();
-		while (end > 0 && metrics.stringWidth(text.substring(0, end) + "...") > TEXT_WIDTH)
-		{
-			end--;
-		}
-		return text.substring(0, end).trim() + "...";
+		lines.add(line.toString());
+		return lines;
 	}
 
 	/** A thin line between two pinned tiles. */
