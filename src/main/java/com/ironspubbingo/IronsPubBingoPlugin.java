@@ -741,6 +741,22 @@ public class IronsPubBingoPlugin extends Plugin
 		clientThread.invoke(() -> togglePinnedTileNow(tileIndex));
 	}
 
+	/** Clears every pin on this board. */
+	void unpinAllTiles()
+	{
+		clientThread.invoke(() ->
+		{
+			String key = boardKey;
+			if (key == null)
+			{
+				return;
+			}
+			pinned = Collections.emptyList();
+			pinnedBoardKey = key;
+			configManager.unsetConfiguration(IronsPubBingoConfig.GROUP, PINNED_PREFIX + key);
+		});
+	}
+
 	private void togglePinnedTileNow(int tileIndex)
 	{
 		String key = boardKey;

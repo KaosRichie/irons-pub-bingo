@@ -129,6 +129,12 @@ final class BingoUi
 			plugin.isTilePinned(tileIndex) ? "Unpin from overlay" : "Pin to overlay");
 		pin.addActionListener(a -> plugin.togglePinnedTile(tileIndex));
 		menu.add(pin);
+		if (!plugin.pinnedTiles().isEmpty())
+		{
+			javax.swing.JMenuItem unpinAll = new javax.swing.JMenuItem("Unpin all tiles");
+			unpinAll.addActionListener(a -> plugin.unpinAllTiles());
+			menu.add(unpinAll);
+		}
 		menu.show(e.getComponent(), e.getX(), e.getY());
 	}
 }
