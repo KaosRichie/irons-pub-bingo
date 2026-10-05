@@ -719,8 +719,8 @@ class IronsPubBingoPanel extends PluginPanel
 		membersLabel.setText(memberNames.size() > 1 ? String.join(", ", memberNames) : "");
 		teamNameLabel.setToolTipText(teamMode == null ? null
 			: "store team".equals(teamMode)
-				? "Store team - this team is on the host's team list; progress syncs live and via the team store"
-				: "Custom team - this code isn't on the host's team list; progress syncs live (party) only, never to the store. Use Choose team (Setup) to pick a store team.");
+				? "Store team, picked with Choose team. Progress syncs live and through the team store."
+				: "Custom team from the Team code setting. Progress syncs live through the party only.");
 		if (board == null)
 		{
 			boardNameLabel.setText("No board loaded");
@@ -977,7 +977,7 @@ class IronsPubBingoPanel extends PluginPanel
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 			if (answer == JOptionPane.OK_OPTION)
 			{
-				plugin.setTeamCode(teams.get(box.getSelectedIndex()).code);
+				plugin.setStoreTeam(teams.get(box.getSelectedIndex()).code);
 			}
 		}));
 	}

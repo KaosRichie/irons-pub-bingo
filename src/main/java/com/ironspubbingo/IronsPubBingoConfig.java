@@ -236,7 +236,7 @@ public interface IronsPubBingoConfig extends Config
 
 	@ConfigSection(
 		name = "Custom Team",
-		description = "Your own team code, for events with no team store - with a store, pick your team with the panel's Choose team button",
+		description = "Your team code for events without a team store. With the store on, pick your team with Choose team in the panel",
 		position = 30
 	)
 	String customTeamSection = "customTeam";
@@ -244,12 +244,23 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "teamCode",
 		name = "Team code",
-		description = "Code shared by your bingo host. Everyone with the same code shares progress"
-			+ " (via RuneLite's party service). Choose team writes the picked store team here too",
+		description = "Used only while the team store is off. Everyone with the same code shares progress"
+			+ " through RuneLite's party service. With the store on, Choose team in the panel picks your team",
 		section = customTeamSection,
 		position = 31
 	)
 	default String teamCode()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "storeTeam",
+		name = "Store team",
+		description = "The store team picked with Choose team",
+		hidden = true
+	)
+	default String storeTeam()
 	{
 		return "";
 	}

@@ -404,11 +404,20 @@ public class IronsPubBingoPlugin extends Plugin
 			}
 			return;
 		}
-		if ("teamCode".equals(event.getKey()))
+		if ("teamCode".equals(event.getKey()) || "storeTeam".equals(event.getKey()))
 		{
 			if (revertingTeamCode)
 			{
 				revertingTeamCode = false;
+				return;
+			}
+			// Each mode has its own code: the hidden store team (Choose team) while the
+			// store is on, the typed Team code while it is off. Editing the other one
+			// changes nothing now.
+			String key = event.getKey();
+			if (!key.equals(teamCodeKey(config.teamStoreEnabled())))
+			{
+				refreshPanel();
 				return;
 			}
 			// Pause store pushes IMMEDIATELY: the config already names the new team, and
@@ -416,7 +425,7 @@ public class IronsPubBingoPlugin extends Plugin
 			// cached members into the new team's scope.
 			teamSwitchPending = true;
 			String oldRawCode = event.getOldValue();
-			clientThread.invokeLater(() -> onTeamCodeChanged(oldRawCode));
+			clientThread.invokeLater(() -> onTeamCodeChanged(key, oldRawCode));
 			return;
 		}
 		if ("teamStoreEnabled".equals(event.getKey()))
@@ -1427,9 +1436,21 @@ public class IronsPubBingoPlugin extends Plugin
 
 	// ---------------------------------------------------------------- team sync: party layer
 
+	/** The team code for the current mode. */
 	private String normalizedTeamCode()
 	{
-		return normalizeTeamCode(config.teamCode());
+		return teamCodeFor(config.teamStoreEnabled());
+	}
+
+	/** Store mode uses the team picked with Choose team, party-only mode the typed code. */
+	private String teamCodeFor(boolean storeMode)
+	{
+		return normalizeTeamCode(storeMode ? config.storeTeam() : config.teamCode());
+	}
+
+	private static String teamCodeKey(boolean storeMode)
+	{
+		return storeMode ? "storeTeam" : "teamCode";
 	}
 
 	private static String normalizeTeamCode(String raw)
@@ -1518,7 +1539,7 @@ public class IronsPubBingoPlugin extends Plugin
 	 * party and store scope, so the old team's cached members are never pushed under the
 	 * new team's scope.
 	 */
-	private void onTeamCodeChanged(String oldRawCode)
+	private void onTeamCodeChanged(String key, String oldRawCode)
 	{
 		String oldCode = normalizeTeamCode(oldRawCode);
 		String newCode = normalizedTeamCode();
@@ -1565,7 +1586,7 @@ public class IronsPubBingoPlugin extends Plugin
 					else
 					{
 						revertingTeamCode = true;
-						configManager.setConfiguration(IronsPubBingoConfig.GROUP, "teamCode",
+						configManager.setConfiguration(IronsPubBingoConfig.GROUP, key,
 							oldRawCode == null ? "" : oldRawCode);
 					}
 					refreshPanel();
@@ -1841,9 +1862,9 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * The store toggle is a team switch in disguise: on = the store team for the code,
-	 * off = a custom party-only team. So flipping it follows the same policy as changing
-	 * the code - progress never moves between teams. Turning it OFF also evicts this
+	 * The store toggle is a team switch: on = the store team picked with Choose team,
+	 * off = the party-only team of the typed code. So flipping it follows the same policy
+	 * as changing the code - progress never moves between teams. Turning it OFF also evicts this
 	 * account from the store team (one departure notice; no other traffic after) and
 	 * drops the store-owned "(verified)" members, which nothing else could ever remove
 	 * once the store stopped answering.
@@ -1856,10 +1877,11 @@ public class IronsPubBingoPlugin extends Plugin
 			teamSwitchPending = false;
 			return;
 		}
+		String oldCode = teamCodeFor(wasOn);
 		if (board == null || !hasOwnProgress())
 		{
 			teamSwitchPending = false; // must lift before the toggle's own sync
-			switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), nowOn);
+			switchOwnProgress(oldCode, wasOn, teamCodeFor(nowOn), nowOn);
 			applyStoreToggle(wasOn);
 			stampTeamOwnership();
 			return;
@@ -1869,12 +1891,12 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			int answer = JOptionPane.showConfirmDialog(panel,
 				nowOn
-						? "Turning the team store ON joins the store team for your code.\n"
+						? "Turning the team store ON switches you to your store team.\n"
 							+ "That is a different team, so the board switches to your progress\n"
-							+ "there.\n\nJoin the store team?"
-						: "Turning the team store OFF leaves the store team - you become a\n"
-							+ "custom, party-only team, the board switches to your progress\n"
-							+ "there, and you are removed from the store team's board.\n\n"
+							+ "there.\n\nSwitch to the store team?"
+						: "Turning the team store OFF leaves the store team. You switch to\n"
+							+ "the party-only team of your Team code, the board switches to your\n"
+							+ "progress there, and you are removed from the store team's board.\n\n"
 							+ "Leave the store team?",
 				"Irons Pub Bingo", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 			clientThread.invokeLater(() ->
@@ -1882,7 +1904,7 @@ public class IronsPubBingoPlugin extends Plugin
 				teamSwitchPending = false;
 				if (answer == JOptionPane.OK_OPTION)
 				{
-					switchOwnProgress(normalizedTeamCode(), wasOn, normalizedTeamCode(), !wasOn);
+					switchOwnProgress(oldCode, wasOn, teamCodeFor(!wasOn), !wasOn);
 					applyStoreToggle(wasOn);
 					stampTeamOwnership();
 					saveProgress(true);
@@ -1904,14 +1926,15 @@ public class IronsPubBingoPlugin extends Plugin
 		storeStandings.clear();
 		// The store team and the party-only team keep their own teammates, and meet in
 		// their own parties.
-		switchTeamCaches(normalizedTeamCode(), !wasOn);
-		followIntoTeamParty(passphraseFor(normalizedTeamCode(), wasOn));
+		String oldCode = teamCodeFor(wasOn);
+		switchTeamCaches(teamCodeFor(!wasOn), !wasOn);
+		followIntoTeamParty(passphraseFor(oldCode, wasOn));
 		if (wasOn)
 		{
 			// Leaving the store team: the departure notice tombstones this account there.
 			if (boardKey != null)
 			{
-				enqueueEviction(scopeFor(normalizedTeamCode()));
+				enqueueEviction(scopeFor(oldCode));
 			}
 			storeError = null;
 		}
@@ -2053,19 +2076,14 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Which team mode the current code is in, or null when there is nothing to
-	 * distinguish (no code, or the store host defined no teams). Makes it obvious in the
-	 * panel whether the code came from the host's list or was typed by hand.
-	 */
+	/** Which team mode is in use, or null without a team. */
 	String teamModeText()
 	{
-		String code = normalizedTeamCode();
-		if (code == null || storeTeamNames.isEmpty() || !teamStore.isConfigured())
+		if (normalizedTeamCode() == null)
 		{
 			return null;
 		}
-		return storeTeamNames.containsKey(code) ? "store team" : "custom code, party-only";
+		return teamStore.isConfigured() ? "store team" : "custom team";
 	}
 
 	/**
@@ -2199,10 +2217,10 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
-	/** Applies a team picked in the panel; runs through the normal switch confirmation. */
-	void setTeamCode(String code)
+	/** Applies a store team picked in the panel; runs through the normal switch confirmation. */
+	void setStoreTeam(String code)
 	{
-		configManager.setConfiguration(IronsPubBingoConfig.GROUP, "teamCode", code);
+		configManager.setConfiguration(IronsPubBingoConfig.GROUP, "storeTeam", code);
 	}
 
 	/**
@@ -2704,15 +2722,14 @@ public class IronsPubBingoPlugin extends Plugin
 		lastStorePostMs = now;
 		flushPendingEvictions();
 
-		// Hybrid team modes: when the host lists teams on the store, a code they didn't
-		// list is a PARTY-ONLY team - nothing is pushed to the store (the server would
-		// reject it anyway; this avoids error spam). The team list is re-fetched instead,
-		// so being added to the Teams tab resumes store sync within a poll cycle.
+		// No team picked yet, or a team the host has since removed: nothing is pushed (the
+		// server would refuse it anyway). The team list is re-fetched instead, so the host
+		// adding the team back resumes store sync within a poll cycle.
 		String teamCode = normalizedTeamCode();
 		if (!storeTeamNames.isEmpty() && (teamCode == null || !storeTeamNames.containsKey(teamCode)))
 		{
 			// Keep this short: it is shown on the store button next to "No board imported".
-			storeError = teamCode == null ? "No team" : "Party-only team";
+			storeError = teamCode == null ? "No team" : "Team not listed";
 			teamStore.fetchTeams(boardKey, (teams, error) -> clientThread.invokeLater(() ->
 			{
 				cacheStoreTeams(teams);
