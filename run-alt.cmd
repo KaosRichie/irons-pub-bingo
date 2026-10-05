@@ -2,7 +2,7 @@
 rem Launches a SECOND RuneLite dev client with its own private .runelite home (alt-home\.runelite),
 rem so a second Jagex account can run alongside the run.cmd client for bingo team testing.
 rem
-rem First time: put the alt account's credentials.properties in alt-home\.runelite\ (see README).
+rem First time: put the alt account's credentials.properties in alt-home\.runelite\ (see the Readme).
 rem The jar is copied before launching: rebuilding irons-pub-bingo-all.jar while this client runs
 rem would otherwise break its lazy class loading and crash it (NoClassDefFoundError).
 rem It builds the jar first, so it always runs the current code.

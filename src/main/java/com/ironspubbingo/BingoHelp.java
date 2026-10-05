@@ -114,7 +114,7 @@ final class BingoHelp
 
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
 		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		buttons.add(linkButton("Full README", README_URL));
+		buttons.add(linkButton("Full Readme", README_URL));
 		buttons.add(linkButton("Bingo Forge", FORGE_URL));
 		JButton close = new JButton("Close");
 		close.setFocusable(false);
@@ -192,7 +192,7 @@ final class BingoHelp
 				"Only loot the Loot Tracker sees counts. Most thieving chests don't show up there.",
 				"For pet tiles, turn on the game setting <b>Collection log - New addition notification</b>. "
 					+ "It also names the pet.",
-				"XP and kill count goals count from the moment you import the board.",
+				"XP and kill count goals start at zero when you import the board. Earlier XP and kills don't count.",
 				"A newer board shows as a notice in the panel. "
 					+ "Reimport it from the store in one click.",
 				"Right-click a tile on the board to pin it to the in-game overlay. "
@@ -200,7 +200,7 @@ final class BingoHelp
 		pages.put("Hosting", page("Hosting",
 			p("Build the board in <a href='" + FORGE_URL + "'>Bingo Forge</a>, which runs in your browser, "
 				+ "and export its code.")
-				+ p("The <a href='" + README_URL + "'>full README</a> covers setting up a team store "
+				+ p("The <a href='" + README_URL + "'>full Readme</a> covers setting up a team store "
 					+ "on Cloudflare, the board format and every goal type.")));
 		return pages;
 	}

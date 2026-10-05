@@ -10,7 +10,7 @@ import net.runelite.api.Skill;
 
 /**
  * One trackable condition inside a bingo tile, deserialized from the board JSON.
- * Which fields are relevant depends on {@link #type}; see the README for the schema.
+ * Which fields are relevant depends on {@link #type}; see the Readme for the schema.
  */
 public class BingoGoal
 {

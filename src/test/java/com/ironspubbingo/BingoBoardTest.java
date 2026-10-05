@@ -596,7 +596,7 @@ public class BingoBoardTest
 		assertTrue(!Wildcards.compile("Long bone").matcher("Curved bone").matches());
 	}
 
-	/** The example boards live in docs/, where the README links them. */
+	/** The example boards live in docs/, where the Readme links them. */
 	private String readResource(String path) throws IOException
 	{
 		return new String(Files.readAllBytes(Paths.get("docs" + path)), StandardCharsets.UTF_8);
