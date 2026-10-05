@@ -38,7 +38,10 @@ who have synced to that team, so sync once with the plugin first.
   Specific pet tiles need it, and it names the pet on any-pet tiles.
 - XP and kill count goals start counting when you import the board.
 - When your host publishes a newer board, the panel and an overlay in game say so.
-  Reimport it from the store. The **New board overlay** setting turns the overlay off.
+  Reimport it from the store.
+- The in-game overlay can also show the event countdown, store and live sync problems,
+  and tiles you pinned. Right-click a tile on the board to pin it. Each part has its own
+  switch under **In-game Overlay** in the settings.
 - Each team keeps its own progress. Switching teams parks it, switching back restores it.
 - Completed lines are drawn as red strokes through their tiles. **Line style** set to
   **Highlight** outlines the tiles instead. **Line color** picks the color for both.

@@ -120,4 +120,15 @@ final class BingoUi
 		apply.run();
 		image.onLoaded(() -> SwingUtilities.invokeLater(apply));
 	}
+
+	/** The right-click menu on a board tile: pin it to the in-game overlay, or unpin it. */
+	static void showTileMenu(IronsPubBingoPlugin plugin, int tileIndex, java.awt.event.MouseEvent e)
+	{
+		javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+		javax.swing.JMenuItem pin = new javax.swing.JMenuItem(
+			plugin.isTilePinned(tileIndex) ? "Unpin from overlay" : "Pin to overlay");
+		pin.addActionListener(a -> plugin.togglePinnedTile(tileIndex));
+		menu.add(pin);
+		menu.show(e.getComponent(), e.getX(), e.getY());
+	}
 }

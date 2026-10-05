@@ -662,6 +662,10 @@ class IronsPubBingoPanel extends PluginPanel
 						selectedTile = tileIndex;
 						refresh();
 						plugin.refreshBoardWindow();
+						if (SwingUtilities.isRightMouseButton(e))
+						{
+							BingoUi.showTileMenu(plugin, tileIndex, e);
+						}
 					}
 				});
 				cells.add(cell);

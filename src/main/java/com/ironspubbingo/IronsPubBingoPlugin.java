@@ -12,6 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,6 +29,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -112,7 +114,10 @@ public class IronsPubBingoPlugin extends Plugin
 	private OverlayManager overlayManager;
 
 	@Inject
-	private BingoBoardUpdateOverlay boardUpdateOverlay;
+	private BingoStatusOverlay statusOverlay;
+
+	@Inject
+	private BingoPinnedTileOverlay pinnedTileOverlay;
 
 	@Inject
 	private ClientThread clientThread;
@@ -162,6 +167,10 @@ public class IronsPubBingoPlugin extends Plugin
 	@Getter
 	private BingoBoard board;
 	private String boardKey;
+	/** Tiles pinned to the overlay, for the board in pinnedBoardKey. Read by the overlay each frame. */
+	private volatile List<Integer> pinned = Collections.emptyList();
+	private volatile String pinnedBoardKey;
+	private static final String PINNED_PREFIX = "pinned_";
 	/** This account's own progress. */
 	// The panel reads these from the Swing thread while the client thread updates them,
 	// so they are concurrent collections: a read never fails mid-update.
@@ -257,7 +266,8 @@ public class IronsPubBingoPlugin extends Plugin
 	protected void startUp()
 	{
 		running = true;
-		overlayManager.add(boardUpdateOverlay);
+		overlayManager.add(statusOverlay);
+		overlayManager.add(pinnedTileOverlay);
 		discordNotifier.setOutdatedNote(this::outdatedBoardNote);
 		wsClient.registerMessage(IronsPubBingoMemberState.class);
 		wsClient.registerMessage(IronsPubBingoSyncRequest.class);
@@ -317,7 +327,8 @@ public class IronsPubBingoPlugin extends Plugin
 	protected void shutDown()
 	{
 		running = false;
-		overlayManager.remove(boardUpdateOverlay);
+		overlayManager.remove(statusOverlay);
+		overlayManager.remove(pinnedTileOverlay);
 		storeGeneration++;
 		if (storePollTask != null)
 		{
@@ -638,6 +649,112 @@ public class IronsPubBingoPlugin extends Plugin
 			return "Time left: " + formatCountdown(board.endTime.toEpochMilli() - now);
 		}
 		return "";
+	}
+
+	/** The overlay's countdown line, or null when the board has no times or the event ended. */
+	String eventCountdownOverlayText()
+	{
+		BingoBoard current = board;
+		if (current == null)
+		{
+			return null;
+		}
+		long now = System.currentTimeMillis();
+		if (current.startTime != null && now < current.startTime.toEpochMilli())
+		{
+			return "Starts in " + formatCountdown(current.startTime.toEpochMilli() - now);
+		}
+		if (current.endTime != null && now <= current.endTime.toEpochMilli())
+		{
+			return "Time left: " + formatCountdown(current.endTime.toEpochMilli() - now);
+		}
+		return null;
+	}
+
+	/** The overlay's store warning, or null while the store takes progress (or is off). */
+	String storeOverlayWarning()
+	{
+		if (board == null || !teamStore.isConfigured() || storePaused)
+		{
+			return null;
+		}
+		String hint = storeSetupHint();
+		return hint != null ? hint : storeError;
+	}
+
+	/** The overlay's live sync warning, or null while we are in the team's party (or have no team). */
+	String liveSyncOverlayWarning()
+	{
+		if (board == null || expectedPassphrase() == null || inTeamParty())
+		{
+			return null;
+		}
+		return teamStatusText();
+	}
+
+	/** Pinned tile indexes for this board, in pin order. Read from the config once per board. */
+	List<Integer> pinnedTiles()
+	{
+		String key = boardKey;
+		if (key == null)
+		{
+			return Collections.emptyList();
+		}
+		if (!key.equals(pinnedBoardKey))
+		{
+			List<Integer> loaded = new ArrayList<>();
+			String saved = configManager.getConfiguration(IronsPubBingoConfig.GROUP, PINNED_PREFIX + key);
+			for (String part : saved == null ? new String[0] : saved.split(","))
+			{
+				try
+				{
+					loaded.add(Integer.parseInt(part.trim()));
+				}
+				catch (NumberFormatException ignored)
+				{
+					// skip junk
+				}
+			}
+			pinned = Collections.unmodifiableList(loaded);
+			pinnedBoardKey = key;
+		}
+		return pinned;
+	}
+
+	boolean isTilePinned(int tileIndex)
+	{
+		return pinnedTiles().contains(tileIndex);
+	}
+
+	/** Pins or unpins a tile on the in-game overlay. Saved per board. */
+	void togglePinnedTile(int tileIndex)
+	{
+		clientThread.invoke(() -> togglePinnedTileNow(tileIndex));
+	}
+
+	private void togglePinnedTileNow(int tileIndex)
+	{
+		String key = boardKey;
+		if (key == null)
+		{
+			return;
+		}
+		List<Integer> next = new ArrayList<>(pinnedTiles());
+		if (!next.remove((Integer) tileIndex))
+		{
+			next.add(tileIndex);
+		}
+		pinned = Collections.unmodifiableList(next);
+		pinnedBoardKey = key;
+		if (next.isEmpty())
+		{
+			configManager.unsetConfiguration(IronsPubBingoConfig.GROUP, PINNED_PREFIX + key);
+		}
+		else
+		{
+			configManager.setConfiguration(IronsPubBingoConfig.GROUP, PINNED_PREFIX + key,
+				next.stream().map(String::valueOf).collect(Collectors.joining(",")));
+		}
 	}
 
 	/** Absolute start/end times for the countdown's tooltip, or null when none. */

@@ -91,16 +91,71 @@ public interface IronsPubBingoConfig extends Config
 		return true;
 	}
 
+	@ConfigSection(
+		name = "In-game Overlay",
+		description = "What the in-game overlay shows",
+		position = 18
+	)
+	String overlaySection = "overlay";
+
+	@ConfigItem(
+		keyName = "overlayPinnedTiles",
+		name = "Pinned tiles",
+		description = "Show the tiles you pinned, with their progress. Right-click a tile on the board to pin it.",
+		section = overlaySection,
+		position = 0
+	)
+	default boolean overlayPinnedTiles()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "overlayCountdown",
+		name = "Event countdown",
+		description = "Show the time until the event starts, or the time left until it ends.",
+		section = overlaySection,
+		position = 1
+	)
+	default boolean overlayCountdown()
+	{
+		return true;
+	}
+
 	@ConfigItem(
 		keyName = "boardUpdateOverlay",
-		name = "New board overlay",
-		description = "Show an in-game overlay when a newer board is out.",
-		section = generalSection,
-		position = 17
+		name = "New board",
+		description = "Show a notice when a newer board is out.",
+		section = overlaySection,
+		position = 2
 	)
 	default boolean boardUpdateOverlay()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "overlayStoreWarning",
+		name = "Store problems",
+		description = "Show a warning when the team store is not taking your progress, for example a wrong board or an unknown team.",
+		section = overlaySection,
+		position = 3
+	)
+	default boolean overlayStoreWarning()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "overlayLiveSyncWarning",
+		name = "Live sync problems",
+		description = "Show a warning when you are not in your team's party. Turn it off if you often use a party for other things, like raids.",
+		section = overlaySection,
+		position = 4
+	)
+	default boolean overlayLiveSyncWarning()
+	{
+		return false;
 	}
 
 	@ConfigSection(

@@ -194,7 +194,9 @@ final class BingoHelp
 					+ "It also names the pet.",
 				"XP and kill count goals count from the moment you import the board.",
 				"A newer board shows as a notice in the panel and an overlay in game. "
-					+ "Reimport it from the store in one click.")));
+					+ "Reimport it from the store in one click.",
+				"Right-click a tile on the board to pin it to the in-game overlay. "
+					+ "The <b>In-game Overlay</b> settings pick what the overlay shows.")));
 		pages.put("Hosting", page("Hosting",
 			p("Build the board in <a href='" + FORGE_URL + "'>Bingo Forge</a>, which runs in your browser, "
 				+ "and export its code.")

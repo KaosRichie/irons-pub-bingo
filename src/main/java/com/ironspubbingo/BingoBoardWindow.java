@@ -438,6 +438,10 @@ class BingoBoardWindow extends JFrame
 					public void mousePressed(MouseEvent e)
 					{
 						plugin.selectTileInPanel(tileIndex);
+						if (javax.swing.SwingUtilities.isRightMouseButton(e))
+						{
+							BingoUi.showTileMenu(plugin, tileIndex, e);
+						}
 					}
 				};
 				cell.addMouseListener(click);
