@@ -1588,7 +1588,7 @@ function goalDescribe(goal, type)
 		case 'CHAT':
 			return readablePattern(String(goal.pattern || '')) || 'Game message';
 		default:
-			return 'Manual (tick off by hand)';
+			return 'Manual (request admin credit)';
 	}
 }
 

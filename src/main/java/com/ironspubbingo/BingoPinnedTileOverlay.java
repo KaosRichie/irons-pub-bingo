@@ -83,7 +83,7 @@ class BingoPinnedTileOverlay extends OverlayPanel
 					: Math.max(0, Math.min(goal.progressOf(p), target));
 				boolean done = merged.manual || goal.isComplete(p);
 				panelComponent.getChildren().add(LineComponent.builder()
-					.left(fit(metrics, goal.shortDescribe()))
+					.left(fit(metrics, plugin.goalLabel(goal)))
 					.leftColor(done ? BingoUi.COLOR_GOAL_DONE : Color.WHITE)
 					.build());
 				ProgressBarComponent bar = new ProgressBarComponent();

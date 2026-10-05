@@ -171,6 +171,7 @@ public class IronsPubBingoPlugin extends Plugin
 	private volatile List<Integer> pinned = Collections.emptyList();
 	private volatile String pinnedBoardKey;
 	private static final String PINNED_PREFIX = "pinned_";
+	private static final String MANUAL_STORE_TEXT = "Manual (request admin credit)";
 	/** This account's own progress. */
 	// The panel reads these from the Swing thread while the client thread updates them,
 	// so they are concurrent collections: a read never fails mid-update.
@@ -570,7 +571,7 @@ public class IronsPubBingoPlugin extends Plugin
 				// mixed tiles' progress and admin credit land on the wrong columns, and
 				// manual-only tiles vanish from the portal.
 				Map<String, Object> goalMeta = new HashMap<>();
-				goalMeta.put("label", goal.shortDescribe());
+				goalMeta.put("label", goalLabel(goal));
 				goalMeta.put("target", goal.target());
 				goalMeta.put("distinct", goal.usesMatchedSet());
 				goalMeta.put("manual", goal.goalType == GoalType.MANUAL);
@@ -2100,6 +2101,32 @@ public class IronsPubBingoPlugin extends Plugin
 	boolean storeConfigured()
 	{
 		return teamStore.isConfigured();
+	}
+
+	/**
+	 * A goal's label as players see it. An unnamed manual goal says how it gets done:
+	 * a store team requests admin credit, a party-only team ticks it off by hand.
+	 */
+	String goalLabel(BingoGoal goal)
+	{
+		return isUnnamedManual(goal) && storeConfigured() ? MANUAL_STORE_TEXT : goal.shortDescribe();
+	}
+
+	/** A goal's full description, worded for the team's mode like goalLabel. */
+	String goalDescription(BingoGoal goal)
+	{
+		return goal.goalType == GoalType.MANUAL && storeConfigured() ? MANUAL_STORE_TEXT : goal.describe();
+	}
+
+	/** Whether the full description says more than the label. */
+	boolean goalHasExtraDetail(BingoGoal goal)
+	{
+		return !goalDescription(goal).equals(goalLabel(goal));
+	}
+
+	private static boolean isUnnamedManual(BingoGoal goal)
+	{
+		return goal.goalType == GoalType.MANUAL && (goal.name == null || goal.name.trim().isEmpty());
 	}
 
 	/**

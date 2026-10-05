@@ -567,7 +567,7 @@ test('goal labels match the plugin wording', () =>
 	is(label({ type: 'LAP', course: 'Seers' }), "Seers' Village course laps", 'course display names');
 	is(label({ type: 'VALUE', amount: 1000000, sources: ['Zulrah'] }), 'Drop worth 1,000,000+ gp from Zulrah', 'loot value');
 	is(label({ type: 'CHAT', pattern: 'Corrupted challenge duration: [0-6]:[0-5][0-9]' }), 'Corrupted challenge duration', 'chat pattern');
-	is(label({ type: 'MANUAL' }), 'Manual (tick off by hand)', 'manual');
+	is(label({ type: 'MANUAL' }), 'Manual (request admin credit)', 'manual');
 	is(label({ type: 'XP', skill: 'HITPOINTS', amount: 5000, name: 'HP grind' }), 'HP grind', 'a set name wins');
 });
 

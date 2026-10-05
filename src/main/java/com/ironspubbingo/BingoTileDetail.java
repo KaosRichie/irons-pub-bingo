@@ -161,11 +161,11 @@ class BingoTileDetail extends JPanel
 				add(Box.createVerticalStrut(6));
 			}
 
-			BingoWrappedLabel goalLabel = new BingoWrappedLabel(goal.shortDescribe(), widthBasis);
+			BingoWrappedLabel goalLabel = new BingoWrappedLabel(plugin.goalLabel(goal), widthBasis);
 			goalLabel.setForeground(done ? BingoUi.COLOR_GOAL_DONE : ColorScheme.LIGHT_GRAY_COLOR);
-			if (goal.hasExtraDetail())
+			if (plugin.goalHasExtraDetail(goal))
 			{
-				goalLabel.setToolTipText(goal.describe());
+				goalLabel.setToolTipText(plugin.goalDescription(goal));
 			}
 			add(goalLabel);
 
@@ -288,7 +288,7 @@ class BingoTileDetail extends JPanel
 		{
 			BingoGoal goal = tile.goals.get(g);
 			GoalProgress p = merged.goal(g, tile.goals.size());
-			String description = goal.hasExtraDetail() ? goal.describe() : null;
+			String description = plugin.goalHasExtraDetail(goal) ? plugin.goalDescription(goal) : null;
 			String received = null;
 			if (goal.usesMatchedSet() && p.matched != null && !p.matched.isEmpty())
 			{
@@ -428,7 +428,7 @@ class BingoTileDetail extends JPanel
 		for (int g = 0; g < tile.goals.size(); g++)
 		{
 			BingoGoal goal = tile.goals.get(g);
-			labels[g] = (tile.goals.size() > 1 ? (g + 1) + ". " : "") + goal.shortDescribe()
+			labels[g] = (tile.goals.size() > 1 ? (g + 1) + ". " : "") + plugin.goalLabel(goal)
 				+ (goal.goalType == GoalType.MANUAL ? ""
 					: "  (" + formatCount(goal.progressOf(current.goal(g, tile.goals.size())))
 						+ " / " + formatCount(goal.target()) + ")");
@@ -511,7 +511,7 @@ class BingoTileDetail extends JPanel
 			// screenshot never blocks the request itself.
 			String what = complete.isSelected() ? "tile complete" : "+" + addFinal;
 			String goalPart = goalIndex == null ? ""
-				: " on goal " + (goalIndex + 1) + " (" + tile.goals.get(goalIndex).shortDescribe() + ")";
+				: " on goal " + (goalIndex + 1) + " (" + plugin.goalLabel(tile.goals.get(goalIndex)) + ")";
 			String detail = tile.label + " (" + what + goalPart + ")";
 			plugin.postProofScreenshot(detail, (link, shotError) -> SwingUtilities.invokeLater(() ->
 				sendRequest(tileIndex, goalIndex, addFinal, complete.isSelected(), noteText,
@@ -604,12 +604,12 @@ class BingoTileDetail extends JPanel
 	}
 
 	/** Tooltip for a goal bar: the full goal text (when it says more) and the contributors. */
-	private static String barTooltip(BingoGoal goal, List<GoalBar.Segment> segments)
+	private String barTooltip(BingoGoal goal, List<GoalBar.Segment> segments)
 	{
 		StringBuilder tip = new StringBuilder("<html>");
-		if (goal.hasExtraDetail())
+		if (plugin.goalHasExtraDetail(goal))
 		{
-			tip.append(goal.describe());
+			tip.append(plugin.goalDescription(goal));
 		}
 		if (!segments.isEmpty())
 		{
