@@ -53,6 +53,7 @@ class BingoPinnedTileOverlay extends OverlayPanel
 		// Room below each line, so a bar never covers the tails of letters like g and y.
 		panelComponent.setGap(new Point(0, 3));
 		FontMetrics metrics = graphics.getFontMetrics();
+		boolean hideCompleted = config.overlayHideCompletedPins();
 		boolean first = true;
 		for (int index : pinned)
 		{
@@ -60,14 +61,19 @@ class BingoPinnedTileOverlay extends OverlayPanel
 			{
 				continue;
 			}
+			BingoTile tile = board.getTiles().get(index);
+			TileProgress merged = plugin.mergedProgressFor(index);
+			boolean complete = tile.isComplete(merged);
+			if (complete && hideCompleted)
+			{
+				// Still pinned: it shows again if the setting is turned off or the tile reopens.
+				continue;
+			}
 			if (!first)
 			{
 				panelComponent.getChildren().add(new Divider());
 			}
 			first = false;
-			BingoTile tile = board.getTiles().get(index);
-			TileProgress merged = plugin.mergedProgressFor(index);
-			boolean complete = tile.isComplete(merged);
 			panelComponent.getChildren().add(TitleComponent.builder()
 				.text(fit(metrics, tile.label))
 				.color(complete ? BingoUi.COLOR_GOAL_DONE : ColorScheme.BRAND_ORANGE)
@@ -95,6 +101,12 @@ class BingoPinnedTileOverlay extends OverlayPanel
 				bar.setBackgroundColor(BAR_BACKGROUND);
 				panelComponent.getChildren().add(bar);
 			}
+		}
+		if (first)
+		{
+			// Every pinned tile is hidden: no empty box.
+			panelComponent.getChildren().clear();
+			return null;
 		}
 		return super.render(graphics);
 	}

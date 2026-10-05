@@ -111,11 +111,23 @@ public interface IronsPubBingoConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "overlayHideCompletedPins",
+		name = "Hide completed pinned tiles",
+		description = "Leave completed tiles out of the pinned tiles box. They stay pinned and show again if they are no longer complete.",
+		section = overlaySection,
+		position = 1
+	)
+	default boolean overlayHideCompletedPins()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "overlayCountdown",
 		name = "Event countdown",
 		description = "Show the time until the event starts, or the time left until it ends.",
 		section = overlaySection,
-		position = 1
+		position = 2
 	)
 	default boolean overlayCountdown()
 	{
@@ -127,7 +139,7 @@ public interface IronsPubBingoConfig extends Config
 		name = "Store problems",
 		description = "Show a warning when the team store is not taking your progress, for example a wrong board or an unknown team.",
 		section = overlaySection,
-		position = 2
+		position = 3
 	)
 	default boolean overlayStoreWarning()
 	{
@@ -139,7 +151,7 @@ public interface IronsPubBingoConfig extends Config
 		name = "Live sync problems",
 		description = "Show a warning when you are not in your team's party. Turn it off if you often use a party for other things, like raids.",
 		section = overlaySection,
-		position = 3
+		position = 4
 	)
 	default boolean overlayLiveSyncWarning()
 	{
