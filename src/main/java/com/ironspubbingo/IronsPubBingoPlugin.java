@@ -679,7 +679,16 @@ public class IronsPubBingoPlugin extends Plugin
 			return null;
 		}
 		String hint = storeSetupHint();
-		return hint != null ? hint : storeError;
+		if (hint != null)
+		{
+			return hint;
+		}
+		// The store refuses an outdated board with a bare "Board updated": say how to fix it.
+		if (storeError != null && storeError.startsWith("Board updated") && !storeError.contains(" - "))
+		{
+			return storeError + " - press Reimport from store in the bingo panel";
+		}
+		return storeError;
 	}
 
 	/** The overlay's live sync warning, or null while we are in the team's party (or have no team). */
@@ -816,10 +825,10 @@ public class IronsPubBingoPlugin extends Plugin
 	}
 
 	/**
-	 * Warning when a teammate runs a newer revision of this board, or null.
-	 * besideReimportButton: the text sits right above the panel's Reimport from store button.
+	 * Warning when a teammate runs a newer revision of this board, or null. It sits right
+	 * above the panel's Reimport from store button.
 	 */
-	String boardUpdateNotice(boolean besideReimportButton)
+	String boardUpdateNotice()
 	{
 		if (newerBoardVersion == null)
 		{
@@ -836,9 +845,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return what + " - reimport it: Setup, Import board, Import from store";
 		}
-		return besideReimportButton
-			? what + " - press Reimport from store below"
-			: what + " - press Reimport from store in the bingo panel";
+		return what + " - press Reimport from store below";
 	}
 
 	/** For Discord posts: says the post came from an outdated board, or null. */

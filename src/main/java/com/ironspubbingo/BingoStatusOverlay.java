@@ -11,7 +11,7 @@ import net.runelite.client.ui.overlay.components.LineComponent;
 import net.runelite.client.ui.overlay.components.TitleComponent;
 
 /**
- * The in-game status box: a newer board, sync problems and the event countdown, each
+ * The in-game status box: sync problems and the event countdown, each
  * with its own setting. It hides when there is nothing to say.
  */
 class BingoStatusOverlay extends OverlayPanel
@@ -33,11 +33,10 @@ class BingoStatusOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		String update = config.boardUpdateOverlay() ? plugin.boardUpdateNotice(false) : null;
 		String store = config.overlayStoreWarning() ? plugin.storeOverlayWarning() : null;
 		String live = config.overlayLiveSyncWarning() ? plugin.liveSyncOverlayWarning() : null;
 		String countdown = config.overlayCountdown() ? plugin.eventCountdownOverlayText() : null;
-		if (update == null && store == null && live == null && countdown == null)
+		if (store == null && live == null && countdown == null)
 		{
 			return null;
 		}
@@ -49,10 +48,6 @@ class BingoStatusOverlay extends OverlayPanel
 		if (countdown != null)
 		{
 			panelComponent.getChildren().add(LineComponent.builder().left(countdown).build());
-		}
-		if (update != null)
-		{
-			addProblem(update);
 		}
 		if (store != null)
 		{
@@ -66,7 +61,7 @@ class BingoStatusOverlay extends OverlayPanel
 	}
 
 	/**
-	 * A problem in red. What to do about it ("press Reimport from store") follows the
+	 * A problem in red. What to do about it ("use Import from store") follows the
 	 * " - " in the text and stays white on its own line.
 	 */
 	private void addProblem(String text)

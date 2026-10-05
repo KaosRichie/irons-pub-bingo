@@ -193,7 +193,7 @@ final class BingoHelp
 				"For pet tiles, turn on the game setting <b>Collection log - New addition notification</b>. "
 					+ "It also names the pet.",
 				"XP and kill count goals count from the moment you import the board.",
-				"A newer board shows as a notice in the panel and an overlay in game. "
+				"A newer board shows as a notice in the panel. "
 					+ "Reimport it from the store in one click.",
 				"Right-click a tile on the board to pin it to the in-game overlay. "
 					+ "The <b>In-game Overlay</b> settings pick what the overlay shows.")));

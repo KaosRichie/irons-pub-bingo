@@ -37,9 +37,8 @@ who have synced to that team, so sync once with the plugin first.
 - For pet tiles, turn on the game setting **Collection log - New addition notification**.
   Specific pet tiles need it, and it names the pet on any-pet tiles.
 - XP and kill count goals start counting when you import the board.
-- When your host publishes a newer board, the panel and an overlay in game say so.
-  Reimport it from the store.
-- The in-game overlay can also show the event countdown, store and live sync problems,
+- When your host publishes a newer board, the panel says so. Reimport it from the store.
+- The in-game overlay can show the event countdown, store and live sync problems,
   and tiles you pinned. Right-click a tile on the board to pin it. Each part has its own
   switch under **In-game Overlay** in the settings.
 - Each team keeps its own progress. Switching teams parks it, switching back restores it.

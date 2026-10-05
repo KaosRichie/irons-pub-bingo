@@ -696,7 +696,7 @@ class IronsPubBingoPanel extends PluginPanel
 		eventStatusLabel.setVisible(!eventText.isEmpty());
 		eventStatusLabel.setText(eventText);
 		eventStatusLabel.setToolTipText(plugin.eventWindowTooltip());
-		String updateNotice = plugin.boardUpdateNotice(true);
+		String updateNotice = plugin.boardUpdateNotice();
 		boardUpdateLabel.setVisible(updateNotice != null);
 		boardUpdateLabel.setText(updateNotice == null ? "" : updateNotice);
 		reimportRow.setVisible(updateNotice != null && plugin.boardUpdateFromStore() && plugin.storeConfigured());
