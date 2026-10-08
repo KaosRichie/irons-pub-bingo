@@ -4,8 +4,9 @@ Play your clan's bingo event with a board right in RuneLite. The plugin tracks y
 as you play and adds up progress across your team: drops, boss kill counts, pets, XP,
 agility laps, loot value and chat messages.
 
-![The bingo panel](https://raw.githubusercontent.com/KaosRichie/irons-pub-bingo/master/docs/screenshots/panel.png)
 ![The pop-out board](https://raw.githubusercontent.com/KaosRichie/irons-pub-bingo/master/docs/screenshots/board.png)
+
+![The bingo panel](https://raw.githubusercontent.com/KaosRichie/irons-pub-bingo/master/docs/screenshots/panel.png)
 ![Pinned tiles in game](https://raw.githubusercontent.com/KaosRichie/irons-pub-bingo/master/docs/screenshots/overlay.png)
 
 ## Getting started
