@@ -10,3 +10,6 @@ nb-configuration.xml
 nbproject/
 # Local-only: machine-specific Gradle JDK path (breaks any other machine, incl. hub CI)
 gradle.properties
+# Local dev launchers (machine-specific JDK path)
+run.cmd
+run-alt.cmd

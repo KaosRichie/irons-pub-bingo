@@ -158,14 +158,3 @@ finish around Lumbridge in a few minutes.
   another player's progress.
 - A modified client could still fake numbers. The per-player view and your proof policy
   are the backstop.
-
-## Developing
-
-[`run-alt.cmd`](../run-alt.cmd) (Windows) starts a second dev client next to your main one, so two accounts
-can test team sync together. It builds the plugin and runs it with its own RuneLite home in
-`alt-home\.runelite`. The `alt-home` folder is gitignored.
-
-The first time, create a `credentials.properties` for the second account in
-`alt-home\.runelite\`. Follow
-[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
-The file holds account credentials. Never commit it or share it.

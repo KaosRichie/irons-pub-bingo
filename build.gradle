@@ -54,7 +54,7 @@ tasks.register('run', JavaExec) {
 	args "--developer-mode", "--debug"
 }
 
-// Self-contained client jar, used to run a second dev client instance (see run-alt.cmd)
+// Self-contained client jar, used to run a second dev client instance
 // without fighting Gradle's project lock while the first client is running.
 tasks.register('shadowJar', Jar) {
 	dependsOn configurations.devRuntimeClasspath
