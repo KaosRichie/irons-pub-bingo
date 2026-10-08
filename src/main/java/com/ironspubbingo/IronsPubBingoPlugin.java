@@ -92,14 +92,17 @@ public class IronsPubBingoPlugin extends Plugin
 	private static final String[] PET_MESSAGES = {
 		"you have a funny feeling like you're being followed",
 		"you feel something weird sneaking into your backpack",
+		// A pet the player already owns: it still counts as a pet drop.
+		"you have a funny feeling like you would have been followed",
 	};
 	private static final String COLLECTION_LOG_PREFIX = "new item added to your collection log: ";
 	/**
-	 * A clan's pet broadcast, which names the pet even when it is a repeat:
+	 * A clan's pet broadcast, which names the pet even when it is a repeat or one the
+	 * player already owns ("would have been followed"):
 	 * "Name has a funny feeling like he's being followed: Yami at 640 victories."
 	 */
 	private static final Pattern PET_BROADCAST = Pattern.compile(
-		"^(.+?) (?:has a funny feeling like (?:he's|she's|they're|they are) being followed"
+		"^(.+?) (?:has a funny feeling like (?:he's|she's|they're|they are|he|she|they) (?:being|would have been) followed"
 			+ "|feels something weird sneaking into (?:his|her|their) backpack): (.+?)(?: at [\\d,]+ .*)?\\.?$");
 	/** How many ticks a pet waits for its name before it is counted unnamed. */
 	private static final int PET_NAME_WAIT_TICKS = 2;
