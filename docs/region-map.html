@@ -52,10 +52,9 @@
 <div id="about" class="panel">
   Hover for the map region id, click to copy it. Drag to pan, scroll to zoom. Dungeons
   and instances sit north of the surface at their real coordinates. The search box finds
-  the wiki-rendered maps and any wiki place name. Tiles come straight from the
-  <a href="https://maps.runescape.wiki" target="_blank" rel="noopener">OSRS Wiki's map server</a>,
-  which keeps up with new game content. The newest published version is found
-  automatically. Paste ids into a Chat goal's <i>Map region ids</i> field in Bingo Forge.
+  wiki maps and place names. Map tiles come from the
+  <a href="https://maps.runescape.wiki" target="_blank" rel="noopener">OSRS Wiki's map server</a>.
+  Paste ids into a Chat goal's <i>Map region ids</i> field in Bingo Forge.
 </div>
 <div id="copied">Region id copied</div>
 <script>
@@ -192,8 +191,8 @@ function tileFor(url) {
         tileFails++;
         if (tileWins === 0 && tileFails >= 12) {
           readout.innerHTML = "<b>This viewer blocks the map tiles.</b><br>"
-            + "<span class='muted'>Open the page in a normal browser tab -<br>"
-            + "the map images come from maps.runescape.wiki.</span>";
+            + "<span class='muted'>Open the page in a normal browser tab.<br>"
+            + "The map images come from maps.runescape.wiki.</span>";
         }
       }
       pumpTiles();
@@ -413,8 +412,8 @@ async function openWikiPage(title) {
     const j = await r.json();
     const spots = mapCoordCandidates(j.parse.wikitext["*"]);
     if (!spots.length) {
-      resultsBox.innerHTML = "<div class='src'>that page has no map coordinates - "
-        + "grouped caves render inside their regional Underground map</div>";
+      resultsBox.innerHTML = "<div class='src'>that page has no map coordinates. "
+        + "Grouped caves are on their region's Underground map.</div>";
       return;
     }
     jumpTo(spots[0].x, spots[0].y, title);

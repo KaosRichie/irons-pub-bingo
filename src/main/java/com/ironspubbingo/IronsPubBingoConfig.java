@@ -34,7 +34,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "lineDisplay",
 		name = "Line style",
-		description = "How completed bingo lines are shown: strokes drawn through the tiles (Lines), or tile borders (Highlight)",
+		description = "Draw completed lines through the tiles (Lines) or as tile borders (Highlight)",
 		section = generalSection,
 		position = 12
 	)
@@ -46,7 +46,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "lineColor",
 		name = "Line color",
-		description = "Color of completed bingo lines: the strokes in Lines style, the tile borders in Highlight style",
+		description = "Color of completed bingo lines",
 		section = generalSection,
 		position = 13
 	)
@@ -58,7 +58,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "progressFill",
 		name = "Fill tiles by progress",
-		description = "Fill partially completed tiles from bottom to top according to their progress",
+		description = "Fill tiles from the bottom up as they progress",
 		section = generalSection,
 		position = 14
 	)
@@ -70,7 +70,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "popOutAlwaysOnTop",
 		name = "Pop-out window always on top",
-		description = "Keep the pop-out board window above the RuneLite window (and other windows)",
+		description = "Keep the pop-out board window above other windows",
 		section = generalSection,
 		position = 15
 	)
@@ -82,7 +82,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "showTileNumbers",
 		name = "Tile numbers in tile view",
-		description = "Prefix the selected tile's header with its board position - turn off if your labels start with numbers",
+		description = "Show the tile's number in the tile view",
 		section = generalSection,
 		position = 16
 	)
@@ -113,7 +113,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "overlayHideCompletedPins",
 		name = "Hide completed pinned tiles",
-		description = "Leave completed tiles out of the pinned tiles box. They stay pinned and show again if they are no longer complete.",
+		description = "Leave completed tiles out of the pinned tiles box. They stay pinned.",
 		section = overlaySection,
 		position = 1
 	)
@@ -169,7 +169,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "progressChatMessages",
 		name = "Progress chat messages",
-		description = "Show a chat message when a bingo goal progresses (master switch for the toggles below)",
+		description = "Show a chat message when a bingo goal progresses. Turns off all the toggles below",
 		section = progressMsgSection,
 		position = 0
 	)
@@ -244,8 +244,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "teamCode",
 		name = "Team code",
-		description = "Used only while the team store is off. Everyone with the same code shares progress"
-			+ " through RuneLite's party service. With the store on, Choose team in the panel picks your team",
+		description = "Used only while the team store is off. Everyone with the same code shares progress through a RuneLite party",
 		section = customTeamSection,
 		position = 31
 	)
@@ -287,9 +286,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "teamStoreEnabled",
 		name = "Use team store",
-		description = "Sync team progress through the event's team store (URL below) and pick"
-			+ " your team with the panel's Choose team button. Off = custom-code team, synced"
-			+ " over the party service only",
+		description = "Sync progress through the event's team store. Pick your team with Choose team in the panel",
 		section = teamStoreSection,
 		position = 40,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers"
@@ -302,8 +299,7 @@ public interface IronsPubBingoConfig extends Config
 	@ConfigItem(
 		keyName = "teamSyncUrl",
 		name = "Team store URL",
-		description = "The event's progress store URL from your bingo host, so progress also syncs"
-			+ " when teammates are not online at the same time (see the plugin's full Readme to set one up)",
+		description = "The team store URL from your bingo host",
 		section = teamStoreSection,
 		position = 41,
 		secret = true

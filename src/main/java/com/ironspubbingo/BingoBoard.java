@@ -102,7 +102,7 @@ public class BingoBoard
 			}
 			catch (DateTimeParseException e)
 			{
-				return "Could not read 'start' (" + start + ") - use e.g. 2026-08-29T18:00Z";
+				return "Could not read 'start' (" + start + "). Use a date like 2026-08-29T18:00Z";
 			}
 		}
 		if (end != null && !end.trim().isEmpty())
@@ -113,7 +113,7 @@ public class BingoBoard
 			}
 			catch (DateTimeParseException e)
 			{
-				return "Could not read 'end' (" + end + ") - use e.g. 2026-09-07T20:00Z";
+				return "Could not read 'end' (" + end + "). Use a date like 2026-09-07T20:00Z";
 			}
 		}
 		if (startTime != null && endTime != null && !endTime.isAfter(startTime))

@@ -54,7 +54,7 @@ export default {
 			await request.text();
 			if (!authorized(request, env))
 			{
-				return json({ error: 'Wrong admin token' }, 401);
+				return json({ error: 'Wrong admin password' }, 401);
 			}
 			const list = await registry(env).fetch('https://registry/list');
 			return json({ result: await list.json() });
@@ -162,7 +162,7 @@ export class BingoEvent
 				const text = await request.text();
 				if (!authorized(request, this.env))
 				{
-					return json({ error: 'Wrong admin token' }, 401);
+					return json({ error: 'Wrong admin password' }, 401);
 				}
 				return await this.admin(JSON.parse(text || '{}'));
 			}

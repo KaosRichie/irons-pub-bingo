@@ -158,9 +158,7 @@ final class BingoHelp
 			legend(lineColor)
 				+ ul("Click a tile to see its goals, who contributed what, and its actions.",
 					"Hover a tile for a quick summary.",
-					"The window button next to the title opens a large board you can resize.",
-					"A completed tile shows the team's progress as it stood when it completed. "
-						+ "Tracking carries on in the background.")));
+					"The window button next to the title opens a large board you can resize.")));
 		pages.put("Team sync", page("Team sync",
 			p("Progress adds up across the team: counts add together, and a list of different items "
 				+ "counts each item once.")
@@ -170,7 +168,7 @@ final class BingoHelp
 						+ "The Store button shows its status. Click it to pause or resume.")
 				+ h("Good to know")
 				+ ul("<b>Sync now</b> syncs right away. <b>Portal</b> opens the team's page in your browser.",
-					"Each team keeps its own progress. Switching teams parks yours, switching back restores it.")));
+					"Each team keeps its own progress. If you switch teams and come back, your progress returns.")));
 		pages.put("Credit requests", page("Credit requests",
 			p("The tracker can miss progress, for example on mobile or while the client was closed. "
 				+ "Requests need the team store.")
@@ -190,8 +188,9 @@ final class BingoHelp
 		pages.put("Tips", page("Tips",
 			ul("Keep the built-in <b>Loot Tracker</b> plugin enabled. Drops, chests and raid loot come from it.",
 				"Only loot the Loot Tracker sees counts. Most thieving chests don't show up there.",
-				"Pets are named from your clan's pet broadcast, or for a first-time pet from the game setting "
-					+ "<b>Collection log - New addition notification</b>. Tiles for a specific pet need one of the two.",
+				"Pets are named from your own pet broadcast in clan chat, or for a first-time pet from the game setting "
+					+ "<b>Collection log - New addition notification</b>. Tiles for a specific pet need one of the two. "
+					+ "Duplicate pet drops count too.",
 				"XP and kill count goals count from the event start, or from when you import the board if that's later.",
 				"A newer board shows as a notice in the panel. "
 					+ "Reimport it from the store in one click.",

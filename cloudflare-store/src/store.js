@@ -177,7 +177,7 @@ export class EventStore
 			{
 				return { board, left: withRows };
 			}
-			const error = !teams.length ? 'No teams yet - the host has not added any'
+			const error = !teams.length ? 'No teams yet - ask your host to add them'
 				: team === 'solo' ? 'No team code - use Choose team or ask your host'
 					: 'Unknown team code - use Choose team or ask your host';
 			return { board, error, teams };
@@ -346,7 +346,7 @@ export class EventStore
 		const code = this.config.boardCode;
 		if (!code)
 		{
-			return { error: 'The host has not saved a board code yet - use Import board with the code instead.' };
+			return { error: 'No board code on the store yet - paste the code from your host' };
 		}
 		const parsed = parseJson(code, null);
 		return parsed && parsed.tiles ? { boardJson: code }
@@ -850,7 +850,7 @@ export class EventStore
 		const board = String(payload.board || '');
 		if (!this.metaFor(board))
 		{
-			throw new Error('Pick a board first.');
+			throw new Error('This team has no board yet.');
 		}
 		if (!this.isTeamMember(board, payload.player))
 		{
@@ -866,10 +866,9 @@ export class EventStore
 		}, true);
 		if (!id)
 		{
-			throw new Error('Fill in the tile and an amount (or tick "complete"). '
-				+ 'An identical request may also already be waiting.');
+			throw new Error('Fill in an amount, or pick the whole tile. The same request may already be waiting.');
 		}
-		return 'Request sent - an admin will review it.';
+		return 'Request sent. An admin will review it.';
 	}
 
 	/**
@@ -941,7 +940,7 @@ export class EventStore
 		}
 		else
 		{
-			content = ':white_check_mark: Credit approved: ' + requestSummary(item, scope);
+			content = ':white_check_mark: Credit approved for ' + requestSummary(item, scope);
 		}
 		this.post(team.webhook, content + noteAndProof(item));
 	}
@@ -951,7 +950,7 @@ export class EventStore
 		const team = this.teamInfo(item.team);
 		if (team && DISCORD_WEBHOOK.test(team.webhook || ''))
 		{
-			this.post(team.webhook, ':no_entry: Credit approval withdrawn: ' + requestSummary(item, scope) + noteAndProof(item));
+			this.post(team.webhook, ':no_entry: Credit withdrawn for ' + requestSummary(item, scope) + noteAndProof(item));
 		}
 	}
 
@@ -979,7 +978,7 @@ export class EventStore
 			}
 			if (rows.some(r => r.code === code))
 			{
-				return { error: 'Two teams use the code "' + code + '". Codes must be unique.' };
+				return { error: 'Two teams use the code "' + code + '".' };
 			}
 			rows.push({ code, name: String(team.name || '').trim().slice(0, 60), webhook: String(team.webhook || '').trim() });
 		}
@@ -1018,7 +1017,7 @@ export class EventStore
 		const parsed = parseJson(code, null);
 		if (!parsed || !parsed.tiles)
 		{
-			return 'That board code does not parse - re-export it from Bingo Forge.';
+			return 'That board code is not valid. Export it again from Bingo Forge.';
 		}
 		const hash = sha256Hex(code);
 		this.config.boardCode = code;
@@ -1037,11 +1036,11 @@ export class EventStore
 		this.seedMetas(parsed, id);
 		if (unchanged)
 		{
-			return 'Board code unchanged - nothing to do.';
+			return 'Board code unchanged.';
 		}
 		if (!previous || !previous.sigs || !id || previous.id !== id)
 		{
-			return 'Board recorded. Nothing reset - a new board starts fresh anyway.';
+			return 'Board recorded. It is a new board, so nothing was reset.';
 		}
 		const changed = [];
 		for (let i = 0; i < sigs.length && i < previous.sigs.length; i++)
@@ -1055,11 +1054,11 @@ export class EventStore
 		{
 			return 'Board updated. No tile changed what it tracks, so all progress is kept.';
 		}
-		const rows = this.wipeTiles(board => board.startsWith('id_' + id + '_')
+		this.wipeTiles(board => board.startsWith('id_' + id + '_')
 			// "id_spring_" must not also match board "spring_2": a team code has no underscore.
 			&& board.slice(('id_' + id + '_').length).indexOf('_') < 0, changed);
-		return 'Board updated. Reset ' + changed.length + ' re-tracked tile(s) on ' + rows + ' member row(s):\n'
-			+ changed.map(i => (i + 1) + ' - ' + (parsed.tiles[i].label || '')).join('\n');
+		return 'Board updated. These tiles now track something else, so their progress was reset:\n'
+			+ changed.map(i => (i + 1) + '. ' + (parsed.tiles[i].label || '')).join('\n');
 	}
 
 	/** Whether the hash is an earlier saved code of the current board. */
@@ -1367,10 +1366,10 @@ function creditText(item, scope)
 	return what + ' on goal ' + goal + (label ? ' (' + label + ')' : '');
 }
 
-/** "**Alice** - 10 kills (+40 on goal 1 (Kills: Man))". */
+/** "**Alice**: 10 kills, +40 on goal 1 (Kills: Man)". */
 function requestSummary(item, scope)
 {
-	return '**' + item.player + '** - ' + tileLabel(item, scope) + ' (' + creditText(item, scope) + ')';
+	return '**' + item.player + '**: ' + tileLabel(item, scope) + ', ' + creditText(item, scope);
 }
 
 function noteAndProof(item)

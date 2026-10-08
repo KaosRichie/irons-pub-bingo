@@ -86,7 +86,7 @@ class BingoTileDetail extends JPanel
 		}
 
 		BingoTile tile = board.getTiles().get(selectedTile);
-		// A completed tile shows the snapshot from the moment it completed.
+		// Merged progress is live, a completed tile included.
 		TileProgress merged = plugin.mergedProgressFor(selectedTile);
 		TileProgress own = plugin.progressFor(selectedTile);
 		boolean teamView = plugin.hasTeamData();
@@ -222,7 +222,7 @@ class BingoTileDetail extends JPanel
 						Math.min(1f, share / (float) target), widthBasis);
 					if (verified)
 					{
-						memberBar.setToolTipText("Credited by an admin (verified progress)");
+						memberBar.setToolTipText("Credited by an admin");
 					}
 					bars.add(memberBar);
 				}
@@ -366,8 +366,8 @@ class BingoTileDetail extends JPanel
 		{
 			tick = smallButton(ownTicked ? "Remove manual tick" : "Tick off tile (manual)");
 			tick.setToolTipText(ownTicked
-				? "Un-tick this tile (your manual completion is removed team-wide)"
-				: "Mark this tile completed by hand (for tiles the tracker can't count)");
+				? "Remove your tick for the whole team"
+				: "Mark this tile complete by hand");
 			tick.addActionListener(e -> plugin.setManualComplete(tileIndex, !ownTicked));
 		}
 
@@ -461,7 +461,7 @@ class BingoTileDetail extends JPanel
 		form.add(complete);
 		form.add(new JLabel("Note for the admin (e.g. laps 0 to 40):"));
 		form.add(note);
-		form.add(new JLabel("Proof link(s) - screenshots on Discord/Imgur:"));
+		form.add(new JLabel("Proof links (Discord or Imgur screenshots):"));
 		form.add(links);
 		form.add(proofShot);
 
@@ -534,12 +534,12 @@ class BingoTileDetail extends JPanel
 				rebuild();
 				revalidate();
 				repaint();
-				String message = ok ? "Request sent - a team admin will review it."
+				String message = ok ? "Request sent. A team admin will review it."
 					: "Could not send the request: " + error;
 				if (ok && screenshotError != null)
 				{
 					message += "\nThe screenshot didn't attach (" + screenshotError
-						+ ") - add a proof link yourself if the admin needs one.";
+						+ "). Add a proof link yourself if the admin needs one.";
 				}
 				JOptionPane.showMessageDialog(this, message, "Irons Pub Bingo",
 					ok && screenshotError == null ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
@@ -613,7 +613,7 @@ class BingoTileDetail extends JPanel
 		}
 		if (!segments.isEmpty())
 		{
-			tip.append(tip.length() > 6 ? "<br>" : "").append("Click to show contributors");
+			tip.append(tip.length() > 6 ? "<br>" : "").append("Click to show or hide contributors");
 			for (GoalBar.Segment segment : segments)
 			{
 				tip.append("<br>").append(segment.name).append(": ").append(formatCount(segment.amount));

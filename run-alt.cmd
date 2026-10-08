@@ -3,9 +3,9 @@ rem Launches a SECOND RuneLite dev client with its own private .runelite home (a
 rem so a second Jagex account can run alongside the run.cmd client for bingo team testing.
 rem
 rem First time: put the alt account's credentials.properties in alt-home\.runelite\ (see "Developing" in docs\full-readme.md).
-rem The jar is copied before launching: rebuilding irons-pub-bingo-all.jar while this client runs
-rem would otherwise break its lazy class loading and crash it (NoClassDefFoundError).
 rem It builds the jar first, so it always runs the current code.
+rem It then runs a copy of the jar. Rebuilding irons-pub-bingo-all.jar while this client runs
+rem would otherwise crash it (NoClassDefFoundError).
 set "JAVA_HOME=C:\Program Files\Java\jdk-17.0.1"
 cd /d "%~dp0"
 call "%~dp0gradlew.bat" shadowJar -q || exit /b 1

@@ -16,8 +16,8 @@ counts, pets, XP, agility laps, loot value and chat messages.
 5. Play. Tiles turn amber on progress and green when complete.
 
 The **Get started** card in the panel always shows the next step. If your event has no
-store, use **Import board** to paste the board code and put your team code in the
-settings. The **?** button in the panel opens the in-game help.
+store, use **Import board** to paste the board code and enter your team code in the
+**Team code** setting. The **?** button in the panel opens the in-game help.
 
 ## Tiles and credit requests
 
@@ -36,16 +36,17 @@ who have synced to that team, so sync once with the plugin first.
 ## Good to know
 
 - Keep the built-in **Loot Tracker** enabled. Drops, chests and raid loot come from it.
-- Pets are named from your clan's pet broadcast. Without one, the game setting
+- Pets are named from your own clan pet broadcast. Without one, the game setting
   **Collection log - New addition notification** names a first-time pet. Tiles for a
-  specific pet need one of the two. Any-pet tiles count either way.
+  specific pet need one of the two. Any-pet tiles count either way. Duplicate pet drops
+  count too.
 - XP and kill count goals count from the event start, or from when you import the board
   if that's later.
 - When your host publishes a newer board, the panel says so. Reimport it from the store.
 - The in-game overlay can show the event countdown, store and live sync problems,
   and tiles you pinned. Right-click a tile on the board to pin it. Each part has its own
   switch under **In-game Overlay** in the settings.
-- Each team keeps its own progress. Switching teams parks it, switching back restores it.
+- Each team keeps its own progress. If you switch teams and come back, your progress returns.
 - Completed lines are drawn as red strokes through their tiles. **Line style** set to
   **Highlight** outlines the tiles instead. **Line color** picks the color for both.
 - Discord: set a **Webhook URL** and turn on **Post completions to Discord** to post your
@@ -103,7 +104,8 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 - Changing what a tile tracks resets that tile's progress. Relabeling it or changing its
   target keeps it. The store resets its stored progress for that tile when you press
   **Save and apply** on the admin page.
-- `start`/`end`: outside this window automatic tracking doesn't count. Manual ticks do.
+- `start`/`end`: automatic tracking only counts inside this window. Admin credit and manual
+  ticks count at any time.
 - `diagonals`: set `false` and only rows and columns count as lines.
 - `icon`: an item name, or a numeric item id for untradeables.
 - Any goal except `XP` and `MANUAL` takes `"screenshot": true`. Each step of its progress
@@ -118,11 +120,11 @@ A tile: `{"label", "description"?, "icon"?, "points"?, "mode": "ALL"|"ANY", "goa
 | `KC` | kill count of bosses that print one | `npcs`, `count`? |
 | `KILL` | kills of any NPC, a shared kill counts once | `npcs`, `count`? |
 | `PET` | pets received | `pets`?, `count`? |
-| `XP` | XP since import | `skill`, `amount` |
+| `XP` | XP gained during the event | `skill`, `amount` |
 | `LAP` | agility course laps | `course`, `count`? |
 | `VALUE` | one loot pile worth X gp | `amount`, `sources`?, `loot`?, `count`? |
 | `CHAT` | a game message matching a regex | `pattern`, `regions`?, `count`? |
-| `MANUAL` | nothing, players tick it by hand | none |
+| `MANUAL` | nothing. Players request admin credit, or tick it by hand without a store | none |
 
 - Fields marked `?` are optional. `count` defaults to 1.
 - Item and NPC names are case-insensitive globs (`Ancient page*`).

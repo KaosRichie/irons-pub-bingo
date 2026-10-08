@@ -256,7 +256,7 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     <input type="text" id="boardName" placeholder="Summer Bingo 2026">
   </div>
   <div class="field">
-    <label for="boardId" title="Keep this the same when editing a live board - players keep their progress">Board ID</label>
+    <label for="boardId" title="Keep this the same when you edit a live board. Players then keep their progress.">Board ID</label>
     <input type="text" id="boardId" placeholder="summer-bingo" style="width:130px">
   </div>
   <div class="field">
@@ -305,7 +305,7 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
     <div id="pvHead" class="pvhead" style="display:none"></div>
     <div id="grid"></div>
     <p class="hint" id="boardHint">Click a tile to edit it, right-click it to copy, paste, duplicate or clear, or drag one onto another to swap them. Tiles marked <span style="color:var(--red)">!</span> have problems that would stop the plugin from loading the board.</p>
-    <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID: tile positions carry the players' progress, so only swap tiles around <b>before</b> the event goes live.</p>
+    <p class="hint" id="reorderHint" style="color:var(--gold); display:none">This board has an ID, so progress is tied to tile positions. Only swap tiles <b>before</b> the event starts.</p>
   </section>
   <aside class="pane" id="editorPane">
     <div class="tilehead">
@@ -321,24 +321,24 @@ dialog .copied { color: var(--green); font-size: 13.5px; margin-right: auto; }
   <summary>Goal type cheat sheet</summary>
   <div class="sheet">
     <p>Item, source, NPC and pet names are case-insensitive and <code>*</code> matches anything. <code>Ancient page*</code> matches all four pages. Every goal has a <b>count</b> (how many times it must happen).</p>
-    <p><b>Drop</b> and <b>Loot value</b> goals see exactly what RuneLite's Loot Tracker sees: if loot doesn't show up there, it can't count here either. Kills, pickpockets, clue caskets and the big reward chests are all tracked. Some containers aren't, like most thieving chests. Check the Loot Tracker first when planning an unusual tile. A <b>Chat message</b> goal (with map regions) often covers what it misses.</p>
+    <p><b>Drop</b> and <b>Loot value</b> goals only count what RuneLite's Loot Tracker sees. Kills, pickpockets, clue caskets and the big reward chests are tracked. Most thieving chests are not. Check the Loot Tracker first when planning an unusual tile. A <b>Chat message</b> goal (with map regions) often covers what it misses.</p>
     <div class="tablewrap"><table>
       <tr><th>Drop</th><td>Specific item drops, optionally only from certain monsters/chests ("5x Ancient pages from Mithril dragons"). Tick <i>distinct</i> for "X different items from this list". Pickpocketed loot counts too, with the NPC as its source. Untick <i>loot from</i> kinds to count only kills, only pickpockets, or exclude chest loot. For items that share a name with something else (the moon key halves vs the crystal ones), list exact <i>item ids</i>. Use the name the item has when it drops. Some drop in another form, like <i>Giantsoul amulet (uncharged)</i>, and a * matches every form: <code>Giantsoul amulet*</code>.</td></tr>
       <tr><th>Raid purple</th><td>Uniques from the chosen raids' reward chests ("3x ToA purples"). Tick <i>distinct</i> to count different uniques once each ("3 different ToB uniques").</td></tr>
-      <tr><th>Boss kill count</th><td>Kill count gained since the player imported the board, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Kills the player had before importing don't count.</td></tr>
+      <tr><th>Boss kill count</th><td>Kill count gained during the event, read from kill count chat messages ("100 Zulrah kills"). Bosses and activities only. Counts from the event start, or from when the player imports the board if that's later.</td></tr>
       <tr><th>NPC kills</th><td>Kills of any monster, no kill count message needed ("kill 500 Men"). A kill counts for whoever the game awards the loot to (most damage, ironman rules), so an NPC two teammates fight is never counted twice. Pick NPCs that drop <i>something</i> (even bones). The rare monsters with empty drop tables can't be counted.</td></tr>
-      <tr><th>Pet</th><td>Any pet, or specific pets. Pets are named from the clan's pet broadcast, or for a first-time pet from the collection log chat notification. Specific pets need one of the two.</td></tr>
-      <tr><th>XP</th><td>XP gained in a skill, counted from the moment the player imports the board.</td></tr>
-      <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source. They're tracked from the player's inventory, which is cheatable (e.g. dropping marks and relogging), so run mark tiles on trust or require before/after inventory screenshots as proof.</td></tr>
+      <tr><th>Pet</th><td>Any pet, or specific pets. Duplicate pet drops count too. Pets are named from the player's own clan pet broadcast, or for a first-time pet from the collection log chat notification. Specific pets need one of the two.</td></tr>
+      <tr><th>XP</th><td>XP gained in a skill, counted from the event start, or from when the player imports the board if that's later.</td></tr>
+      <tr><th>Course laps</th><td>Rooftop/agility course laps ("100 Canifis laps"), detected the same way RuneLite's lap counter works. Marks of grace work as a <b>Drop</b> goal with item "Mark of grace" and (optionally) the course name as source. They are read from the player's inventory, so they can be cheated. Run mark tiles on trust, or ask for before and after screenshots.</td></tr>
       <tr><th>Loot value</th><td>A single loot pile worth at least X gp at GE prices ("a 4m+ drop").</td></tr>
       <tr><th>Chat message</th><td>A game message matching a regex: speed times, delve levels, quest completions. Example for sub-7 Corrupted Gauntlet: <code>Corrupted challenge duration: [0-6]:[0-5][0-9]</code>. The plugin turns the pattern into readable text for the progress bar. Set a <b>progress bar label</b> if you want different wording. Add <i>map region ids</i> to only count the message in certain places. The moon key chest prints the same message as a crystal key, but only one happens in Neypotzli.</td></tr>
-      <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players tick the tile off by hand.</td></tr>
+      <tr><th>Manual</th><td>Not auto-trackable (POV recordings, community service). Players request admin credit, or tick the tile off by hand on a team without a store.</td></tr>
     </table></div>
-    <p>A tile with several goals completes when <b>all</b> of them are done, or switch it to <b>any</b> for "X or Y" tiles.</p>
-    <p><b>Board ID &amp; version:</b> the ID ties progress to the board. Keep it the same when fixing a live board and players keep everything (edit tiles in place, don't insert, remove or reorder them). Bump the version so players can see they have the latest. Changing the ID (or having none) makes edits reset progress. Changing what a tile tracks resets that one tile.</p>
+    <p>A tile with several goals completes when <b>all</b> of them are done. Switch it to <b>any</b> for "X or Y" tiles.</p>
+    <p><b>Board ID &amp; version:</b> the ID ties progress to the board. Keep it the same when you fix a live board and players keep their progress. Edit tiles in place. Don't insert, remove or reorder them. Bump the version so players see there is a newer board. Changing the ID, or having none, makes edits reset progress. Changing what a tile tracks resets that one tile.</p>
     <p><b>Event window:</b> set start/end times (entered in your timezone, stored as UTC) and the plugin only counts progress inside them. Players can import the board early without pre-event drops, XP or kills leaking in.</p>
-    <p><b>Points:</b> give tiles point values and the plugin shows the team's running total. <b>Line pts</b> pay per completed row/column/diagonal and <b>blackout pts</b> for finishing the whole board. Both count toward the team total. For per-player contribution details, the team store's board view and portal list who contributed what to every goal.</p>
-    <p><b>Teams:</b> players who connect with the same team code combine progress. Counts add up across members ("2 uniques" can be one each from two people), "distinct" item lists count each different item once per team, and XP/kill counts sum. Give each team its own code and (optionally) its own Discord webhook for completion screenshots.</p>
+    <p><b>Points:</b> give tiles point values and the plugin shows the team's running total. <b>Line pts</b> pay per completed row/column/diagonal and <b>blackout pts</b> for finishing the whole board. Both count toward the team total. The store's admin page and player portal show who contributed what.</p>
+    <p><b>Teams:</b> with a team store, players pick their team with <b>Choose team</b>. Without a store, players who enter the same team code share progress. Counts add up across members ("2 uniques" can be one each from two people). "Distinct" item lists count each different item once per team. XP and kill counts add up. On the store's admin page each team can have a Discord webhook, where approved credit is announced.</p>
   </div>
 </details>
 
@@ -475,7 +475,7 @@ function templatePicker(onPick, onClose) {
   const hint = document.createElement("div");
   hint.className = "fieldhint";
   hint.style.marginTop = "8px";
-  hint.textContent = "Every template can be edited afterwards: change the boss, the item, the count.";
+  hint.textContent = "You can edit every template afterwards.";
   box.appendChild(hint);
   return box;
 }
@@ -1321,7 +1321,7 @@ function renderEditor() {
   if (!tile.goals.length) {
     const p = document.createElement("p");
     p.className = "hint";
-    p.textContent = "No goals: this is a manual tile, players tick it off by hand.";
+    p.textContent = "No goals, so this is a manual tile. Players request admin credit, or tick it off by hand on a team without a store.";
     editor.appendChild(p);
   }
 
@@ -1361,7 +1361,7 @@ function renderGoal(tile, goal, gi) {
     textInput(goal.name, v => goal.name = v, goal.type === "CHAT" ? "Sub-7 Corrupted Gauntlet" : "auto"),
     "Leave empty to generate one from the settings below."));
 
-  const commaHint = "Comma-separated; * matches anything.";
+  const commaHint = "Separate with commas. * matches anything.";
   function lootMaskField(goal, gi) {
     const lootRow = document.createElement("div");
     lootRow.className = "row";
@@ -1381,7 +1381,7 @@ function renderGoal(tile, goal, gi) {
       lootRow.appendChild(wrap);
     });
     return field("Loot from", lootRow,
-      "Chests & other covers caskets, events and everything not from a kill.");
+      "Chests & other covers chests, caskets, events and anything that is not a kill or pickpocket.");
   }
   function checkbox(id, label, checked, onChange) {
     const check = document.createElement("div");
@@ -1566,7 +1566,7 @@ function renderGoal(tile, goal, gi) {
     const p = document.createElement("p");
     p.className = "hint";
     p.style.margin = "0";
-    p.textContent = "Not auto-tracked. Players tick the tile off by hand.";
+    p.textContent = "Not auto-tracked. Players request admin credit, or tick the tile off by hand on a team without a store.";
     box.appendChild(p);
   }
   if (goal.type !== "MANUAL" && goal.type !== "XP") {

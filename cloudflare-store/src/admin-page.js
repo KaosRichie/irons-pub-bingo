@@ -78,7 +78,7 @@ var nav=document.getElementById('nav');NAV.forEach(function(n){var b=document.cr
 b.innerHTML='<span class="ic">'+n[1]+'</span>'+n[2]+(n[0]==='requests'&&pending?'<span class="badge">'+pending+'</span>':'');b.onclick=function(){view=n[0];render();};nav.appendChild(b);});
 var vw=document.getElementById('view');({requests:renderRequests,board:renderBoards,credit:renderCredit,teams:renderTeams,code:renderCode,settings:renderSettings,usage:renderUsage})[view](vw);
 if(data.isNew){var nb=document.createElement('section');nb.className='card';nb.style.borderColor='var(--gold3)';
-nb.innerHTML='<h2 style="color:var(--gold2)">New event</h2><p class="muted" style="margin:0">Nothing is saved for <b>'+esc(eventCode)+'</b> yet. Its portal and store URL show &ldquo;not found&rdquo; until you save something here. Add the teams or paste the board code to create it.</p>';
+nb.innerHTML='<h2 style="color:var(--gold2)">New event</h2><p class="muted" style="margin:0">Nothing is saved for <b>'+esc(eventCode)+'</b> yet. Its portal and store URL stay empty until you add teams or save the board code.</p>';
 vw.insertBefore(nb,vw.firstChild);}}
 /* ---------------- requests */
 function renderRequests(el){var counts={};data.requests.forEach(function(r){counts[r.status]=(counts[r.status]||0)+1;});
@@ -92,7 +92,7 @@ document.getElementById('rs').oninput=function(){reqSearch=this.value;renderRequ
 renderRequestList();}
 function renderRequestList(){var el=document.getElementById('rl');var list=data.requests.filter(function(r){return (reqFilter==='All'||r.status===reqFilter)&&(!reqTeam||r.team===reqTeam)
 &&(!reqSearch||(r.player+' '+r.tileLabel+' '+(r.goalLabel||'')+' '+r.note).toLowerCase().indexOf(reqSearch.toLowerCase())>=0);});
-if(!list.length){el.innerHTML='<div class="empty">'+(reqFilter==='Pending'?'Nothing waiting for review. Nice.':'No requests match.')+'</div>';return;}
+if(!list.length){el.innerHTML='<div class="empty">'+(reqFilter==='Pending'?'Nothing waiting for review.':'No requests match.')+'</div>';return;}
 el.innerHTML=list.map(function(r){var credit=r.complete?'Whole tile complete':'+'+fmt(r.add)+(r.goalLabel?' on '+r.goalLabel:'');
 var st='<span class="chip '+r.status.toLowerCase()+'">'+(r.status==='Done'?'&#10003; Approved':r.status==='Rejected'?'&#10005; Rejected':'&#9203; Pending')+'</span>';
 var acts=r.status==='Pending'?'<button class="btn ok sm" data-id="'+esc(r.id)+'" data-st="Done">&#10003; Approve</button><button class="btn bad sm" data-id="'+esc(r.id)+'" data-st="Rejected">&#10005; Reject</button>'
@@ -129,7 +129,7 @@ document.getElementById('resetTile').onclick=function(){confirmBox('Reset '+tile
 if(ok){api({action:'resetTile',team:t.code,tile:boardTile+1}).then(load).catch(function(e){toast(e.message,'bad');});}});};}
 /* ---------------- credit */
 function renderCredit(el){var teams=data.teams.filter(function(t){return t.board;});var pre=creditPrefill||{};creditPrefill=null;
-el.innerHTML='<section class="card"><h2>Give credit</h2><p class="muted" style="margin-top:-4px">For progress the tracker missed. It counts for the team right away and is announced on the team\\'s Discord.</p>'
+el.innerHTML='<section class="card"><h2>Give credit</h2><p class="muted" style="margin-top:-4px">For progress the tracker missed. It counts right away and posts to the team\\'s Discord if it has a webhook.</p>'
 +(teams.length?'<div class="grid2"><label class="field"><span>Team</span><select id="cTeam">'+teams.map(function(t){return '<option value="'+esc(t.code)+'"'+(t.code===pre.team?' selected':'')+'>'+esc(t.name)+'</option>';}).join('')+'</select></label>'
 +'<label class="field"><span>Player</span><select id="cPlayer"></select><div class="hint">Players who have synced to this team.</div></label></div>'
 +'<label class="field" style="margin-top:12px"><span>Tile</span><select id="cTile"></select></label>'
@@ -176,7 +176,7 @@ return '<div class="ledrow"><div><span class="lbl">Team</span>'+esc(a.team?teamN
 fixClamps(el);
 Array.prototype.forEach.call(el.querySelectorAll('button[data-id]'),function(b){b.onclick=function(){var a=rows.find(function(x){return x.id===b.dataset.id;});
 var what=(a.complete?'Completion of ':((a.add>=0?'+':'')+a.add+' on '))+a.tileLabel+' for '+a.player;
-confirmBox('Remove this credit?',what+' is taken back on everyone\\'s next sync, and the team\\'s Discord is told.'+(a.fromRequest?' This came from an approved request: rejecting the request on the Requests page does the same and shows the player why.':''),'Remove',true)
+confirmBox('Remove this credit?',what+' is taken back on everyone\\'s next sync, and the team\\'s Discord is told.'+(a.fromRequest?' This came from an approved request. Rejecting it on the Requests page does the same and shows the player it was rejected.':''),'Remove',true)
 .then(function(ok){if(ok){api({action:'deleteAdjustment',id:a.id}).then(function(){toast('Credit removed.','ok');load();}).catch(function(e){toast(e.message,'bad');});}});};});}
 /* ---------------- teams */
 function renderTeams(el){var rows=(data.teamRows||[]).map(function(r){return {code:r.code,name:r.name,webhook:r.webhook};});
@@ -214,11 +214,11 @@ confirmBox('Save this board code?','Players on an older code are told to reimpor
 /* ---------------- settings */
 function renderSettings(el){var origin=location.origin;
 el.innerHTML='<section class="card"><h2>Links to share</h2><div class="grid2">'
-+'<label class="field"><span>Plugin store URL, for every player</span><div class="copy"><input readonly value="'+esc(origin+base)+'"><button class="btn sm" data-copy="'+esc(origin+base)+'">Copy</button></div><div class="hint">Plugin settings, Use team store, Store URL.</div></label>'
++'<label class="field"><span>Team store URL, for every player</span><div class="copy"><input readonly value="'+esc(origin+base)+'"><button class="btn sm" data-copy="'+esc(origin+base)+'">Copy</button></div><div class="hint">Turn on Use team store in the plugin settings and paste this into Team store URL.</div></label>'
 +'<label class="field"><span>Player portal</span><div class="copy"><input readonly value="'+esc(origin+base)+'"><button class="btn sm" data-copy="'+esc(origin+base)+'">Copy</button></div><div class="hint">The same address, opened in a browser.</div></label></div></section>'
 +'<section class="card"><h2>Sync settings</h2><label class="field" style="max-width:320px"><span>Seconds between syncs</span><input id="poll" type="number" min="60" max="900" value="'+(data.settings.pollSeconds||120)+'"><div class="hint">60 to 900. Lower is fresher, higher uses fewer requests. Completions always sync at once.</div></label>'
 +'<div class="row" style="margin-top:14px"><button class="btn gold" id="savePoll">Save</button></div></section>'
-+'<section class="card" style="border-color:#6a2f2f"><h2 style="color:#ffb4ac">Danger zone</h2><p class="muted">Clears every team, the board code, all progress, credit and requests for this event. Settings stay. Players keep their own tracked progress.</p>'
++'<section class="card" style="border-color:#6a2f2f"><h2 style="color:#ffb4ac">Danger zone</h2><p class="muted">Clears the teams, board code, synced progress, credit and requests. The sync interval stays. Players keep their own progress in the plugin.</p>'
 +'<div class="row"><input id="wipeCode" placeholder="Type '+esc(eventCode)+' to confirm" style="max-width:280px"><button class="btn bad" id="wipe">Reset event data</button></div></section>';
 Array.prototype.forEach.call(el.querySelectorAll('[data-copy]'),function(b){b.onclick=function(){navigator.clipboard.writeText(b.dataset.copy).then(function(){toast('Copied.','ok');});};});
 document.getElementById('savePoll').onclick=function(){var v=+document.getElementById('poll').value;if(!(v>=60&&v<=900)){toast('Pick a value from 60 to 900 seconds.','bad');return;}
@@ -231,9 +231,9 @@ for(var i=13;i>=0;i--){var d=new Date(Date.now()-i*86400000).toISOString().slice
 var max=Math.max.apply(null,days.map(function(x){return x[1];}).concat([1])),todayCount=u.days[today]||0,pct=todayCount/1000;
 var players=data.teams.reduce(function(s,t){return s+t.members.length;},0),poll=data.settings.pollSeconds||120;
 el.innerHTML='<section class="card"><h2>Requests to this event</h2><div class="grid2"><div><div class="muted small">Today (UTC)</div><div class="big">'+todayCount.toLocaleString()+'</div><div class="small muted">'+pct.toFixed(1)+'% of the free plan\\'s 100,000 a day</div></div>'
-+'<div><div class="muted small">Estimate at full activity</div><div class="big">'+Math.round(players*86400/poll).toLocaleString()+'</div><div class="small muted">'+players+' players syncing every '+poll+' s, all day long ('+(players*86400/poll/1000).toFixed(1)+'% of the limit)</div></div></div>'
++'<div><div class="muted small">Estimate at full activity</div><div class="big">'+Math.round(players*86400/poll).toLocaleString()+'</div><div class="small muted">'+players+' players syncing every '+poll+' s, all day ('+(players*86400/poll/1000).toFixed(1)+'% of the limit)</div></div></div>'
 +'<div class="usage">'+days.map(function(x){return '<div title="'+x[0]+': '+x[1]+' requests" style="height:'+Math.max(2,x[1]/max*100)+'%"><span>'+x[0].slice(5)+'</span></div>';}).join('')+'</div><div style="height:24px"></div>'
-+'<p class="muted small">This counts what reaches this event, which is nearly all of the traffic. The free plan\\'s daily limit covers the whole Cloudflare account, every event included. '
++'<p class="muted small">This counts requests to this event. The free plan\\'s daily limit covers the whole Cloudflare account, every event included. '
 +'Cloudflare\\'s own numbers are under Workers &amp; Pages in the <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noopener">Cloudflare dashboard</a>, on the irons-pub-bingo Worker\\'s Metrics tab. Limits reset at midnight UTC.</p></section>';}
 if(token){load();}else{showLogin();}
 </script></body></html>`;

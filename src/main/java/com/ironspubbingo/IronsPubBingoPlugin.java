@@ -82,7 +82,7 @@ import net.runelite.http.api.loottracker.LootRecordType;
 @Slf4j
 @PluginDescriptor(
 	name = "Irons Pub Bingo",
-	description = "Track clan bingo boards solo or as a team: drops, raid purples, kill counts, pets, XP goals and more",
+	description = "Play your clan's bingo event in RuneLite. Tracks drops, raid purples, kill counts, pets, XP and more, and adds up progress across your team",
 	tags = {"bingo", "clan", "event", "drops", "tracker", "competition", "team"}
 )
 public class IronsPubBingoPlugin extends Plugin
@@ -665,11 +665,11 @@ public class IronsPubBingoPlugin extends Plugin
 		if (board.startTime != null && now < board.startTime.toEpochMilli())
 		{
 			return "Event starts in " + formatCountdown(board.startTime.toEpochMilli() - now)
-				+ " - tracking paused";
+				+ " (tracking paused)";
 		}
 		if (board.endTime != null && now > board.endTime.toEpochMilli())
 		{
-			return "Event ended - tracking stopped";
+			return "Event ended. Tracking stopped.";
 		}
 		if (board.endTime != null)
 		{
@@ -850,7 +850,7 @@ public class IronsPubBingoPlugin extends Plugin
 				if (tile.resolvedIconId <= 0)
 				{
 					notes.add("Tile " + (i + 1) + " \"" + tile.label + "\": icon \"" + tile.iconName
-						+ "\" not found - untradeable items need a numeric item ID");
+						+ "\" not found. Untradeable items need a numeric item ID");
 				}
 			}
 			for (BingoGoal goal : tile.goals)
@@ -860,7 +860,7 @@ public class IronsPubBingoPlugin extends Plugin
 					&& BingoGoal.readablePattern(goal.pattern) == null)
 				{
 					notes.add("Tile " + (i + 1) + " \"" + tile.label
-						+ "\": chat pattern has no readable text - set a progress bar label in the board");
+						+ "\": chat pattern has no readable text. Set a progress bar label in the board");
 				}
 			}
 		}
@@ -882,13 +882,13 @@ public class IronsPubBingoPlugin extends Plugin
 			? "The board changed" : "Board v" + newerBoardVersion + " is out";
 		if (!newerBoardFromStore)
 		{
-			return what + " - ask your host for the new board code";
+			return what + ". Ask your host for the new board code.";
 		}
 		if (!teamStore.isConfigured())
 		{
-			return what + " - reimport it: Setup, Import board, Import from store";
+			return what + ". Ask your host for the new board code.";
 		}
-		return what + " - press Reimport from store below";
+		return what + ". Press Reimport from store below.";
 	}
 
 	/** For Discord posts: says the post came from an outdated board, or null. */
@@ -1545,7 +1545,9 @@ public class IronsPubBingoPlugin extends Plugin
 		String expected = expectedPassphrase();
 		if (expected == null)
 		{
-			return "Set a team code in the Irons Pub Bingo settings first (ask your bingo host).";
+			return config.teamStoreEnabled()
+				? "Pick your team with Choose team first."
+				: "Set a team code in the Irons Pub Bingo settings first (ask your bingo host).";
 		}
 		partyService.changeParty(expected);
 		return null;
@@ -1577,8 +1579,8 @@ public class IronsPubBingoPlugin extends Plugin
 			SwingUtilities.invokeLater(() ->
 			{
 				int answer = JOptionPane.showConfirmDialog(panel,
-					"Each team keeps its own progress, so this board switches to what you\n"
-						+ "have on the new team - nothing you earned here counts for it.\n\n"
+					"Each team keeps its own progress. The board switches to your progress\n"
+						+ "on the new team. What you earned here does not count for it.\n\n"
 						+ "Coming back to this team restores this progress.\n\n"
 						+ "Switch team?",
 					"Irons Pub Bingo", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
@@ -2297,7 +2299,7 @@ public class IronsPubBingoPlugin extends Plugin
 	{
 		if (expectedPassphrase() == null)
 		{
-			return "No team code set";
+			return config.teamStoreEnabled() ? "No team chosen" : "No team code set";
 		}
 		if (!partyService.isInParty())
 		{
@@ -4034,7 +4036,7 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			if (text.length() > 0)
 			{
-				text.append(" - ");
+				text.append(". ");
 			}
 			text.append("BLACKOUT! Every tile complete");
 			if (board.blackoutPointsValue() > 0)
@@ -4138,7 +4140,7 @@ public class IronsPubBingoPlugin extends Plugin
 			if (progressMessagesEnabled(goal.goalType)
 				&& merged <= goal.target() && shown++ < MAX_PROGRESS_MESSAGES_PER_EVENT)
 			{
-				sendHighlightedMessage("Bingo progress - " + tile.label + ": " + merged + "/" + goal.target());
+				sendHighlightedMessage("Bingo progress: " + tile.label + " (" + merged + "/" + goal.target() + ")");
 			}
 			if (goal.wantsScreenshot() && !newlyCompletedIdx.contains(t) && merged <= goal.target())
 			{

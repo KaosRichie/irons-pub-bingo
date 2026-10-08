@@ -149,7 +149,7 @@ class IronsPubBingoPanel extends PluginPanel
 		title.setForeground(Color.WHITE);
 
 		JButton popOutButton = new JButton(popOutIcon());
-		popOutButton.setToolTipText("Open the board in a separate, resizable window");
+		popOutButton.setToolTipText("Open the board in its own window");
 		popOutButton.setFocusable(false);
 		popOutButton.setContentAreaFilled(false);
 		popOutButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
@@ -157,7 +157,7 @@ class IronsPubBingoPanel extends PluginPanel
 		popOutButton.addActionListener(e -> plugin.openBoardWindow());
 
 		JButton helpButton = new JButton(helpIcon());
-		helpButton.setToolTipText("Help: how the board, teams, store and credit requests work");
+		helpButton.setToolTipText("Help");
 		helpButton.setFocusable(false);
 		helpButton.setContentAreaFilled(false);
 		helpButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
@@ -328,7 +328,7 @@ class IronsPubBingoPanel extends PluginPanel
 		clearBoardButton.addActionListener(e -> clearBoard());
 
 		JButton clearTeamButton = smallButton("Clear cached team data");
-		clearTeamButton.setToolTipText("Forget stored teammate progress, e.g. after switching teams");
+		clearTeamButton.setToolTipText("Forget cached teammate progress");
 		clearTeamButton.addActionListener(e ->
 		{
 			int answer = JOptionPane.showConfirmDialog(this,
@@ -382,7 +382,7 @@ class IronsPubBingoPanel extends PluginPanel
 		loggedOutTitle.setForeground(Color.WHITE);
 		loggedOutTitle.setAlignmentX(CENTER_ALIGNMENT);
 		BingoWrappedLabel loggedOutText = new BingoWrappedLabel(
-			"Log in to get started - your board and team are tied to the account you play on.",
+			"Log in to get started. Your board and team belong to the account you play on.",
 			SwingConstants.CENTER, CONTENT_WIDTH - 16);
 		JButton loggedOutReadme = new JButton("Help");
 		loggedOutReadme.addActionListener(e -> showReadme());
@@ -705,7 +705,7 @@ class IronsPubBingoPanel extends PluginPanel
 		{
 			chooseTeamButton.setEnabled(plugin.storeConfigured());
 			chooseTeamButton.setToolTipText(plugin.storeConfigured()
-				? "Pick your team from the list the host set up on the team store"
+				? "Pick your team from the team store"
 				: "Needs the team store: turn on 'Use team store' and set the URL in the settings");
 		}
 		String teamName = plugin.teamDisplayName();
@@ -860,8 +860,8 @@ class IronsPubBingoPanel extends PluginPanel
 		}
 		else if (board == null)
 		{
-			text = "Import the board code from your host. Using a team store? Turn on Use team store "
-				+ "in the settings and paste its URL first, then the board loads in one click.";
+			text = "Import the board code from your host. With a team store, turn on Use team store "
+				+ "in the settings and paste its URL. The board then loads in one click.";
 			button = "Import board";
 			action = this::importBoard;
 		}
@@ -939,7 +939,7 @@ class IronsPubBingoPanel extends PluginPanel
 			{
 				JOptionPane.showMessageDialog(this,
 					"The host hasn't added any teams to the store yet.\n"
-						+ "The store accepts no progress until they do - ask your host.",
+						+ "Progress won't sync until they do. Ask your host.",
 					"Irons Pub Bingo", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}

@@ -68,7 +68,7 @@ document.getElementById('stats').innerHTML='<span><b>'+t.board.done+'</b> / '+t.
 +(t.points!=null?'<span><b>'+t.points+'</b> points</span>':'')+'<span class="muted">'+t.members.length+' member'+(t.members.length===1?'':'s')+'</span>';}
 renderDetail(t);renderStandings();renderRequests(t);}
 function renderDetail(t){var el=document.getElementById('detail');
-if(!t.board||selected<0||!t.board.tiles[selected]){el.innerHTML='<h2>Pick a tile</h2><p class="muted">Select a tile on the board to see its goals, who contributed what, and to ask an admin for credit the tracker missed.</p>'
+if(!t.board||selected<0||!t.board.tiles[selected]){el.innerHTML='<h2>Pick a tile</h2><p class="muted">Select a tile to see its goals and who helped, or to request credit the tracker missed.</p>'
 +(t.members.length?'<h3 style="margin-top:14px">Team members</h3><div class="contrib">'+t.members.map(function(m){return '<span class="chip">'+esc(m)+'</span>';}).join('')+'</div>':'');return;}
 var tile=t.board.tiles[selected];
 el.innerHTML='<div class="row" style="align-items:flex-start;gap:12px">'+(iconUrl(tile.icon)?'<img src="'+esc(iconUrl(tile.icon))+'" alt="" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated" onerror="this.remove()">':'')

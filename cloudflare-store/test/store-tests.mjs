@@ -487,7 +487,7 @@ test('players can fetch the board code', () =>
 	const code = '{"name":"Test board","size":1,"tiles":[{"label":"x"}]}';
 	s.store.saveBoardCode(code);
 	is(s.post({ fetchBoard: true }).boardJson, code, 'the saved code');
-	is(s.store.saveBoardCode('nope'), 'That board code does not parse - re-export it from Bingo Forge.', 'junk is refused');
+	is(s.store.saveBoardCode('nope'), 'That board code is not valid. Export it again from Bingo Forge.', 'junk is refused');
 });
 
 test('saving an updated board code resets tiles whose tracking changed', () =>
@@ -502,7 +502,7 @@ test('saving an updated board code resets tiles whose tracking changed', () =>
 	ok(/Board recorded/.test(s.store.saveBoardCode(v1)), 'the first save records the board');
 	s.post({ board: 'id_ev_red', boardHash: sha(v1), members: { [A]: member('Alice', { 0: tile(1000, [5]), 1: tile(1000, [7]) }) } });
 	const report = s.store.saveBoardCode(v2);
-	ok(/Reset 1 re-tracked tile/.test(report) && report.indexOf('1 - a') >= 0, 'the report names the reset tile: ' + report);
+	ok(/progress was reset/.test(report) && report.indexOf('1. a') >= 0, 'the report names the reset tile: ' + report);
 	ok(/unchanged/.test(s.store.saveBoardCode(v2)), 'saving it again changes nothing');
 	let r = s.post({ board: 'id_ev_red', rejoin: A, boardHash: sha(v2), members: {} });
 	ok(!r.members[A].tiles['0'].goals.length, 'the re-tracked tile was reset');

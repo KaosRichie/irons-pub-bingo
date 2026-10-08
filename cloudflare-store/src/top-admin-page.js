@@ -41,7 +41,7 @@ document.getElementById('signOut').onclick=function(){token='';try{localStorage.
 function render(events){var app=document.getElementById('app');
 app.innerHTML='<div class="view"><section class="card"><h2>New event</h2><p class="muted" style="margin-top:-4px">Pick a code of 3 to 40 lowercase letters, digits and hyphens. The event exists once you save something on its admin page.</p>'
 +'<div class="newrow"><input id="newCode" placeholder="summer-2026" maxlength="40"><button class="btn gold" id="create">Open its admin page</button></div></section>'
-+'<section class="card"><h2>Events</h2><div id="list"></div><p class="small muted" style="margin-top:12px">An event shows here once an admin saves something on it, and its numbers update while it is in use.</p></section></div>';
++'<section class="card"><h2>Events</h2><div id="list"></div><p class="small muted" style="margin-top:12px">Numbers update while an event is in use.</p></section></div>';
 var input=document.getElementById('newCode');var open=function(){var code=input.value.trim().toLowerCase();
 if(!/^[a-z0-9-]{3,40}$/.test(code)){toast('Use 3 to 40 lowercase letters, digits and hyphens.','bad');return;}location.href='/e/'+code+'/admin';};
 document.getElementById('create').onclick=open;input.onkeydown=function(e){if(e.key==='Enter'){open();}};
@@ -57,7 +57,7 @@ list.innerHTML='<div class="evrow head"><div>Event</div><div>Teams</div><div>Pla
 +'<button class="btn sm bad" data-del="'+esc(ev.code)+'">Delete</button></div></div>';}).join('');
 Array.prototype.forEach.call(list.querySelectorAll('button[data-del]'),function(b){b.onclick=function(){askDelete(b.dataset.del);};});}
 function askDelete(code){var root=document.getElementById('modalRoot');
-root.innerHTML='<div class="modal"><div class="card"><h2>Delete '+esc(code)+'?</h2><p style="color:var(--ink2)">This removes the whole event for good: teams, board code, everyone\\'s progress, credit and requests. Players keep their own tracked progress in the plugin.</p>'
+root.innerHTML='<div class="modal"><div class="card"><h2>Delete '+esc(code)+'?</h2><p style="color:var(--ink2)">This deletes the whole event: teams, board code, synced progress, credit and requests. Players keep their own progress in the plugin.</p>'
 +'<label class="field"><span>Type the event code to confirm</span><input id="delCode" placeholder="'+esc(code)+'"></label>'
 +'<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="delNo">Cancel</button><button class="btn bad" id="delYes">Delete event</button></div></div></div>';
 document.getElementById('delNo').onclick=function(){root.innerHTML='';};
