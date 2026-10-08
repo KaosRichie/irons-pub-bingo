@@ -36,8 +36,9 @@ who have synced to that team, so sync once with the plugin first.
 ## Good to know
 
 - Keep the built-in **Loot Tracker** enabled. Drops, chests and raid loot come from it.
-- For pet tiles, turn on the game setting **Collection log - New addition notification**.
-  Specific pet tiles need it, and it names the pet on any-pet tiles.
+- Pets are named from your clan's pet broadcast. Without one, the game setting
+  **Collection log - New addition notification** names a first-time pet. Tiles for a
+  specific pet need one of the two. Any-pet tiles count either way.
 - XP and kill count goals count from the event start, or from when you import the board
   if that's later.
 - When your host publishes a newer board, the panel says so. Reimport it from the store.

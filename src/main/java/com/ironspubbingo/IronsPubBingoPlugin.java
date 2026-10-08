@@ -42,6 +42,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.Skill;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.gameval.InventoryID;
@@ -93,6 +94,15 @@ public class IronsPubBingoPlugin extends Plugin
 		"you feel something weird sneaking into your backpack",
 	};
 	private static final String COLLECTION_LOG_PREFIX = "new item added to your collection log: ";
+	/**
+	 * A clan's pet broadcast, which names the pet even when it is a repeat:
+	 * "Name has a funny feeling like he's being followed: Yami at 640 victories."
+	 */
+	private static final Pattern PET_BROADCAST = Pattern.compile(
+		"^(.+?) (?:has a funny feeling like (?:he's|she's|they're|they are) being followed"
+			+ "|feels something weird sneaking into (?:his|her|their) backpack): (.+?)(?: at [\\d,]+ .*)?\\.?$");
+	/** How many ticks a pet waits for its name before it is counted unnamed. */
+	private static final int PET_NAME_WAIT_TICKS = 2;
 	private static final String PARTY_PREFIX = "bingo-";
 	// Party-only teams get their own party. Team codes never contain ':', so no store
 	// team's passphrase can collide with a party-only one.
@@ -220,11 +230,15 @@ public class IronsPubBingoPlugin extends Plugin
 	private int lastMarkCount = -1;
 	/** Marks dropped while on a course; re-picking them up must not count again. */
 	private int markDropDebt;
-	/** A pet message arrived this tick; it is counted at the end of the tick. */
+	/** A pet message arrived; it is counted a couple of ticks later, once its name is in. */
 	private boolean petDropPending;
-	/** The last collection log item and its tick: names the pet of a same-tick pet message. */
+	private int petDropTick = -1;
+	/** The last collection log item and its tick: names the pet of a pet message. */
 	private String lastCollectionLogItem;
 	private int lastCollectionLogTick = -1;
+	/** The pet named in the player's own clan broadcast, and its tick. */
+	private String lastPetBroadcast;
+	private int lastPetBroadcastTick = -1;
 	/** A team-code change awaits the player's confirmation; store pushes pause meanwhile. */
 	private boolean teamSwitchPending;
 	/**
@@ -3306,6 +3320,11 @@ public class IronsPubBingoPlugin extends Plugin
 			return;
 		}
 		ChatMessageType type = event.getType();
+		if (type == ChatMessageType.CLAN_MESSAGE || type == ChatMessageType.CLAN_GIM_MESSAGE)
+		{
+			notePetBroadcast(Text.removeTags(event.getMessage()));
+			return;
+		}
 		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM && type != ChatMessageType.MESBOX)
 		{
 			return;
@@ -3354,11 +3373,11 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 		if (anyPet && active && !petDropPending)
 		{
-			// The pet message has no name. The collection log line (when the player has
-			// that notification on) names it in the same tick, before or after this one,
-			// so the drop is counted once the tick is over.
+			// The pet message has no name. The collection log line (a first-time pet, with
+			// that notification on) or the clan broadcast (any pet, if the clan shows pet
+			// broadcasts) names it around the same tick, so the drop waits a moment.
 			petDropPending = true;
-			clientThread.invokeAtTickEnd(this::countPetDrop);
+			petDropTick = client.getTickCount();
 		}
 		Map<BingoGoal, String> lootDetails = new HashMap<>();
 
@@ -3399,7 +3418,52 @@ public class IronsPubBingoPlugin extends Plugin
 		}
 	}
 
-	/** Counts a pet for "any pet" goals, named by a same-tick collection log line if any. */
+	/** Remembers the pet named in the player's own clan broadcast. */
+	private void notePetBroadcast(String message)
+	{
+		Matcher matcher = PET_BROADCAST.matcher(message);
+		String self = client.getLocalPlayer() == null ? null : client.getLocalPlayer().getName();
+		if (!matcher.find() || self == null || !Text.standardize(matcher.group(1)).equals(Text.standardize(self)))
+		{
+			return;
+		}
+		lastPetBroadcast = matcher.group(2).trim();
+		lastPetBroadcastTick = client.getTickCount();
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (!petDropPending)
+		{
+			return;
+		}
+		int now = client.getTickCount();
+		if (petNameNear(petDropTick) != null || now - petDropTick >= PET_NAME_WAIT_TICKS)
+		{
+			countPetDrop();
+		}
+	}
+
+	/** The pet's name from a collection log line or the clan broadcast near this tick, or null. */
+	private String petNameNear(int tick)
+	{
+		if (lastPetBroadcast != null && Math.abs(lastPetBroadcastTick - tick) <= PET_NAME_WAIT_TICKS)
+		{
+			return lastPetBroadcast;
+		}
+		if (lastCollectionLogItem != null && Math.abs(lastCollectionLogTick - tick) <= PET_NAME_WAIT_TICKS)
+		{
+			return lastCollectionLogItem;
+		}
+		return null;
+	}
+
+	/**
+	 * Counts a pet for "any pet" goals, and for goals naming that pet when its name is
+	 * known. A first-time pet may already have counted from its collection log line;
+	 * the name list keeps it from counting twice.
+	 */
 	private void countPetDrop()
 	{
 		petDropPending = false;
@@ -3407,12 +3471,25 @@ public class IronsPubBingoPlugin extends Plugin
 		{
 			return;
 		}
-		String name = lastCollectionLogTick == client.getTickCount() ? lastCollectionLogItem : null;
+		String name = petNameNear(petDropTick);
 		Map<BingoGoal, String> lootDetails = new HashMap<>();
 		Set<Integer> before = completedTiles();
 		Set<Long> changed = visitGoals((tile, goal, p) ->
 		{
-			if (goal.goalType != GoalType.PET || !goal.petPatterns.isEmpty() || !bump(p, 1))
+			if (goal.goalType != GoalType.PET)
+			{
+				return false;
+			}
+			if (!goal.petPatterns.isEmpty())
+			{
+				if (name == null || !Wildcards.anyMatch(goal.petPatterns, name) || !p.addName(name))
+				{
+					return false;
+				}
+				lootDetails.put(goal, "Pet: " + name);
+				return true;
+			}
+			if (!bump(p, 1))
 			{
 				return false;
 			}

@@ -190,8 +190,8 @@ final class BingoHelp
 		pages.put("Tips", page("Tips",
 			ul("Keep the built-in <b>Loot Tracker</b> plugin enabled. Drops, chests and raid loot come from it.",
 				"Only loot the Loot Tracker sees counts. Most thieving chests don't show up there.",
-				"For pet tiles, turn on the game setting <b>Collection log - New addition notification</b>. "
-					+ "It also names the pet.",
+				"Pets are named from your clan's pet broadcast, or for a first-time pet from the game setting "
+					+ "<b>Collection log - New addition notification</b>. Tiles for a specific pet need one of the two.",
 				"XP and kill count goals count from the event start, or from when you import the board if that's later.",
 				"A newer board shows as a notice in the panel. "
 					+ "Reimport it from the store in one click.",
