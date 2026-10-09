@@ -720,53 +720,54 @@ function exportBoard() {
   if (board.blackoutPoints > 0) out.blackoutPoints = Math.round(board.blackoutPoints);
   if (board.diagonals === false) out.diagonals = false;
   out.size = board.size;
-  const tiles = board.tiles.map(t => {
-    const out = { label: (t.label || "").trim() };
-    if (t.description && t.description.trim()) out.description = t.description.trim();
-    const ic = (t.icon || "").trim();
-    // The plugin looks names up among tradeable items only, so send the id when the item
-    // list knows the name (untradeables like the Fire cape need it).
-    if (ic) out.icon = /^\d+$/.test(ic) ? parseInt(ic, 10) : (itemNameMap && itemNameMap[ic.toLowerCase()]) || ic;
-    if (t.points > 0) out.points = Math.round(t.points);
-    if (t.mode === "ANY" && (t.goals || []).length > 1) out.mode = "ANY";
-    const goals = (t.goals || []).map(g => {
-      const o = { type: g.type };
-      if (g.name && g.name.trim()) o.name = g.name.trim();
-      if (g.type === "DROP") {
-        const its = cleanList(g.items); if (its.length) o.items = its;
-        const ids = cleanIntList(g.itemIds); if (ids.length) o.itemIds = ids;
-        const src = cleanList(g.sources); if (src.length) o.sources = src;
-        if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
-        if (g.distinct) o.distinct = true;
-      }
-      if (g.type === "RAID_PURPLE") {
-        if (g.raids.length < 3) o.raids = g.raids.slice();
-        if (g.distinct) o.distinct = true;
-      }
-      if (g.type === "KC" || g.type === "KILL") o.npcs = cleanList(g.npcs);
-      if (g.type === "PET") { const p = cleanList(g.pets); if (p.length) o.pets = p; }
-      if (g.type === "XP") { o.skill = g.skill; o.amount = Math.round(g.amount); }
-      if (g.type === "VALUE") {
-        o.amount = Math.round(g.amount);
-        const src = cleanList(g.sources); if (src.length) o.sources = src;
-        if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
-      }
-      if (g.type === "CHAT") {
-        o.pattern = g.pattern;
-        const reg = cleanIntList(g.regions); if (reg.length) o.regions = reg;
-      }
-      if (g.screenshot && g.type !== "MANUAL" && g.type !== "XP") o.screenshot = true;
-      if (g.type === "LAP") o.course = g.course;
-      if (g.type !== "MANUAL" && g.type !== "XP" && g.count && g.count !== 1) o.count = Math.round(g.count);
-      return o;
-    });
-    if (goals.length) out.goals = goals;
-    return out;
-  });
-  out.tiles = tiles;
+  out.tiles = board.tiles.map(tileToCode);
   // One line on purpose: a single line pastes intact everywhere (the store's admin
   // page, Discord, the plugin's import box).
   return JSON.stringify(out);
+}
+/** One tile as it appears in a board code. */
+function tileToCode(t) {
+  const out = { label: (t.label || "").trim() };
+  if (t.description && t.description.trim()) out.description = t.description.trim();
+  const ic = (t.icon || "").trim();
+  // The plugin looks names up among tradeable items only, so send the id when the item
+  // list knows the name (untradeables like the Fire cape need it).
+  if (ic) out.icon = /^\d+$/.test(ic) ? parseInt(ic, 10) : (itemNameMap && itemNameMap[ic.toLowerCase()]) || ic;
+  if (t.points > 0) out.points = Math.round(t.points);
+  if (t.mode === "ANY" && (t.goals || []).length > 1) out.mode = "ANY";
+  const goals = (t.goals || []).map(g => {
+    const o = { type: g.type };
+    if (g.name && g.name.trim()) o.name = g.name.trim();
+    if (g.type === "DROP") {
+      const its = cleanList(g.items); if (its.length) o.items = its;
+      const ids = cleanIntList(g.itemIds); if (ids.length) o.itemIds = ids;
+      const src = cleanList(g.sources); if (src.length) o.sources = src;
+      if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
+      if (g.distinct) o.distinct = true;
+    }
+    if (g.type === "RAID_PURPLE") {
+      if (g.raids.length < 3) o.raids = g.raids.slice();
+      if (g.distinct) o.distinct = true;
+    }
+    if (g.type === "KC" || g.type === "KILL") o.npcs = cleanList(g.npcs);
+    if (g.type === "PET") { const p = cleanList(g.pets); if (p.length) o.pets = p; }
+    if (g.type === "XP") { o.skill = g.skill; o.amount = Math.round(g.amount); }
+    if (g.type === "VALUE") {
+      o.amount = Math.round(g.amount);
+      const src = cleanList(g.sources); if (src.length) o.sources = src;
+      if (g.loot && g.loot.length && g.loot.length < 3) o.loot = g.loot.slice();
+    }
+    if (g.type === "CHAT") {
+      o.pattern = g.pattern;
+      const reg = cleanIntList(g.regions); if (reg.length) o.regions = reg;
+    }
+    if (g.screenshot && g.type !== "MANUAL" && g.type !== "XP") o.screenshot = true;
+    if (g.type === "LAP") o.course = g.course;
+    if (g.type !== "MANUAL" && g.type !== "XP" && g.count && g.count !== 1) o.count = Math.round(g.count);
+    return o;
+  });
+  if (goals.length) out.goals = goals;
+  return out;
 }
 // Board codes are hand-edited, so every field is coerced to the type the editor expects.
 // Gson reads numbers and booleans into string fields, so those become strings too.
@@ -798,44 +799,46 @@ function importBoard(json) {
     linePoints: linePoints > 0 ? Math.round(linePoints) : 0,
     blackoutPoints: blackoutPoints > 0 ? Math.round(blackoutPoints) : 0,
     diagonals: b.diagonals !== false,
-    size, tiles: b.tiles.map(t => {
-    if (!t || typeof t !== "object") t = {};
-    const tile = emptyTile();
-    tile.label = asText(t.label);
-    tile.description = asText(t.description);
-    tile.icon = asText(t.icon);
-    const points = asNumber(t.points);
-    tile.points = points > 0 ? Math.round(points) : 0;
-    tile.mode = asText(t.mode).toUpperCase() === "ANY" ? "ANY" : "ALL";
-    tile.goals = (Array.isArray(t.goals) ? t.goals : []).map(g => {
-      if (!g || typeof g !== "object") g = {};
-      const type = (asText(g.type) || "DROP").toUpperCase();
-      const goal = defaultGoal(GOAL_TYPES.some(x => x[0] === type) ? type : "DROP");
-      if (asText(g.name)) goal.name = asText(g.name);
-      ["items", "sources", "npcs", "pets"].forEach(k => { const v = asTextList(g[k]); if (v) goal[k] = v; });
-      const raids = asTextList(g.raids);
-      if (raids) goal.raids = raids.map(r => r.trim().toUpperCase()).filter((r, i, a) => r && a.indexOf(r) === i);
-      ["itemIds", "regions"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].map(v => parseInt(v, 10)).filter(v => v > 0); });
-      if (g.screenshot) goal.screenshot = true;
-      const count = asNumber(g.count);
-      if (count) goal.count = count;
-      if (g.distinct) goal.distinct = true;
-      if (g.loot) {
-        const kinds = (Array.isArray(g.loot) ? g.loot : [g.loot])
-          .map(v => asText(v).toUpperCase()).filter(v => ["KILL", "PICKPOCKET", "OTHER"].includes(v));
-        if (kinds.length) goal.loot = kinds;
-      }
-      if (asText(g.skill)) goal.skill = asText(g.skill).trim().toUpperCase();
-      if (asText(g.course).trim()) goal.course = courseFromText(asText(g.course));
-      const amount = asNumber(g.amount);
-      if (amount) goal.amount = amount;
-      if (asText(g.pattern)) goal.pattern = asText(g.pattern);
-      return goal;
-    });
-    return tile;
-  })};
+    size, tiles: b.tiles.map(tileFromCode) };
   resizeTiles();
   selected = -1;
+}
+/** One tile from a board code, every field coerced to what the editor expects. */
+function tileFromCode(t) {
+  if (!t || typeof t !== "object") t = {};
+  const tile = emptyTile();
+  tile.label = asText(t.label);
+  tile.description = asText(t.description);
+  tile.icon = asText(t.icon);
+  const points = asNumber(t.points);
+  tile.points = points > 0 ? Math.round(points) : 0;
+  tile.mode = asText(t.mode).toUpperCase() === "ANY" ? "ANY" : "ALL";
+  tile.goals = (Array.isArray(t.goals) ? t.goals : []).map(g => {
+    if (!g || typeof g !== "object") g = {};
+    const type = (asText(g.type) || "DROP").toUpperCase();
+    const goal = defaultGoal(GOAL_TYPES.some(x => x[0] === type) ? type : "DROP");
+    if (asText(g.name)) goal.name = asText(g.name);
+    ["items", "sources", "npcs", "pets"].forEach(k => { const v = asTextList(g[k]); if (v) goal[k] = v; });
+    const raids = asTextList(g.raids);
+    if (raids) goal.raids = raids.map(r => r.trim().toUpperCase()).filter((r, i, a) => r && a.indexOf(r) === i);
+    ["itemIds", "regions"].forEach(k => { if (Array.isArray(g[k])) goal[k] = g[k].map(v => parseInt(v, 10)).filter(v => v > 0); });
+    if (g.screenshot) goal.screenshot = true;
+    const count = asNumber(g.count);
+    if (count) goal.count = count;
+    if (g.distinct) goal.distinct = true;
+    if (g.loot) {
+      const kinds = (Array.isArray(g.loot) ? g.loot : [g.loot])
+        .map(v => asText(v).toUpperCase()).filter(v => ["KILL", "PICKPOCKET", "OTHER"].includes(v));
+      if (kinds.length) goal.loot = kinds;
+    }
+    if (asText(g.skill)) goal.skill = asText(g.skill).trim().toUpperCase();
+    if (asText(g.course).trim()) goal.course = courseFromText(asText(g.course));
+    const amount = asNumber(g.amount);
+    if (amount) goal.amount = amount;
+    if (asText(g.pattern)) goal.pattern = asText(g.pattern);
+    return goal;
+  });
+  return tile;
 }
 
 // ---------- draft persistence (best effort) ----------
@@ -1087,6 +1090,8 @@ function openTileMenu(i, x, y) {
   item("\u29c9", "Copy", () => { tileClipboard = JSON.parse(JSON.stringify(tile)); }, empty);
   item("\u2398", tileClipboard ? "Paste \u201c" + shorten(tileClipboard.label || "empty tile", 22) + "\u201d" : "Paste",
     () => { board.tiles[i] = JSON.parse(JSON.stringify(tileClipboard)); done(i); }, !tileClipboard);
+  item("\u29c9", "Copy to clipboard", () => copyTileToClipboard(tile), empty);
+  item("\u2398", "Paste from clipboard", () => pasteTileFromClipboard(i));
   item("\u2750", "Duplicate to next empty tile", () => {
     const n = board.tiles.length;
     for (let step = 1; step < n; step++) {
@@ -1115,6 +1120,47 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeTileMen
 window.addEventListener("blur", closeTileMenu);
 window.addEventListener("resize", closeTileMenu);
 document.addEventListener("scroll", closeTileMenu, true);
+
+// The system clipboard holds a tile as it appears in a board code, so a tile can move
+// between boards, browsers or people.
+function copyTileToClipboard(tile) {
+  const text = JSON.stringify(tileToCode(tile));
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
+  } else {
+    copyTextFallback(text);
+  }
+}
+function copyTextFallback(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  if (!ok) prompt("Copy this tile:", text);
+}
+function pasteTileFromClipboard(i) {
+  const apply = text => {
+    if (text == null) return;
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+    // A whole board with one tile works too.
+    if (parsed && Array.isArray(parsed.tiles) && parsed.tiles.length === 1) parsed = parsed.tiles[0];
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || (!("label" in parsed) && !("goals" in parsed))) {
+      alert("The clipboard does not hold a tile. Copy one with Copy to clipboard first.");
+      return;
+    }
+    board.tiles[i] = tileFromCode(parsed);
+    selected = i; saveDraft(); renderGrid(); renderEditor();
+  };
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(apply, () => apply(prompt("Paste the tile here:")));
+  } else {
+    apply(prompt("Paste the tile here:"));
+  }
+}
 
 function shorten(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
